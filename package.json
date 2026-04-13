@@ -1,0 +1,19 @@
+{
+  "name": "grl-line-bot",
+  "version": "1.0.0",
+  "description": "LINE Bot Webhook for GRL (grail.bz) product price inquiry",
+  "main": "index.js",
+  "engines": {
+    "node": ">=18.x"
+  },
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node --watch index.js"
+  },
+  "dependencies": {
+    "@line/bot-sdk": "^9.3.0",
+    "axios": "^1.7.9",
+    "cheerio": "^1.0.0",
+    "express": "^4.21.2"
+  }
+}
