@@ -272,7 +272,7 @@ async function appendProductToSheet(productId, productName, jpy, stockLines, qSt
 // ── 記錄查詢到「查詢紀錄」分頁 ──────────────────────────────────────────────
 async function logQueryToSheet(userId, displayName, productId, productName, jpy) {
   const sheets = getSheetsClient();
-  const date = new Date().toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' });
+  const date = new Date().toISOString().slice(0, 10);
 
   async function doAppend() {
     await sheets.spreadsheets.values.append({
