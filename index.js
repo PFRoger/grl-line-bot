@@ -229,10 +229,13 @@ async function scrapeGRL(url) {
   if (!priceMatch) throw new Error('無法解析價格');
   const jpy = parseInt(priceMatch[1].replace(/,/g, ''), 10);
 
+  // 商品圖片：從 og:image 取得
+  const imageUrl = $('meta[property="og:image"]').attr('content') || null;
+
   // 庫存：使用 GAS 相同的 raw HTML regex 解析法
   const stockLines = parseStockFromHtml(html);
 
-  return { productName, jpy, stockLines };
+  return { productName, jpy, stockLines, imageUrl };
 }
 
 // ── 新增商品到 Google Sheet（管理員功能）─────────────────────────────────────
@@ -311,7 +314,7 @@ async function logQueryToSheet(userId, displayName, productId, productName, jpy)
 }
 
 // ── 建立 Flex Message ─────────────────────────────────────────────────────────
-function buildFlexMessage(url, productName, jpy, suggested, stockLines) {
+function buildFlexMessage(url, productName, jpy, suggested, stockLines, imageUrl) {
   const stockContents = stockLines.length > 0
     ? stockLines.map((line) => ({
         type: 'text',
@@ -327,94 +330,100 @@ function buildFlexMessage(url, productName, jpy, suggested, stockLines) {
         color: '#aaaaaa',
       }];
 
+  const bubble = {
+    type: 'bubble',
+    size: 'kilo',
+    header: {
+      type: 'box',
+      layout: 'vertical',
+      backgroundColor: '#FF6B9D',
+      paddingAll: '14px',
+      contents: [
+        {
+          type: 'text',
+          text: '🌸 GRL 商品報價',
+          color: '#ffffff',
+          size: 'md',
+          weight: 'bold',
+        },
+      ],
+    },
+    body: {
+      type: 'box',
+      layout: 'vertical',
+      spacing: 'md',
+      paddingAll: '14px',
+      contents: [
+        {
+          type: 'text',
+          text: productName,
+          weight: 'bold',
+          size: 'md',
+          wrap: true,
+          color: '#222222',
+        },
+        { type: 'separator' },
+        {
+          type: 'box',
+          layout: 'horizontal',
+          contents: [
+            { type: 'text', text: '💴 日幣',     size: 'sm', color: '#888888', flex: 2 },
+            { type: 'text', text: `¥${fmtJPY(jpy)}`, size: 'sm', color: '#222222', flex: 3, align: 'end' },
+          ],
+        },
+        {
+          type: 'box',
+          layout: 'horizontal',
+          contents: [
+            { type: 'text', text: '💵 報價金額', size: 'sm', color: '#888888', flex: 2 },
+            { type: 'text', text: `NT$${suggested}`, size: 'sm', weight: 'bold', color: '#E53935', flex: 3, align: 'end' },
+          ],
+        },
+        { type: 'separator' },
+        { type: 'text', text: '📦 庫存', size: 'sm', weight: 'bold', color: '#444444' },
+        {
+          type: 'box',
+          layout: 'vertical',
+          spacing: 'xs',
+          contents: stockContents,
+        },
+      ],
+    },
+    footer: {
+      type: 'box',
+      layout: 'vertical',
+      paddingAll: '10px',
+      contents: [
+        {
+          type: 'button',
+          style: 'primary',
+          color: '#FF6B9D',
+          height: 'sm',
+          action: {
+            type: 'uri',
+            label: '查看商品頁面',
+            uri: url,
+          },
+        },
+      ],
+    },
+  };
+
+  // 有圖片時加入 hero
+  if (imageUrl) {
+    bubble.hero = {
+      type: 'image',
+      url: imageUrl,
+      size: 'full',
+      aspectRatio: '1:1',
+      aspectMode: 'cover',
+    };
+  }
+
   return {
     type: 'flex',
     altText: `GRL 商品報價｜${productName}`,
-    contents: {
-      type: 'bubble',
-      size: 'kilo',
-      header: {
-        type: 'box',
-        layout: 'vertical',
-        backgroundColor: '#FF6B9D',
-        paddingAll: '14px',
-        contents: [
-          {
-            type: 'text',
-            text: '🌸 GRL 商品報價',
-            color: '#ffffff',
-            size: 'md',
-            weight: 'bold',
-          },
-        ],
-      },
-      body: {
-        type: 'box',
-        layout: 'vertical',
-        spacing: 'md',
-        paddingAll: '14px',
-        contents: [
-          {
-            type: 'text',
-            text: productName,
-            weight: 'bold',
-            size: 'md',
-            wrap: true,
-            color: '#222222',
-          },
-          { type: 'separator' },
-          {
-            type: 'box',
-            layout: 'horizontal',
-            contents: [
-              { type: 'text', text: '💴 日幣',    size: 'sm', color: '#888888', flex: 2 },
-              { type: 'text', text: `¥${fmtJPY(jpy)}`, size: 'sm', color: '#222222', flex: 3, align: 'end' },
-            ],
-          },
-          {
-            type: 'box',
-            layout: 'horizontal',
-            contents: [
-              { type: 'text', text: '💵 建議售價', size: 'sm', color: '#888888', flex: 2 },
-              { type: 'text', text: `NT$${suggested}`, size: 'sm', weight: 'bold', color: '#E53935', flex: 3, align: 'end' },
-            ],
-          },
-          { type: 'separator' },
-          { type: 'text', text: '📦 庫存', size: 'sm', weight: 'bold', color: '#444444' },
-          {
-            type: 'box',
-            layout: 'vertical',
-            spacing: 'xs',
-            contents: stockContents,
-          },
-          {
-            type: 'text',
-            text: '⚠️ 以上報價以 1 磅計算',
-            size: 'xs',
-            color: '#aaaaaa',
-            wrap: true,
-          },
-        ],
-      },
-      footer: {
-        type: 'box',
-        layout: 'vertical',
-        paddingAll: '10px',
-        contents: [
-          {
-            type: 'button',
-            style: 'primary',
-            color: '#FF6B9D',
-            height: 'sm',
-            action: {
-              type: 'uri',
-              label: '查看商品頁面',
-              uri: url,
-            },
-          },
-        ],
-      },
-    },
+    contents: bubble,
   };
 }
 
@@ -455,7 +464,7 @@ async function handleEvent(event, client) {
     return;
   }
 
-  const { productName, jpy, stockLines } = productData;
+  const { productName, jpy, stockLines, imageUrl } = productData;
   const suggested = calcSuggestedPrice(rate, jpy);
   const qStatus   = calcQStatus(stockLines);
 
@@ -467,7 +476,7 @@ async function handleEvent(event, client) {
     console.warn('[getProfile error]', e.message);
   }
 
-  const flexMsg = buildFlexMessage(userText, productName, jpy, suggested, stockLines);
+  const flexMsg = buildFlexMessage(userText, productName, jpy, suggested, stockLines, imageUrl);
   await client.replyMessage(replyToken, flexMsg);
 
   const bgTasks = [];
