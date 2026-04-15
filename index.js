@@ -156,24 +156,20 @@ async function scrapeGRL(url) {
   if (!priceMatch) throw new Error('無法解析價格');
   const jpy = parseInt(priceMatch[1].replace(/,/g, ''), 10);
 
-  // 庫存列表：精確取得只含庫存資訊的 <li> 純文字
-  // 只取 li 的直接文字節點，避免抓到子元素（按鈕等）的文字
+  // 庫存列表：取 li 全部文字（含子元素），逐行過濾出 色/尺寸/庫存 格式
+  // 用逐行比對而非 directText，避免庫存文字放在 <span> 等子元素時取不到
   const stockItems = [];
+  const seenLines = new Set();
   $('li').each((_, el) => {
-    // 移除子元素，只保留直接文字
-    const directText = $(el)
-      .clone()
-      .children()
-      .remove()
-      .end()
-      .text()
-      .trim();
-
-    // 符合 色/尺寸/庫存 格式的行
-    if (/^[^\n]+\/[^\n]+\/(在庫あり|在庫なし|残りわずか|予約販売)/.test(directText)) {
-      // 只取第一行（防止 whitespace 造成多行）
-      const firstLine = directText.split('\n')[0].trim();
-      if (firstLine) stockItems.push(firstLine);
+    const lines = $(el).text().split(/[\n\r]+/).map((l) => l.trim()).filter(Boolean);
+    for (const line of lines) {
+      if (
+        /[^\s\/]+\/[^\s\/]+\/(在庫あり|在庫なし|残りわずか|予約販売)/.test(line) &&
+        !seenLines.has(line)
+      ) {
+        seenLines.add(line);
+        stockItems.push(line);
+      }
     }
   });
 
