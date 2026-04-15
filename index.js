@@ -176,28 +176,48 @@ async function scrapeGRL(url) {
   return { productName, jpy, stockItems };
 }
 
+// ── 計算 Q 欄備註狀態 ─────────────────────────────────────────────────────────
+function calcQStatus(stockItems) {
+  if (stockItems.length === 0) return '已下架';
+  const statuses = stockItems.map((raw) => {
+    const slash = raw.lastIndexOf('/');
+    return slash !== -1 ? raw.substring(slash + 1).trim() : raw;
+  });
+  if (statuses.every((s) => s === '在庫なし')) return '缺貨';
+  if (statuses.every((s) => s.startsWith('予約販売'))) return '預約';
+  return ''; // 正常有庫存，留空
+}
+
 // ── 新增商品到 Google Sheet（管理員功能）─────────────────────────────────────
-async function appendProductToSheet(productId, productName, jpy, stockItems) {
+async function appendProductToSheet(productId, productName, jpy, stockItems, qStatus) {
   const sheets = getSheetsClient();
   const stockSummary = stockItems.map(translateStockItem).join(' | ');
+  const today = new Date().toISOString().slice(0, 10);
 
   // 讀取現有資料以確認最後一列
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId: SHEET_ID,
     range: 'A:A',
   });
-  const nextRow = ((res.data.values || []).length) + 1;
+  const r = ((res.data.values || []).length) + 1; // 新列行號
 
-  // 組成完整 A~P 的列（空欄以空字串填充）
-  const row = new Array(16).fill('');
-  row[0] = productId;    // A
-  row[12] = productName; // M
-  row[14] = jpy;         // O
-  row[15] = stockSummary; // P
+  // A~Q = 17 欄（index 0~16）
+  const row = new Array(17).fill('');
+  row[0]  = productId;                                          // A: 商品 ID
+  row[3]  = `=O${r}`;                                          // D: 日幣（同 O）
+  row[4]  = `=((U$3*O${r})*(1+0.06+0.015))+(150*K${r}+20+10)`; // E: 成本價
+  row[6]  = `=IF(MOD(ROUND(E${r},0),10)<=4,INT(ROUND(E${r},0)/10)*10+5,IF(MOD(ROUND(E${r},0),10)>=6,INT(ROUND(E${r},0)/10)*10+9,ROUND(E${r},0)))+F${r}`; // G: 建議售價
+  row[8]  = `=H${r}-E${r}`;                                    // I: 預估獲利
+  row[10] = `=CEILING(J${r},1)`;                               // K: 磅數
+  row[12] = productName;                                        // M: 商品名稱
+  row[13] = today;                                              // N: 確認日期
+  row[14] = jpy;                                                // O: 日幣
+  row[15] = stockSummary;                                       // P: 庫存狀態
+  row[16] = qStatus;                                            // Q: 備註
 
   await sheets.spreadsheets.values.update({
     spreadsheetId: SHEET_ID,
-    range: `A${nextRow}:P${nextRow}`,
+    range: `A${r}:Q${r}`,
     valueInputOption: 'USER_ENTERED',
     resource: { values: [row] },
   });
@@ -414,6 +434,9 @@ async function handleEvent(event, client) {
     return;
   }
 
+  // 先取 productId（爬蟲失敗時管理員仍需寫入錯誤行）
+  const productId = extractProductId(userText) || '';
+
   let productData;
   let rate;
   try {
@@ -424,12 +447,21 @@ async function handleEvent(event, client) {
       type: 'text',
       text: '無法取得商品資訊，請確認網址是否正確',
     });
+    // 管理員：寫入錯誤狀態
+    if (userId === ADMIN_USER_ID) {
+      const qStatus = productId
+        ? `錯誤: ${err.message}`
+        : '警告: 請確認 ID';
+      appendProductToSheet(productId, '', 0, [], qStatus).catch((e) =>
+        console.error('[sheets error-row write]', e.message)
+      );
+    }
     return;
   }
 
   const { productName, jpy, stockItems } = productData;
   const suggested = calcSuggestedPrice(rate, jpy);
-  const productId = extractProductId(userText) || '';
+  const qStatus = calcQStatus(stockItems);
 
   // 取得用戶顯示名稱（LINE displayName，如 "bingfung"）
   let displayName = userId;
@@ -450,7 +482,7 @@ async function handleEvent(event, client) {
   // 管理員：新增商品到追蹤表
   if (userId === ADMIN_USER_ID) {
     bgTasks.push(
-      appendProductToSheet(productId, productName, jpy, stockItems).catch((e) =>
+      appendProductToSheet(productId, productName, jpy, stockItems, qStatus).catch((e) =>
         console.error('[sheets append error]', e.message)
       )
     );
