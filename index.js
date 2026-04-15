@@ -118,10 +118,14 @@ async function fetchRate() {
   return rate + 0.015;
 }
 
-// ── 從網址擷取商品 ID（2字母 + 4數字，例如 ru1438、ai1611）─────────────────
+// ── 從網址擷取商品 ID（去掉最後 4 碼數字後綴，例如 ru14381119→ru1438、ai541119→ai54）
 function extractProductId(url) {
-  const m = url.match(/\/([a-z]{2}\d{4})/i);
-  return m ? m[1] : null;
+  // 取出 item slug（2字母 + 數字）
+  const m = url.match(/\/item\/([a-z]{2}\d+)/i);
+  if (!m) return null;
+  const slug = m[1]; // e.g. "ru14381119"
+  // 去掉最後 4 碼數字後綴
+  return slug.replace(/\d{4}$/, '');
 }
 
 // ── 爬取 GRL 商品資訊 ─────────────────────────────────────────────────────────
