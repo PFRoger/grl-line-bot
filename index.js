@@ -77,9 +77,12 @@ function translateStockItem(raw) {
 }
 
 // ── 建議售價計算 ──────────────────────────────────────────────────────────────
+// PROFIT = 每單固定利潤（NT$），如需改為從 Google Sheet 讀取可後續調整
+const PROFIT = 120;
+
 function calcSuggestedPrice(rate, jpy) {
   const cost = rate * jpy * 1.075 + (150 * 1 + 20 + 10);
-  const base = Math.round(cost);
+  const base = Math.round(cost + PROFIT);
   const last = base % 10;
   if (last <= 4) return base - last + 5;
   if (last >= 6) return base - last + 9;
@@ -115,9 +118,9 @@ async function fetchRate() {
   return rate + 0.015;
 }
 
-// ── 從網址擷取商品 ID ─────────────────────────────────────────────────────────
+// ── 從網址擷取商品 ID（2字母 + 4數字，例如 ru1438、ai1611）─────────────────
 function extractProductId(url) {
-  const m = url.match(/\/([a-z]{2}\d+)/i);
+  const m = url.match(/\/([a-z]{2}\d{4})/i);
   return m ? m[1] : null;
 }
 
@@ -201,7 +204,7 @@ async function appendProductToSheet(productId, productName, jpy, stockItems) {
 }
 
 // ── 記錄查詢到「查詢紀錄」分頁 ──────────────────────────────────────────────
-async function logQueryToSheet(userId, productId, productName, jpy) {
+async function logQueryToSheet(userId, displayName, productId, productName, jpy) {
   const sheets = getSheetsClient();
   const date = new Date().toISOString().slice(0, 10);
 
@@ -209,9 +212,9 @@ async function logQueryToSheet(userId, productId, productName, jpy) {
   async function doAppend() {
     await sheets.spreadsheets.values.append({
       spreadsheetId: SHEET_ID,
-      range: '查詢紀錄!A:E',
+      range: '查詢紀錄!A:F',
       valueInputOption: 'USER_ENTERED',
-      resource: { values: [[date, userId, productId, productName, jpy]] },
+      resource: { values: [[date, displayName, userId, productId, productName, jpy]] },
     });
   }
 
@@ -228,12 +231,12 @@ async function logQueryToSheet(userId, productId, productName, jpy) {
       });
       await sheets.spreadsheets.values.append({
         spreadsheetId: SHEET_ID,
-        range: '查詢紀錄!A:E',
+        range: '查詢紀錄!A:F',
         valueInputOption: 'USER_ENTERED',
         resource: {
           values: [
-            ['日期', '用戶 ID', '商品 ID', '商品名稱', '日幣價格'],
-            [date, userId, productId, productName, jpy],
+            ['日期', 'LINE 顯示名稱', 'LINE User ID', '商品 ID', '商品名稱', '日幣價格'],
+            [date, displayName, userId, productId, productName, jpy],
           ],
         },
       });
@@ -428,6 +431,15 @@ async function handleEvent(event, client) {
   const suggested = calcSuggestedPrice(rate, jpy);
   const productId = extractProductId(userText) || '';
 
+  // 取得用戶顯示名稱（LINE displayName，如 "bingfung"）
+  let displayName = userId;
+  try {
+    const profile = await client.getProfile(userId);
+    displayName = profile.displayName;
+  } catch (e) {
+    console.warn('[getProfile error]', e.message);
+  }
+
   // 回覆 Flex Message
   const flexMsg = buildFlexMessage(userText, productName, jpy, suggested, stockItems);
   await client.replyMessage(replyToken, flexMsg);
@@ -446,7 +458,7 @@ async function handleEvent(event, client) {
 
   // 所有用戶：記錄查詢紀錄
   bgTasks.push(
-    logQueryToSheet(userId, productId, productName, jpy).catch((e) =>
+    logQueryToSheet(userId, displayName, productId, productName, jpy).catch((e) =>
       console.error('[sheets log error]', e.message)
     )
   );
