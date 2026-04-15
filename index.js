@@ -21,59 +21,34 @@ function getSheetsClient() {
   return google.sheets({ version: 'v4', auth });
 }
 
-// ── 顏色對照表（複合詞排前面，避免單字先被替換） ──────────────────────────
-const COLOR_MAP = [
-  ['オフホワイト', '灰白色'],
-  ['オフベージュ', '杏色'],
-  ['ライトブルー', '淺藍色'],
-  ['ライトグレー', '淺灰色'],
-  ['グレージュ', '藕色'],
-  ['ワインレッド', '酒紅色'],
-  ['ブラック', '黑色'],
-  ['ピンク', '粉色'],
-  ['グレー', '灰色'],
-  ['ホワイト', '米白色'],
-  ['ブルー', '藍色'],
-  ['ベージュ', '淺褐色'],
-  ['ネイビー', '藏青色'],
-  ['ブラウン', '咖啡色'],
-];
+// ── 顏色對照表（複合詞排前面，避免被單字提前匹配）────────────────────────────
+const COLOR_MAP_OBJ = {
+  'オフホワイト': '灰白色', 'オフベージュ': '杏色',  'ライトブルー': '淺藍色',
+  'ライトグレー': '淺灰色', 'グレージュ':  '藕色',   'ワインレッド': '酒紅色',
+  'ミントグリーン': '薄荷綠色', 'キャメル': '駝色',  'オートミール': '燕麥色',
+  'ブラック': '黑色',  'ピンク': '粉色',    'グレー': '灰色',    'アイボリー': '象牙白',
+  'チャコール': '炭灰色', 'ホワイト': '米白色', 'ブルー': '藍色',  'ベージュ': '淺褐色',
+  'グリーン': '綠色',  'レッド': '紅色',    'イエロー': '黃色', 'パープル': '紫色',
+  'ブラウン': '咖啡色', 'モカ': '摩卡色',   'ボルドー': '酒紅色', 'カーキ': '卡其色',
+  'ネイビー': '藏青色', 'オレンジ': '橘色', 'ミント': '薄荷綠', 'ラベンダー': '薰衣草紫',
+  'マスタード': '芥末黃',
+};
+const COLOR_KEYS = Object.keys(COLOR_MAP_OBJ);
 
-// ── 翻譯顏色 ─────────────────────────────────────────────────────────────────
-function translateColor(text) {
-  let result = text;
-  for (const [ja, zh] of COLOR_MAP) {
-    result = result.split(ja).join(zh);
-  }
-  return result;
+function hasColorKeyword(text) {
+  return COLOR_KEYS.some((k) => text.includes(k));
 }
 
-// ── 翻譯庫存狀態 ──────────────────────────────────────────────────────────────
-function translateStatus(status) {
-  if (status === '在庫あり') return '✅ 有庫存';
-  if (status === '在庫なし') return '❌ 缺貨';
-  if (status === '残りわずか') return '⚠️ 剩餘少量';
-  if (status.startsWith('予約販売')) {
-    const m = status.match(/《(.+?)入荷予定》/);
-    return m
-      ? `📅 預約販售（預計${m[1]}到貨）`
-      : '📅 預約販售';
+function translateColorWithJp(text) {
+  for (const jp of COLOR_KEYS) {
+    if (text.includes(jp)) return `${COLOR_MAP_OBJ[jp]}(${jp})`;
   }
-  return status;
+  return text;
 }
 
-// ── 翻譯單筆庫存項目 ──────────────────────────────────────────────────────────
-function translateStockItem(raw) {
-  const slash = raw.lastIndexOf('/');
-  if (slash === -1) return raw;
-
-  const colorSize = raw.substring(0, slash).trim();
-  const status = raw.substring(slash + 1).trim();
-
-  const translatedColorSize = translateColor(colorSize);
-  const translatedStatus = translateStatus(status);
-
-  return `${translatedColorSize}: ${translatedStatus}`;
+// ── 到貨日期翻譯：「4月下旬入荷予定」→「預計4月下旬到貨」────────────────────
+function translateArrival(text) {
+  return text.replace('入荷予定', '到貨');
 }
 
 // ── 建議售價計算 ──────────────────────────────────────────────────────────────
@@ -118,14 +93,112 @@ async function fetchRate() {
   return rate + 0.015;
 }
 
-// ── 從網址擷取商品 ID（去掉最後 4 碼數字後綴，例如 ru14381119→ru1438、ai541119→ai54）
+// ── 從網址擷取商品 ID（去掉最後 4 碼數字後綴，例如 ru14381119→ru1438）────────
 function extractProductId(url) {
-  // 取出 item slug（2字母 + 數字）
   const m = url.match(/\/item\/([a-z]{2}\d+)/i);
   if (!m) return null;
-  const slug = m[1]; // e.g. "ru14381119"
-  // 去掉最後 4 碼數字後綴
-  return slug.replace(/\d{4}$/, '');
+  return m[1].replace(/\d{4}$/, '');
+}
+
+// ── 解析庫存（參考 GAS parseStockForBot 邏輯）────────────────────────────────
+// 直接對原始 HTML 用 regex 找 <li>，strip tags，過濾有顏色關鍵字的列，
+// 再用 size/status 兩段式 regex 取出每個尺寸庫存。
+function parseStockFromHtml(html) {
+  const stockLines = [];
+  const seen = new Set();
+  const liRegex = /<li[^>]*>([\s\S]*?)<\/li>/gi;
+  let liMatch;
+
+  while ((liMatch = liRegex.exec(html)) !== null) {
+    // strip all tags, collapse whitespace
+    const liText = liMatch[1].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+
+    const hasStock   = liText.includes('在庫あり');
+    const hasNone    = liText.includes('在庫なし');
+    const hasLimited = liText.includes('残りわずか') ||
+                       (liText.includes('残り') && !liText.includes('残りわずか'));
+    const hasReserve = liText.includes('予約販売');
+
+    if (!hasStock && !hasNone && !hasLimited && !hasReserve) continue;
+    // 排除雜訊列
+    if (liText.includes('アイテム') && !hasColorKeyword(liText)) continue;
+    if (liText.includes('日新着'))   continue;
+    if (liText.includes('日再入荷')) continue;
+    if (liText.includes('日予約'))   continue;
+    if (liText.includes('すべて') && !hasColorKeyword(liText)) continue;
+    if (!hasColorKeyword(liText)) continue;
+    if (seen.has(liText)) continue;
+    seen.add(liText);
+
+    // 找顏色名稱
+    let colorName = '';
+    for (const k of COLOR_KEYS) {
+      if (liText.includes(k)) { colorName = k; break; }
+    }
+    const displayColor = colorName
+      ? `${COLOR_MAP_OBJ[colorName]}(${colorName})`
+      : '';
+
+    // 抓出 SIZE/STATUS 對
+    const sizeStockRegex =
+      /([A-Z0-9XL]+)\/(在庫あり|在庫なし|残りわずか|残り\d*|予約販売(?:《([^》]*)》)?)/g;
+    let sizeMatch;
+    const sizeResults = [];
+
+    while ((sizeMatch = sizeStockRegex.exec(liText)) !== null) {
+      const size = sizeMatch[1];
+      const st   = sizeMatch[2];
+      const arrivalRaw = sizeMatch[3] || '';
+      let status;
+      if (st === '在庫あり')            status = '✅ 有庫存';
+      else if (st.includes('残り'))     status = '⚠️ 剩餘少量';
+      else if (st.includes('予約販売')) status = '📅 預約販售' + (arrivalRaw ? `（${translateArrival(arrivalRaw)}）` : '');
+      else                              status = '❌ 缺貨';
+      sizeResults.push(`${displayColor} ${size}: ${status}`);
+    }
+
+    if (sizeResults.length > 0) {
+      for (const s of sizeResults) {
+        if (!seen.has(s)) { stockLines.push(s); seen.add(s); }
+      }
+    } else {
+      // fallback：整行沒有 SIZE/ 格式，用顏色整體狀態
+      let colorPart = '', sizePart = '';
+      const slashIdx = liText.indexOf('/');
+      if (slashIdx !== -1) {
+        const beforeSlash = liText.substring(0, slashIdx).trim();
+        const spaceIdx = beforeSlash.lastIndexOf(' ');
+        if (spaceIdx !== -1) {
+          colorPart = beforeSlash.substring(0, spaceIdx).trim();
+          sizePart  = beforeSlash.substring(spaceIdx + 1).trim();
+        } else {
+          colorPart = beforeSlash;
+        }
+      } else {
+        colorPart = liText.split(' ')[0];
+      }
+      const dc    = translateColorWithJp(colorPart);
+      const label = sizePart ? `${dc} ${sizePart}` : dc;
+      let status;
+      if (hasStock)        status = '✅ 有庫存';
+      else if (hasLimited) status = '⚠️ 剩餘少量';
+      else if (hasReserve) {
+        const dm = liText.match(/《([^》]+)》/);
+        status = dm ? `📅 預約販售（${translateArrival(dm[1])}）` : '📅 預約販售';
+      } else               status = '❌ 缺貨';
+      stockLines.push(`${label}: ${status}`);
+    }
+  }
+
+  return stockLines;
+}
+
+// ── 計算 Q 欄備註狀態 ─────────────────────────────────────────────────────────
+function calcQStatus(stockLines) {
+  if (stockLines.length === 0) return '已下架';
+  if (stockLines.every((s) => s.includes('❌'))) return '缺貨';
+  if (stockLines.every((s) => s.includes('📅'))) return '預約';
+  return ''; // 正常有庫存，留空
 }
 
 // ── 爬取 GRL 商品資訊 ─────────────────────────────────────────────────────────
@@ -156,64 +229,37 @@ async function scrapeGRL(url) {
   if (!priceMatch) throw new Error('無法解析價格');
   const jpy = parseInt(priceMatch[1].replace(/,/g, ''), 10);
 
-  // 庫存列表：取 li 全部文字（含子元素），逐行過濾出 色/尺寸/庫存 格式
-  // 用逐行比對而非 directText，避免庫存文字放在 <span> 等子元素時取不到
-  const stockItems = [];
-  const seenLines = new Set();
-  $('li').each((_, el) => {
-    const lines = $(el).text().split(/[\n\r]+/).map((l) => l.trim()).filter(Boolean);
-    for (const line of lines) {
-      if (
-        /[^\s\/]+\/[^\s\/]+\/(在庫あり|在庫なし|残りわずか|予約販売)/.test(line) &&
-        !seenLines.has(line)
-      ) {
-        seenLines.add(line);
-        stockItems.push(line);
-      }
-    }
-  });
+  // 庫存：使用 GAS 相同的 raw HTML regex 解析法
+  const stockLines = parseStockFromHtml(html);
 
-  return { productName, jpy, stockItems };
-}
-
-// ── 計算 Q 欄備註狀態 ─────────────────────────────────────────────────────────
-function calcQStatus(stockItems) {
-  if (stockItems.length === 0) return '已下架';
-  const statuses = stockItems.map((raw) => {
-    const slash = raw.lastIndexOf('/');
-    return slash !== -1 ? raw.substring(slash + 1).trim() : raw;
-  });
-  if (statuses.every((s) => s === '在庫なし')) return '缺貨';
-  if (statuses.every((s) => s.startsWith('予約販売'))) return '預約';
-  return ''; // 正常有庫存，留空
+  return { productName, jpy, stockLines };
 }
 
 // ── 新增商品到 Google Sheet（管理員功能）─────────────────────────────────────
-async function appendProductToSheet(productId, productName, jpy, stockItems, qStatus) {
+async function appendProductToSheet(productId, productName, jpy, stockLines, qStatus) {
   const sheets = getSheetsClient();
-  const stockSummary = stockItems.map(translateStockItem).join(' | ');
-  const today = new Date().toISOString().slice(0, 10);
+  const stockSummary = stockLines.join(' | ');
+  const today = new Date().toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' });
 
-  // 讀取現有資料以確認最後一列
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId: SHEET_ID,
     range: 'A:A',
   });
-  const r = ((res.data.values || []).length) + 1; // 新列行號
+  const r = ((res.data.values || []).length) + 1;
 
   // A~Q = 17 欄（index 0~16）
   const row = new Array(17).fill('');
-  row[0]  = productId;                                          // A: 商品 ID
-  row[3]  = `=O${r}`;                                          // D: 日幣（同 O）
+  row[0]  = productId;                                           // A: 商品 ID
+  row[3]  = `=O${r}`;                                           // D: 日幣（同 O）
   row[4]  = `=((U$3*O${r})*(1+0.06+0.015))+(150*K${r}+20+10)`; // E: 成本價
   row[6]  = `=IF(MOD(ROUND(E${r},0),10)<=4,INT(ROUND(E${r},0)/10)*10+5,IF(MOD(ROUND(E${r},0),10)>=6,INT(ROUND(E${r},0)/10)*10+9,ROUND(E${r},0)))+F${r}`; // G: 建議售價
-  row[8]  = `=H${r}-E${r}`;                                    // I: 預估獲利
-  row[10] = `=CEILING(J${r},1)`;                               // K: 磅數
-  row[12] = productName;                                        // M: 商品名稱
-  row[13] = today;                                              // N: 確認日期
-  row[14] = jpy;                                                // O: 日幣
-  row[15] = stockSummary;                                       // P: 庫存狀態
-  row[16] = qStatus;                                            // Q: 備註
+  row[8]  = `=H${r}-E${r}`;                                     // I: 預估獲利
+  row[10] = `=CEILING(J${r},1)`;                                // K: 磅數
+  row[12] = productName;                                         // M: 商品名稱
+  row[13] = today;                                               // N: 確認日期
+  row[14] = jpy;                                                 // O: 日幣
+  row[15] = stockSummary;                                        // P: 庫存狀態
+  row[16] = qStatus;                                             // Q: 備註
 
   await sheets.spreadsheets.values.update({
     spreadsheetId: SHEET_ID,
@@ -226,9 +272,8 @@ async function appendProductToSheet(productId, productName, jpy, stockItems, qSt
 // ── 記錄查詢到「查詢紀錄」分頁 ──────────────────────────────────────────────
 async function logQueryToSheet(userId, displayName, productId, productName, jpy) {
   const sheets = getSheetsClient();
-  const date = new Date().toISOString().slice(0, 10);
+  const date = new Date().toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' });
 
-  // 嘗試寫入；若分頁不存在則先建立
   async function doAppend() {
     await sheets.spreadsheets.values.append({
       spreadsheetId: SHEET_ID,
@@ -242,7 +287,6 @@ async function logQueryToSheet(userId, displayName, productId, productName, jpy)
     await doAppend();
   } catch (err) {
     if (err.message && err.message.includes('Unable to parse range')) {
-      // 分頁不存在，先建立並加標題
       await sheets.spreadsheets.batchUpdate({
         spreadsheetId: SHEET_ID,
         resource: {
@@ -267,13 +311,11 @@ async function logQueryToSheet(userId, displayName, productId, productName, jpy)
 }
 
 // ── 建立 Flex Message ─────────────────────────────────────────────────────────
-function buildFlexMessage(url, productName, jpy, suggested, stockItems) {
-  const productId = extractProductId(url) || '';
-
-  const stockContents = stockItems.length > 0
-    ? stockItems.map((raw) => ({
+function buildFlexMessage(url, productName, jpy, suggested, stockLines) {
+  const stockContents = stockLines.length > 0
+    ? stockLines.map((line) => ({
         type: 'text',
-        text: translateStockItem(raw),
+        text: line,
         size: 'sm',
         color: '#555555',
         wrap: true,
@@ -320,62 +362,25 @@ function buildFlexMessage(url, productName, jpy, suggested, stockItems) {
             wrap: true,
             color: '#222222',
           },
-          {
-            type: 'separator',
-          },
+          { type: 'separator' },
           {
             type: 'box',
             layout: 'horizontal',
             contents: [
-              {
-                type: 'text',
-                text: '💴 日幣',
-                size: 'sm',
-                color: '#888888',
-                flex: 2,
-              },
-              {
-                type: 'text',
-                text: `¥${fmtJPY(jpy)}`,
-                size: 'sm',
-                color: '#222222',
-                flex: 3,
-                align: 'end',
-              },
+              { type: 'text', text: '💴 日幣',    size: 'sm', color: '#888888', flex: 2 },
+              { type: 'text', text: `¥${fmtJPY(jpy)}`, size: 'sm', color: '#222222', flex: 3, align: 'end' },
             ],
           },
           {
             type: 'box',
             layout: 'horizontal',
             contents: [
-              {
-                type: 'text',
-                text: '💵 建議售價',
-                size: 'sm',
-                color: '#888888',
-                flex: 2,
-              },
-              {
-                type: 'text',
-                text: `NT$${suggested}`,
-                size: 'sm',
-                weight: 'bold',
-                color: '#E53935',
-                flex: 3,
-                align: 'end',
-              },
+              { type: 'text', text: '💵 建議售價', size: 'sm', color: '#888888', flex: 2 },
+              { type: 'text', text: `NT$${suggested}`, size: 'sm', weight: 'bold', color: '#E53935', flex: 3, align: 'end' },
             ],
           },
-          {
-            type: 'separator',
-          },
-          {
-            type: 'text',
-            text: '📦 庫存',
-            size: 'sm',
-            weight: 'bold',
-            color: '#444444',
-          },
+          { type: 'separator' },
+          { type: 'text', text: '📦 庫存', size: 'sm', weight: 'bold', color: '#444444' },
           {
             type: 'box',
             layout: 'vertical',
@@ -419,26 +424,20 @@ async function handleEvent(event, client) {
 
   console.log('userId:', event.source.userId);
 
-  const userId = event.source.userId;
-  const userText = event.message.text.trim();
+  const userId    = event.source.userId;
+  const userText  = event.message.text.trim();
   const replyToken = event.replyToken;
 
-  // 判斷是否為 GRL 網址
   const isGRL = /https?:\/\/(www\.)?grail\.bz\//i.test(userText);
 
   if (!isGRL) {
-    await client.replyMessage(replyToken, {
-      type: 'text',
-      text: '請傳入 GRL 商品網址',
-    });
+    await client.replyMessage(replyToken, { type: 'text', text: '請傳入 GRL 商品網址' });
     return;
   }
 
-  // 先取 productId（爬蟲失敗時管理員仍需寫入錯誤行）
   const productId = extractProductId(userText) || '';
 
-  let productData;
-  let rate;
+  let productData, rate;
   try {
     [productData, rate] = await Promise.all([scrapeGRL(userText), fetchRate()]);
   } catch (err) {
@@ -447,11 +446,8 @@ async function handleEvent(event, client) {
       type: 'text',
       text: '無法取得商品資訊，請確認網址是否正確',
     });
-    // 管理員：寫入錯誤狀態
     if (userId === ADMIN_USER_ID) {
-      const qStatus = productId
-        ? `錯誤: ${err.message}`
-        : '警告: 請確認 ID';
+      const qStatus = productId ? `錯誤: ${err.message}` : '警告: 請確認 ID';
       appendProductToSheet(productId, '', 0, [], qStatus).catch((e) =>
         console.error('[sheets error-row write]', e.message)
       );
@@ -459,11 +455,10 @@ async function handleEvent(event, client) {
     return;
   }
 
-  const { productName, jpy, stockItems } = productData;
+  const { productName, jpy, stockLines } = productData;
   const suggested = calcSuggestedPrice(rate, jpy);
-  const qStatus = calcQStatus(stockItems);
+  const qStatus   = calcQStatus(stockLines);
 
-  // 取得用戶顯示名稱（LINE displayName，如 "bingfung"）
   let displayName = userId;
   try {
     const profile = await client.getProfile(userId);
@@ -472,23 +467,19 @@ async function handleEvent(event, client) {
     console.warn('[getProfile error]', e.message);
   }
 
-  // 回覆 Flex Message
-  const flexMsg = buildFlexMessage(userText, productName, jpy, suggested, stockItems);
+  const flexMsg = buildFlexMessage(userText, productName, jpy, suggested, stockLines);
   await client.replyMessage(replyToken, flexMsg);
 
-  // 背景作業：不影響回覆速度
   const bgTasks = [];
 
-  // 管理員：新增商品到追蹤表
   if (userId === ADMIN_USER_ID) {
     bgTasks.push(
-      appendProductToSheet(productId, productName, jpy, stockItems, qStatus).catch((e) =>
+      appendProductToSheet(productId, productName, jpy, stockLines, qStatus).catch((e) =>
         console.error('[sheets append error]', e.message)
       )
     );
   }
 
-  // 所有用戶：記錄查詢紀錄
   bgTasks.push(
     logQueryToSheet(userId, displayName, productId, productName, jpy).catch((e) =>
       console.error('[sheets log error]', e.message)
@@ -504,11 +495,7 @@ app.post('/webhook', express.raw({ type: '*/*' }), async (req, res) => {
 
   if (
     !signature ||
-    !line.validateSignature(
-      req.body,
-      process.env.LINE_CHANNEL_SECRET,
-      signature
-    )
+    !line.validateSignature(req.body, process.env.LINE_CHANNEL_SECRET, signature)
   ) {
     return res.status(401).json({ error: 'Invalid signature' });
   }
