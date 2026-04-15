@@ -172,6 +172,8 @@ async function buildReplyText(url) {
 async function handleEvent(event, client) {
   if (event.type !== 'message' || event.message.type !== 'text') return;
 
+  console.log('userId:', event.source.userId);
+
   const userText = event.message.text.trim();
   const replyToken = event.replyToken;
 
