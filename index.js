@@ -4,9 +4,22 @@ const express = require('express');
 const line = require('@line/bot-sdk');
 const axios = require('axios');
 const cheerio = require('cheerio');
-const crypto = require('crypto');
+const { google } = require('googleapis');
 
 const app = express();
+
+const ADMIN_USER_ID = 'U9fa329e70b89f4ce19089928a824bd29';
+const SHEET_ID = '148eFUK3xm0ITsVpueqtnwjK-lcKeemoiRbQgcFWbGug';
+
+// ── Google Sheets 驗證 ────────────────────────────────────────────────────────
+function getSheetsClient() {
+  const credentials = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
+  const auth = new google.auth.GoogleAuth({
+    credentials,
+    scopes: ['https://www.googleapis.com/auth/spreadsheets'],
+  });
+  return google.sheets({ version: 'v4', auth });
+}
 
 // ── 顏色對照表（複合詞排前面，避免單字先被替換） ──────────────────────────
 const COLOR_MAP = [
@@ -60,7 +73,7 @@ function translateStockItem(raw) {
   const translatedColorSize = translateColor(colorSize);
   const translatedStatus = translateStatus(status);
 
-  return `  ${translatedColorSize}: ${translatedStatus}`;
+  return `${translatedColorSize}: ${translatedStatus}`;
 }
 
 // ── 建議售價計算 ──────────────────────────────────────────────────────────────
@@ -70,7 +83,7 @@ function calcSuggestedPrice(rate, jpy) {
   const last = base % 10;
   if (last <= 4) return base - last + 5;
   if (last >= 6) return base - last + 9;
-  return base; // last === 5 已符合
+  return base;
 }
 
 // ── 格式化日幣（加千位符） ────────────────────────────────────────────────────
@@ -85,7 +98,6 @@ async function fetchRate() {
 
   async function tryFetch(url) {
     const { data } = await axios.get(url, { timeout: 8000 });
-    // v4 格式：data.rates.TWD；v6 格式：data.conversion_rates.TWD
     const rate = (data.rates && data.rates.TWD) ||
                  (data.conversion_rates && data.conversion_rates.TWD);
     if (!rate) throw new Error('回應中找不到 TWD 欄位');
@@ -101,6 +113,12 @@ async function fetchRate() {
   }
 
   return rate + 0.015;
+}
+
+// ── 從網址擷取商品 ID ─────────────────────────────────────────────────────────
+function extractProductId(url) {
+  const m = url.match(/\/([a-z]{2}\d+)/i);
+  return m ? m[1] : null;
 }
 
 // ── 爬取 GRL 商品資訊 ─────────────────────────────────────────────────────────
@@ -131,41 +149,245 @@ async function scrapeGRL(url) {
   if (!priceMatch) throw new Error('無法解析價格');
   const jpy = parseInt(priceMatch[1].replace(/,/g, ''), 10);
 
-  // 庫存列表：找含 /在庫 /残り /予約販売 的 <li>
+  // 庫存列表：精確取得只含庫存資訊的 <li> 純文字
+  // 只取 li 的直接文字節點，避免抓到子元素（按鈕等）的文字
   const stockItems = [];
   $('li').each((_, el) => {
-    const text = $(el).text().trim();
-    if (/\/(在庫|残りわずか|予約販売)/.test(text)) {
-      stockItems.push(text);
+    // 移除子元素，只保留直接文字
+    const directText = $(el)
+      .clone()
+      .children()
+      .remove()
+      .end()
+      .text()
+      .trim();
+
+    // 符合 色/尺寸/庫存 格式的行
+    if (/^[^\n]+\/[^\n]+\/(在庫あり|在庫なし|残りわずか|予約販売)/.test(directText)) {
+      // 只取第一行（防止 whitespace 造成多行）
+      const firstLine = directText.split('\n')[0].trim();
+      if (firstLine) stockItems.push(firstLine);
     }
   });
 
   return { productName, jpy, stockItems };
 }
 
-// ── 組合回覆訊息 ──────────────────────────────────────────────────────────────
-async function buildReplyText(url) {
-  const [{ productName, jpy, stockItems }, rate] = await Promise.all([
-    scrapeGRL(url),
-    fetchRate(),
-  ]);
+// ── 新增商品到 Google Sheet（管理員功能）─────────────────────────────────────
+async function appendProductToSheet(productId, productName, jpy, stockItems) {
+  const sheets = getSheetsClient();
+  const stockSummary = stockItems.map(translateStockItem).join(' | ');
 
-  const suggested = calcSuggestedPrice(rate, jpy);
+  // 讀取現有資料以確認最後一列
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: SHEET_ID,
+    range: 'A:A',
+  });
+  const nextRow = ((res.data.values || []).length) + 1;
 
-  const stockLines =
-    stockItems.length > 0
-      ? stockItems.map(translateStockItem).join('\n')
-      : '  （無庫存資訊）';
+  // 組成完整 A~P 的列（空欄以空字串填充）
+  const row = new Array(16).fill('');
+  row[0] = productId;    // A
+  row[12] = productName; // M
+  row[14] = jpy;         // O
+  row[15] = stockSummary; // P
 
-  return (
-    `🌸 GRL 商品報價\n\n` +
-    `${productName}\n` +
-    `💴 日幣：¥${fmtJPY(jpy)}\n` +
-    `💵 建議售價：NT$${suggested}\n\n` +
-    `📦 庫存：\n${stockLines}\n\n` +
-    `⚠️ 以上報價以 1 磅計算\n` +
-    `實際重量若超過 1 磅，運費將增加，售價會有所調整。`
-  );
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: SHEET_ID,
+    range: `A${nextRow}:P${nextRow}`,
+    valueInputOption: 'USER_ENTERED',
+    resource: { values: [row] },
+  });
+}
+
+// ── 記錄查詢到「查詢紀錄」分頁 ──────────────────────────────────────────────
+async function logQueryToSheet(userId, productId, productName, jpy) {
+  const sheets = getSheetsClient();
+  const date = new Date().toISOString().slice(0, 10);
+
+  // 嘗試寫入；若分頁不存在則先建立
+  async function doAppend() {
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: SHEET_ID,
+      range: '查詢紀錄!A:E',
+      valueInputOption: 'USER_ENTERED',
+      resource: { values: [[date, userId, productId, productName, jpy]] },
+    });
+  }
+
+  try {
+    await doAppend();
+  } catch (err) {
+    if (err.message && err.message.includes('Unable to parse range')) {
+      // 分頁不存在，先建立並加標題
+      await sheets.spreadsheets.batchUpdate({
+        spreadsheetId: SHEET_ID,
+        resource: {
+          requests: [{ addSheet: { properties: { title: '查詢紀錄' } } }],
+        },
+      });
+      await sheets.spreadsheets.values.append({
+        spreadsheetId: SHEET_ID,
+        range: '查詢紀錄!A:E',
+        valueInputOption: 'USER_ENTERED',
+        resource: {
+          values: [
+            ['日期', '用戶 ID', '商品 ID', '商品名稱', '日幣價格'],
+            [date, userId, productId, productName, jpy],
+          ],
+        },
+      });
+    } else {
+      throw err;
+    }
+  }
+}
+
+// ── 建立 Flex Message ─────────────────────────────────────────────────────────
+function buildFlexMessage(url, productName, jpy, suggested, stockItems) {
+  const productId = extractProductId(url) || '';
+
+  const stockContents = stockItems.length > 0
+    ? stockItems.map((raw) => ({
+        type: 'text',
+        text: translateStockItem(raw),
+        size: 'sm',
+        color: '#555555',
+        wrap: true,
+      }))
+    : [{
+        type: 'text',
+        text: '（無庫存資訊）',
+        size: 'sm',
+        color: '#aaaaaa',
+      }];
+
+  return {
+    type: 'flex',
+    altText: `GRL 商品報價｜${productName}`,
+    contents: {
+      type: 'bubble',
+      size: 'kilo',
+      header: {
+        type: 'box',
+        layout: 'vertical',
+        backgroundColor: '#FF6B9D',
+        paddingAll: '14px',
+        contents: [
+          {
+            type: 'text',
+            text: '🌸 GRL 商品報價',
+            color: '#ffffff',
+            size: 'md',
+            weight: 'bold',
+          },
+        ],
+      },
+      body: {
+        type: 'box',
+        layout: 'vertical',
+        spacing: 'md',
+        paddingAll: '14px',
+        contents: [
+          {
+            type: 'text',
+            text: productName,
+            weight: 'bold',
+            size: 'md',
+            wrap: true,
+            color: '#222222',
+          },
+          {
+            type: 'separator',
+          },
+          {
+            type: 'box',
+            layout: 'horizontal',
+            contents: [
+              {
+                type: 'text',
+                text: '💴 日幣',
+                size: 'sm',
+                color: '#888888',
+                flex: 2,
+              },
+              {
+                type: 'text',
+                text: `¥${fmtJPY(jpy)}`,
+                size: 'sm',
+                color: '#222222',
+                flex: 3,
+                align: 'end',
+              },
+            ],
+          },
+          {
+            type: 'box',
+            layout: 'horizontal',
+            contents: [
+              {
+                type: 'text',
+                text: '💵 建議售價',
+                size: 'sm',
+                color: '#888888',
+                flex: 2,
+              },
+              {
+                type: 'text',
+                text: `NT$${suggested}`,
+                size: 'sm',
+                weight: 'bold',
+                color: '#E53935',
+                flex: 3,
+                align: 'end',
+              },
+            ],
+          },
+          {
+            type: 'separator',
+          },
+          {
+            type: 'text',
+            text: '📦 庫存',
+            size: 'sm',
+            weight: 'bold',
+            color: '#444444',
+          },
+          {
+            type: 'box',
+            layout: 'vertical',
+            spacing: 'xs',
+            contents: stockContents,
+          },
+          {
+            type: 'text',
+            text: '⚠️ 以上報價以 1 磅計算',
+            size: 'xs',
+            color: '#aaaaaa',
+            wrap: true,
+          },
+        ],
+      },
+      footer: {
+        type: 'box',
+        layout: 'vertical',
+        paddingAll: '10px',
+        contents: [
+          {
+            type: 'button',
+            style: 'primary',
+            color: '#FF6B9D',
+            height: 'sm',
+            action: {
+              type: 'uri',
+              label: '查看商品頁面',
+              uri: url,
+            },
+          },
+        ],
+      },
+    },
+  };
 }
 
 // ── 處理單一 LINE 事件 ────────────────────────────────────────────────────────
@@ -174,36 +396,68 @@ async function handleEvent(event, client) {
 
   console.log('userId:', event.source.userId);
 
+  const userId = event.source.userId;
   const userText = event.message.text.trim();
   const replyToken = event.replyToken;
 
   // 判斷是否為 GRL 網址
   const isGRL = /https?:\/\/(www\.)?grail\.bz\//i.test(userText);
 
-  let replyText;
-
   if (!isGRL) {
-    replyText = '請傳入 GRL 商品網址';
-  } else {
-    try {
-      replyText = await buildReplyText(userText);
-    } catch (err) {
-      console.error('[scrape error]', err.message);
-      replyText = '無法取得商品資訊，請確認網址是否正確';
-    }
+    await client.replyMessage(replyToken, {
+      type: 'text',
+      text: '請傳入 GRL 商品網址',
+    });
+    return;
   }
 
-  await client.replyMessage(replyToken, {
-    type: 'text',
-    text: replyText,
-  });
+  let productData;
+  let rate;
+  try {
+    [productData, rate] = await Promise.all([scrapeGRL(userText), fetchRate()]);
+  } catch (err) {
+    console.error('[scrape error]', err.message);
+    await client.replyMessage(replyToken, {
+      type: 'text',
+      text: '無法取得商品資訊，請確認網址是否正確',
+    });
+    return;
+  }
+
+  const { productName, jpy, stockItems } = productData;
+  const suggested = calcSuggestedPrice(rate, jpy);
+  const productId = extractProductId(userText) || '';
+
+  // 回覆 Flex Message
+  const flexMsg = buildFlexMessage(userText, productName, jpy, suggested, stockItems);
+  await client.replyMessage(replyToken, flexMsg);
+
+  // 背景作業：不影響回覆速度
+  const bgTasks = [];
+
+  // 管理員：新增商品到追蹤表
+  if (userId === ADMIN_USER_ID) {
+    bgTasks.push(
+      appendProductToSheet(productId, productName, jpy, stockItems).catch((e) =>
+        console.error('[sheets append error]', e.message)
+      )
+    );
+  }
+
+  // 所有用戶：記錄查詢紀錄
+  bgTasks.push(
+    logQueryToSheet(userId, productId, productName, jpy).catch((e) =>
+      console.error('[sheets log error]', e.message)
+    )
+  );
+
+  await Promise.all(bgTasks);
 }
 
 // ── Webhook 路由 ──────────────────────────────────────────────────────────────
 app.post('/webhook', express.raw({ type: '*/*' }), async (req, res) => {
   const signature = req.headers['x-line-signature'];
 
-  // 驗證簽名
   if (
     !signature ||
     !line.validateSignature(
