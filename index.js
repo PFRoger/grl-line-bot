@@ -114,7 +114,7 @@ function parseStockFromHtml(html) {
     const liText = liMatch[1].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
 
     const hasStock   = liText.includes('在庫あり');
-    const hasNone    = liText.includes('在庫なし');
+    const hasNone    = liText.includes('在庫なし') || liText.includes('在庫無し');
     const hasLimited = liText.includes('残りわずか') ||
                        (liText.includes('残り') && !liText.includes('残りわずか'));
     const hasReserve = liText.includes('予約販売');
@@ -140,20 +140,31 @@ function parseStockFromHtml(html) {
       : '';
 
     // 抓出 SIZE/STATUS 對
+    // 支援：S/M/L/XL/FREE 等字母尺寸，以及 22.5cm / 23.0cm 等數字尺寸
+    // 支援：在庫なし / 在庫無し（含後接 予約販売《...》 的複合狀態）
     const sizeStockRegex =
-      /([A-Z0-9XL]+)\/(在庫あり|在庫なし|残りわずか|残り\d*|予約販売(?:《([^》]*)》)?)/g;
+      /([\d.]+cm|[A-Z][A-Z0-9]*)\/(在庫あり|在庫なし|在庫無し(?:\s*予約販売(?:《([^》]*)》)?)?|残りわずか|残り\d*|予約販売(?:《([^》]*)》)?)/g;
     let sizeMatch;
     const sizeResults = [];
 
     while ((sizeMatch = sizeStockRegex.exec(liText)) !== null) {
-      const size = sizeMatch[1];
-      const st   = sizeMatch[2];
-      const arrivalRaw = sizeMatch[3] || '';
+      const size       = sizeMatch[1];
+      const st         = sizeMatch[2];
+      const arrivalRaw = sizeMatch[3] || sizeMatch[4] || '';
       let status;
-      if (st === '在庫あり')            status = '✅ 有庫存';
-      else if (st.includes('残り'))     status = '⚠️ 剩餘少量';
-      else if (st.includes('予約販売')) status = '📅 預約販售' + (arrivalRaw ? `（${translateArrival(arrivalRaw)}）` : '');
-      else                              status = '❌ 缺貨';
+      if (st === '在庫あり') {
+        status = '✅ 有庫存';
+      } else if (st.startsWith('在庫無し') && st.includes('予約販売')) {
+        status = '📅 預約販售' + (arrivalRaw ? `（${translateArrival(arrivalRaw)}）` : '');
+      } else if (st === '在庫なし' || st === '在庫無し') {
+        status = '❌ 缺貨';
+      } else if (st.includes('残り')) {
+        status = '⚠️ 剩餘少量';
+      } else if (st.includes('予約販売')) {
+        status = '📅 預約販售' + (arrivalRaw ? `（${translateArrival(arrivalRaw)}）` : '');
+      } else {
+        status = '❌ 缺貨';
+      }
       sizeResults.push(`${displayColor} ${size}: ${status}`);
     }
 
@@ -291,7 +302,7 @@ function estimateWeight(productName) {
   const maxKg   = parseFloat((maxG / 1000).toFixed(2));
 
   const confidenceLabel = confidence === 'high' ? '高' : confidence === 'medium' ? '中' : '低';
-  const detail = `品類：${label}｜${packagingNote}｜估算範圍：${minG}~${maxG}g（${minLbs}~${maxLbs} lbs）｜信心：${confidenceLabel}`;
+  const detail = `品類：${label}｜${packagingNote}｜估算範圍：${minG}~${maxG}g（${minLbs}~${maxLbs} lbs）`;
 
   return { category, label, midG, midKg, midLbs, minG, maxG, minLbs, maxLbs, minKg, maxKg, confidence, confidenceLabel, detail };
 }
