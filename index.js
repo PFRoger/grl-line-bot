@@ -618,9 +618,9 @@ async function handleEvent(event, client) {
   }
 
   const { productName, jpy, stockLines, imageUrl } = productData;
+  const weightInfo  = estimateWeight(productName);
   const suggested   = calcSuggestedPrice(rate, jpy, weightInfo ? weightInfo.midLbs : 1);
   const qStatus     = calcQStatus(stockLines);
-  const weightInfo  = estimateWeight(productName);
 
   let displayName = userId;
   try {
