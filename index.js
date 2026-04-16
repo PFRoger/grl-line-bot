@@ -55,8 +55,8 @@ function translateArrival(text) {
 // PROFIT = 每單固定利潤（NT$），如需改為從 Google Sheet 讀取可後續調整
 const PROFIT = 120;
 
-function calcSuggestedPrice(rate, jpy) {
-  const cost = rate * jpy * 1.075 + (150 * 1 + 20 + 10);
+function calcSuggestedPrice(rate, jpy, lbs = 1) {
+  const cost = rate * jpy * 1.075 + (150 * Math.ceil(lbs) + 20 + 10);
   const base = Math.round(cost + PROFIT);
   const last = base % 10;
   if (last <= 4) return base - last + 5;
@@ -509,7 +509,7 @@ function buildFlexMessage(url, productName, jpy, suggested, stockLines, imageUrl
             layout: 'horizontal',
             contents: [
               { type: 'text', text: '磅 (lbs)', size: 'sm', color: '#888888', flex: 3 },
-              { type: 'text', text: `${weightInfo.minLbs} ~ ${weightInfo.maxLbs} lbs`, size: 'sm', color: '#222222', flex: 4, align: 'end' },
+              { type: 'text', text: `${weightInfo.midLbs} lbs`, size: 'sm', color: '#222222', flex: 4, align: 'end' },
             ],
           },
           {
@@ -517,7 +517,7 @@ function buildFlexMessage(url, productName, jpy, suggested, stockLines, imageUrl
             layout: 'horizontal',
             contents: [
               { type: 'text', text: '公斤 (kg)', size: 'sm', color: '#888888', flex: 3 },
-              { type: 'text', text: `${weightInfo.minKg} ~ ${weightInfo.maxKg} kg`, size: 'sm', color: '#222222', flex: 4, align: 'end' },
+              { type: 'text', text: `${weightInfo.midKg} kg`, size: 'sm', color: '#222222', flex: 4, align: 'end' },
             ],
           },
           {
@@ -618,7 +618,7 @@ async function handleEvent(event, client) {
   }
 
   const { productName, jpy, stockLines, imageUrl } = productData;
-  const suggested   = calcSuggestedPrice(rate, jpy);
+  const suggested   = calcSuggestedPrice(rate, jpy, weightInfo ? weightInfo.midLbs : 1);
   const qStatus     = calcQStatus(stockLines);
   const weightInfo  = estimateWeight(productName);
 
