@@ -691,13 +691,9 @@ app.get('/', (_req, res) => {
 });
 
 // ── 一次性：在工作表1 插入新 J 欄「估算磅數（估算值）」──────────────────────
-// 呼叫方式：GET /admin/insert-weight-column?key=<ADMIN_KEY>
+// 呼叫方式：GET /admin/insert-weight-column
 // 只需執行一次，之後新增列就會自動填入 J 欄
 app.get('/admin/insert-weight-column', async (req, res) => {
-  if (req.query.key !== process.env.ADMIN_KEY) {
-    return res.status(403).json({ error: 'Forbidden' });
-  }
-
   try {
     const sheets = getSheetsClient();
 
