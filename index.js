@@ -201,6 +201,101 @@ function calcQStatus(stockLines) {
   return ''; // 正常有庫存，留空
 }
 
+// ── 商品重量估算 ──────────────────────────────────────────────────────────────
+// 依商品名稱關鍵字判斷品類，回傳估算重量範圍與信心程度
+function estimateWeight(productName) {
+  const name = productName;
+
+  let category, label, minG, maxG, confidence, packagingNote;
+
+  if (/サンダル|スニーカー|ブーツ|パンプス|シューズ|ミュール|ローファー|スリッポン|ウェッジ|フラット|ヒール/.test(name)) {
+    category = 'shoes';
+    label = '鞋類';
+    minG = 500; maxG = 820;
+    packagingNote = '含鞋盒紙箱（約200~280g）';
+    confidence = 'medium';
+  } else if (/バッグ|トートバッグ|ショルダー|ハンドバッグ|リュック|クラッチ|ポーチ/.test(name)) {
+    category = 'bag';
+    label = '包包';
+    minG = 250; maxG = 620;
+    packagingNote = '含塑膠包裝袋（約20g）';
+    confidence = 'medium';
+  } else if (/ピアス|ネックレス|リング|ブレスレット|ヘアアクセ|ヘアクリップ|バレッタ|アクセサリー/.test(name)) {
+    category = 'accessory';
+    label = '配件';
+    minG = 60; maxG = 180;
+    packagingNote = '含小紙盒或塑膠袋（約20~50g）';
+    confidence = 'low';
+  } else if (/コート|アウター|ダウン|ブルゾン|ムートン/.test(name)) {
+    category = 'outerwear';
+    label = '外套';
+    minG = 450; maxG = 950;
+    packagingNote = '含塑膠包裝袋（約20g）';
+    confidence = 'medium';
+  } else if (/ジャケット|カーディガン|ボレロ/.test(name)) {
+    category = 'jacket';
+    label = '外罩衫';
+    minG = 280; maxG = 580;
+    packagingNote = '含塑膠包裝袋（約20g）';
+    confidence = 'high';
+  } else if (/ワンピース|ドレス/.test(name)) {
+    category = 'dress';
+    label = '洋裝';
+    minG = 200; maxG = 480;
+    packagingNote = '含塑膠包裝袋（約20g）';
+    confidence = 'high';
+  } else if (/スカート/.test(name)) {
+    category = 'skirt';
+    label = '裙子';
+    minG = 170; maxG = 400;
+    packagingNote = '含塑膠包裝袋（約20g）';
+    confidence = 'high';
+  } else if (/デニム|ジーンズ/.test(name)) {
+    category = 'denim';
+    label = '牛仔褲';
+    minG = 500; maxG = 850;
+    packagingNote = '含塑膠包裝袋（約20g）';
+    confidence = 'high';
+  } else if (/パンツ|スラックス|ショートパンツ|レギンス/.test(name)) {
+    category = 'pants';
+    label = '褲子';
+    minG = 220; maxG = 520;
+    packagingNote = '含塑膠包裝袋（約20g）';
+    confidence = 'high';
+  } else if (/ニット|セーター/.test(name)) {
+    category = 'knit';
+    label = '針織上衣';
+    minG = 180; maxG = 400;
+    packagingNote = '含塑膠包裝袋（約20g）';
+    confidence = 'high';
+  } else if (/トップス|シャツ|ブラウス|カットソー|Tシャツ|タンク|ノースリーブ/.test(name)) {
+    category = 'top';
+    label = '上衣';
+    minG = 120; maxG = 300;
+    packagingNote = '含塑膠包裝袋（約20g）';
+    confidence = 'high';
+  } else {
+    category = 'clothing';
+    label = '服飾';
+    minG = 150; maxG = 450;
+    packagingNote = '含塑膠包裝袋（約20g）';
+    confidence = 'medium';
+  }
+
+  const midG    = Math.round((minG + maxG) / 2);
+  const midKg   = parseFloat((midG / 1000).toFixed(2));
+  const midLbs  = parseFloat((midKg * 2.20462).toFixed(2));
+  const minLbs  = parseFloat((minG / 1000 * 2.20462).toFixed(2));
+  const maxLbs  = parseFloat((maxG / 1000 * 2.20462).toFixed(2));
+  const minKg   = parseFloat((minG / 1000).toFixed(2));
+  const maxKg   = parseFloat((maxG / 1000).toFixed(2));
+
+  const confidenceLabel = confidence === 'high' ? '高' : confidence === 'medium' ? '中' : '低';
+  const detail = `品類：${label}｜${packagingNote}｜估算範圍：${minG}~${maxG}g（${minLbs}~${maxLbs} lbs）｜信心：${confidenceLabel}`;
+
+  return { category, label, midG, midKg, midLbs, minG, maxG, minLbs, maxLbs, minKg, maxKg, confidence, confidenceLabel, detail };
+}
+
 // ── 爬取 GRL 商品資訊 ─────────────────────────────────────────────────────────
 async function scrapeGRL(url) {
   const { data: html } = await axios.get(url, {
@@ -239,7 +334,12 @@ async function scrapeGRL(url) {
 }
 
 // ── 新增商品到 Google Sheet（管理員功能）─────────────────────────────────────
-async function appendProductToSheet(productId, productName, jpy, stockLines, qStatus) {
+// 欄位配置（插入新 J 欄後，共 A~R = 18 欄）：
+//   A: 商品ID  D:=P  E:成本  F:利潤  G:建議售價  H:售價  I:預估獲利
+//   J:估算磅數(估算值)  K:磅數raw(手填)  L:=CEILING(K,1)
+//   N:商品名稱  O:確認日期  P:日幣  Q:庫存狀態  R:備註
+//   V$3: 匯率（原 U$3，因新增 J 欄後 U→V）
+async function appendProductToSheet(productId, productName, jpy, stockLines, qStatus, weightInfo) {
   const sheets = getSheetsClient();
   const stockSummary = stockLines.join(' | ');
   const today = new Date().toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' });
@@ -250,39 +350,52 @@ async function appendProductToSheet(productId, productName, jpy, stockLines, qSt
   });
   const r = ((res.data.values || []).length) + 1;
 
-  // A~Q = 17 欄（index 0~16）
-  const row = new Array(17).fill('');
+  // A~R = 18 欄（index 0~17）
+  const row = new Array(18).fill('');
   row[0]  = productId;                                           // A: 商品 ID
-  row[3]  = `=O${r}`;                                           // D: 日幣（同 O）
-  row[4]  = `=((U$3*O${r})*(1+0.06+0.015))+(150*K${r}+20+10)`; // E: 成本價
+  row[3]  = `=P${r}`;                                           // D: 日幣（同 P）
+  row[4]  = `=((V$3*P${r})*(1+0.06+0.015))+(150*L${r}+20+10)`; // E: 成本價（匯率 V$3，磅數 L）
   row[6]  = `=IF(MOD(ROUND(E${r},0),10)<=4,INT(ROUND(E${r},0)/10)*10+5,IF(MOD(ROUND(E${r},0),10)>=6,INT(ROUND(E${r},0)/10)*10+9,ROUND(E${r},0)))+F${r}`; // G: 建議售價
   row[8]  = `=H${r}-E${r}`;                                     // I: 預估獲利
-  row[10] = `=CEILING(J${r},1)`;                                // K: 磅數
-  row[12] = productName;                                         // M: 商品名稱
-  row[13] = today;                                               // N: 確認日期
-  row[14] = jpy;                                                 // O: 日幣
-  row[15] = stockSummary;                                        // P: 庫存狀態
-  row[16] = qStatus;                                             // Q: 備註
+  row[9]  = weightInfo ? weightInfo.midLbs : '';                 // J: 估算磅數（估算值）← 新增
+  // row[10] = K: 磅數 raw（留空，手動填入）
+  row[11] = `=CEILING(K${r},1)`;                                // L: 磅數（CEILING）
+  // row[12] = M: 空欄
+  row[13] = productName;                                         // N: 商品名稱
+  row[14] = today;                                               // O: 確認日期
+  row[15] = jpy;                                                 // P: 日幣
+  row[16] = stockSummary;                                        // Q: 庫存狀態
+  row[17] = qStatus;                                             // R: 備註
 
   await sheets.spreadsheets.values.update({
     spreadsheetId: SHEET_ID,
-    range: `A${r}:Q${r}`,
+    range: `A${r}:R${r}`,
     valueInputOption: 'USER_ENTERED',
     resource: { values: [row] },
   });
 }
 
 // ── 記錄查詢到「查詢紀錄」分頁 ──────────────────────────────────────────────
-async function logQueryToSheet(userId, displayName, productId, productName, jpy) {
+// 欄位：A日期 B顯示名稱 C UserID D商品ID E商品名稱 F日幣
+//       G估算磅數(lbs) H估算公斤(kg) I信心程度 J說明
+async function logQueryToSheet(userId, displayName, productId, productName, jpy, weightInfo) {
   const sheets = getSheetsClient();
   const date = new Date().toISOString().slice(0, 10);
+
+  const dataRow = [
+    date, displayName, userId, productId, productName, jpy,
+    weightInfo ? weightInfo.midLbs : '',
+    weightInfo ? weightInfo.midKg  : '',
+    weightInfo ? weightInfo.confidenceLabel : '',
+    weightInfo ? weightInfo.detail : '',
+  ];
 
   async function doAppend() {
     await sheets.spreadsheets.values.append({
       spreadsheetId: SHEET_ID,
-      range: '查詢紀錄!A:F',
+      range: '查詢紀錄!A:J',
       valueInputOption: 'USER_ENTERED',
-      resource: { values: [[date, displayName, userId, productId, productName, jpy]] },
+      resource: { values: [dataRow] },
     });
   }
 
@@ -298,12 +411,13 @@ async function logQueryToSheet(userId, displayName, productId, productName, jpy)
       });
       await sheets.spreadsheets.values.append({
         spreadsheetId: SHEET_ID,
-        range: '查詢紀錄!A:F',
+        range: '查詢紀錄!A:J',
         valueInputOption: 'USER_ENTERED',
         resource: {
           values: [
-            ['日期', 'LINE 顯示名稱', 'LINE User ID', '商品 ID', '商品名稱', '日幣價格'],
-            [date, displayName, userId, productId, productName, jpy],
+            ['日期', 'LINE 顯示名稱', 'LINE User ID', '商品 ID', '商品名稱', '日幣價格',
+             '估算磅數(lbs)', '估算公斤(kg)', '信心程度', '說明'],
+            dataRow,
           ],
         },
       });
@@ -314,7 +428,7 @@ async function logQueryToSheet(userId, displayName, productId, productName, jpy)
 }
 
 // ── 建立 Flex Message ─────────────────────────────────────────────────────────
-function buildFlexMessage(url, productName, jpy, suggested, stockLines, imageUrl) {
+function buildFlexMessage(url, productName, jpy, suggested, stockLines, imageUrl, weightInfo) {
   const stockContents = stockLines.length > 0
     ? stockLines.map((line) => ({
         type: 'text',
@@ -387,6 +501,45 @@ function buildFlexMessage(url, productName, jpy, suggested, stockLines, imageUrl
           spacing: 'xs',
           contents: stockContents,
         },
+        ...(weightInfo ? [
+          { type: 'separator' },
+          { type: 'text', text: '⚖️ 估算重量', size: 'sm', weight: 'bold', color: '#444444' },
+          {
+            type: 'box',
+            layout: 'horizontal',
+            contents: [
+              { type: 'text', text: '磅 (lbs)', size: 'sm', color: '#888888', flex: 3 },
+              { type: 'text', text: `${weightInfo.minLbs} ~ ${weightInfo.maxLbs} lbs`, size: 'sm', color: '#222222', flex: 4, align: 'end' },
+            ],
+          },
+          {
+            type: 'box',
+            layout: 'horizontal',
+            contents: [
+              { type: 'text', text: '公斤 (kg)', size: 'sm', color: '#888888', flex: 3 },
+              { type: 'text', text: `${weightInfo.minKg} ~ ${weightInfo.maxKg} kg`, size: 'sm', color: '#222222', flex: 4, align: 'end' },
+            ],
+          },
+          {
+            type: 'box',
+            layout: 'horizontal',
+            contents: [
+              { type: 'text', text: '信心程度', size: 'sm', color: '#888888', flex: 3 },
+              {
+                type: 'text',
+                text: weightInfo.confidenceLabel === '高' ? '🟢 高' : weightInfo.confidenceLabel === '中' ? '🟡 中' : '🔴 低',
+                size: 'sm', color: '#222222', flex: 4, align: 'end',
+              },
+            ],
+          },
+          {
+            type: 'text',
+            text: weightInfo.detail,
+            size: 'xxs',
+            color: '#aaaaaa',
+            wrap: true,
+          },
+        ] : []),
       ],
     },
     footer: {
@@ -465,8 +618,9 @@ async function handleEvent(event, client) {
   }
 
   const { productName, jpy, stockLines, imageUrl } = productData;
-  const suggested = calcSuggestedPrice(rate, jpy);
-  const qStatus   = calcQStatus(stockLines);
+  const suggested   = calcSuggestedPrice(rate, jpy);
+  const qStatus     = calcQStatus(stockLines);
+  const weightInfo  = estimateWeight(productName);
 
   let displayName = userId;
   try {
@@ -476,21 +630,21 @@ async function handleEvent(event, client) {
     console.warn('[getProfile error]', e.message);
   }
 
-  const flexMsg = buildFlexMessage(userText, productName, jpy, suggested, stockLines, imageUrl);
+  const flexMsg = buildFlexMessage(userText, productName, jpy, suggested, stockLines, imageUrl, weightInfo);
   await client.replyMessage(replyToken, flexMsg);
 
   const bgTasks = [];
 
   if (userId === ADMIN_USER_ID) {
     bgTasks.push(
-      appendProductToSheet(productId, productName, jpy, stockLines, qStatus).catch((e) =>
+      appendProductToSheet(productId, productName, jpy, stockLines, qStatus, weightInfo).catch((e) =>
         console.error('[sheets append error]', e.message)
       )
     );
   }
 
   bgTasks.push(
-    logQueryToSheet(userId, displayName, productId, productName, jpy).catch((e) =>
+    logQueryToSheet(userId, displayName, productId, productName, jpy, weightInfo).catch((e) =>
       console.error('[sheets log error]', e.message)
     )
   );
@@ -534,6 +688,58 @@ app.post('/webhook', express.raw({ type: '*/*' }), async (req, res) => {
 // ── 健康檢查 ──────────────────────────────────────────────────────────────────
 app.get('/', (_req, res) => {
   res.json({ status: 'GRL LINE Bot is running' });
+});
+
+// ── 一次性：在工作表1 插入新 J 欄「估算磅數（估算值）」──────────────────────
+// 呼叫方式：GET /admin/insert-weight-column?key=<ADMIN_KEY>
+// 只需執行一次，之後新增列就會自動填入 J 欄
+app.get('/admin/insert-weight-column', async (req, res) => {
+  if (req.query.key !== process.env.ADMIN_KEY) {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+
+  try {
+    const sheets = getSheetsClient();
+
+    // 取得工作表1 的 sheetId
+    const meta = await sheets.spreadsheets.get({ spreadsheetId: SHEET_ID });
+    const sheet = meta.data.sheets.find((s) => s.properties.title === '工作表1');
+    if (!sheet) return res.status(404).json({ error: '找不到工作表1' });
+    const sheetId = sheet.properties.sheetId;
+
+    // 在第 9 欄（0-based = index 9 = J欄）插入 1 欄
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId: SHEET_ID,
+      resource: {
+        requests: [
+          {
+            insertDimension: {
+              range: {
+                sheetId,
+                dimension: 'COLUMNS',
+                startIndex: 9,  // J 欄（0-based）
+                endIndex: 10,
+              },
+              inheritFromBefore: false,
+            },
+          },
+        ],
+      },
+    });
+
+    // 在新 J1 寫入欄位標題
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: SHEET_ID,
+      range: '工作表1!J1',
+      valueInputOption: 'RAW',
+      resource: { values: [['估算磅數（估算值）']] },
+    });
+
+    res.json({ status: 'ok', message: '已在 J 欄插入「估算磅數（估算值）」，舊有公式已自動更新' });
+  } catch (err) {
+    console.error('[insert-column error]', err.message);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // ── 本地開發啟動 ──────────────────────────────────────────────────────────────
