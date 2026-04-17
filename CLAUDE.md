@@ -138,6 +138,20 @@ https://www.emacloz.com/fetch_area_data_from_django?cityName=台北市&areaName=
 
 ---
 
+## GRL 圖片結構（已確認）
+
+GRL 使用 `alt` 屬性關聯顏色與圖片：
+```html
+<img alt="ブラック" src="https://cdn.grail.bz/images/goods/t/ru1197/ru1197_col_11.jpg">
+<img alt="ブルー"   src="https://cdn.grail.bz/images/goods/t/ru1197/ru1197_col_15.jpg">
+```
+- **縮圖路徑**：`/images/goods/t/`
+- **全尺寸路徑**：`/images/goods/d/`（把 `/t/` 換成 `/d/` 即可）
+- `scrapeGRL()` 用 `$('img[alt]')` 搜尋，匹配 `COLOR_KEYS`，自動升級為全尺寸 URL
+- `colorImages` map 回傳給 `buildAddToCartFlex()`，每張顏色卡片用各自的圖
+
+---
+
 ## 已知問題與決策記錄
 
 - **`vercel login` 在此機器失效**：Windows 使用者名稱「太豐」含中文，造成 HTTP header 錯誤。改用 Token 或 GitHub 自動部署。
