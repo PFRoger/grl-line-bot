@@ -879,8 +879,22 @@ input:focus,select:focus,textarea:focus{border-color:#c9a98a}
     <input id="f-name" type="text" placeholder="請輸入真實姓名">
     <label>手機號碼 *</label>
     <input id="f-phone" type="tel" placeholder="09xxxxxxxx">
+    <label>收件縣市 *</label>
+    <select id="f-city" onchange="updateStoreLink()">
+      <option value="">請選擇縣市</option>
+      <option>基隆市</option><option>台北市</option><option>新北市</option><option>桃園市</option>
+      <option>新竹市</option><option>新竹縣</option><option>苗栗縣</option><option>台中市</option>
+      <option>南投縣</option><option>彰化縣</option><option>雲林縣</option><option>嘉義市</option>
+      <option>嘉義縣</option><option>台南市</option><option>高雄市</option><option>屏東縣</option>
+      <option>宜蘭縣</option><option>花蓮縣</option><option>台東縣</option><option>澎湖縣</option>
+      <option>金門縣</option><option>連江縣</option>
+    </select>
     <label>收件 7-11 門市名稱 *</label>
-    <input id="f-store" type="text" placeholder="例：台北忠孝門市">
+    <div style="display:flex;gap:8px;align-items:center">
+      <input id="f-store" type="text" placeholder="例：台北忠孝門市" style="flex:1">
+      <a id="store-link" href="https://www.711.com.tw/emap/" target="_blank"
+         style="white-space:nowrap;background:#007b40;color:#fff;padding:10px 12px;border-radius:8px;font-size:13px;text-decoration:none">查詢門市</a>
+    </div>
     <label>匯款帳號末 5 碼（對帳用）*</label>
     <input id="f-bank" type="text" placeholder="例：12345" maxlength="5">
     <label>備註（選填）</label>
@@ -951,13 +965,24 @@ async function deleteItem(idx, rowIndex) {
   render();
 }
 
+function updateStoreLink() {
+  const city = document.getElementById('f-city').value;
+  const link = document.getElementById('store-link');
+  if (city) {
+    link.href = 'https://www.711.com.tw/emap/?city=' + encodeURIComponent(city);
+  } else {
+    link.href = 'https://www.711.com.tw/emap/';
+  }
+}
+
 async function submitOrder() {
   const name = document.getElementById('f-name').value.trim();
   const phone = document.getElementById('f-phone').value.trim();
+  const city = document.getElementById('f-city').value;
   const store = document.getElementById('f-store').value.trim();
   const bank = document.getElementById('f-bank').value.trim();
   const note = document.getElementById('f-note').value.trim();
-  if (!name || !phone || !store || !bank) { alert('請填寫所有必填欄位 (*)'); return; }
+  if (!name || !phone || !city || !store || !bank) { alert('請填寫所有必填欄位 (*)'); return; }
   if (!/^09\\d{8}$/.test(phone)) { alert('手機號碼格式不正確'); return; }
   if (bank.length !== 5) { alert('請輸入匯款帳號末 5 碼'); return; }
   const btn = document.getElementById('submit-btn');
@@ -965,7 +990,7 @@ async function submitOrder() {
   try {
     const resp = await fetch('/api/order', {
       method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ userId, cartItems, buyerInfo:{ name, phone, store711:store, bankLast5:bank, note } })
+      body: JSON.stringify({ userId, cartItems, buyerInfo:{ name, phone, store711: city + ' ' + store, bankLast5:bank, note } })
     });
     const data = await resp.json();
     if (data.orderId) {
