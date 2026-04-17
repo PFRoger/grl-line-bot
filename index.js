@@ -1073,22 +1073,9 @@ function buildAddToCartFlex(stockLines, productId, jpy, suggested, productUrl, i
       };
     });
 
-    // 圖片：固定使用 og:image（高清主圖），確保清晰
-    const cardImage = imageUrl;
-
     const bubble = {
       type: 'bubble',
       size: 'kilo',
-      // 商品圖片放在 hero 欄位
-      ...(cardImage ? {
-        hero: {
-          type: 'image',
-          url: cardImage,
-          size: 'full',
-          aspectRatio: '3:4',
-          aspectMode: 'cover',
-        },
-      } : {}),
       body: {
         type: 'box',
         layout: 'vertical',
