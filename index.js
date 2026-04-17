@@ -1054,14 +1054,13 @@ function buildAddToCartFlex(stockLines, productId, jpy, suggested, productUrl, i
     const group = colorGroups[colorJp];
     const colorLabel = group.colorZh ? `${group.colorZh}（${colorJp}）` : colorJp;
 
-    // 每個尺寸：一個 button，label 包含尺寸 + 庫存狀態，簡潔清楚
+    // 每個尺寸：一個 button，label 用純文字（尺寸 + 庫存說明），不用 emoji icon
     const sizeRows = group.sizes.map((item) => {
-      const icon = item.inStock ? '✅' : '⚠️';
-      // 去掉 statusDesc 開頭的 emoji，只取文字部分（避免重複）
+      // 去掉 statusDesc 開頭的 emoji，只取文字部分
       const descText = item.statusDesc
-        ? item.statusDesc.replace(/^[\u2705\u26A0\uFE0F\u274C\uD83D\uDCC5]+\s*/, '').trim()
+        ? item.statusDesc.replace(/^[\u2705\u26A0\uFE0F\u274C\uD83D\uDCC5\u231B]+\s*/, '').trim()
         : (item.inStock ? '有庫存' : '剩餘少量');
-      const btnLabel = `${icon} ${item.size} - ${descText}`.substring(0, 20);
+      const btnLabel = `${item.size} - ${descText}`.substring(0, 20);
       const displayText = `加入購物車：${item.colorZh || colorJp} ${item.size}`;
       const data = `action=add_to_cart&id=${productId}&c=${encodeURIComponent(colorJp)}&s=${encodeURIComponent(item.size)}&jpy=${jpy}&p=${suggested}`;
       return {
@@ -1074,8 +1073,11 @@ function buildAddToCartFlex(stockLines, productId, jpy, suggested, productUrl, i
       };
     });
 
-    // 此顏色的圖片：優先用顏色對應圖，沒有則回退到主圖
-    const cardImage = colorImages[colorJp] || imageUrl;
+    // 圖片：colorImages 通常是縮圖（模糊），主圖（og:image）是高清版
+    // 只有當 colorImages URL 看起來是完整圖片路徑（非 thumb/小圖）才用，否則用主圖
+    const colorImg = colorImages[colorJp] || '';
+    const isLargeImage = colorImg && !/thumb|small|_s\.|_xs\.|50x|100x|icon/i.test(colorImg);
+    const cardImage = isLargeImage ? colorImg : imageUrl;
 
     const bubble = {
       type: 'bubble',
