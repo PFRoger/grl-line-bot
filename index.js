@@ -967,7 +967,7 @@ async function deleteItem(idx, rowIndex) {
 function updateStoreLink() {}
 
 function openStoreMap() {
-  const url = 'https://www.711.com.tw/emap/';
+  const url = 'https://www.ibon.com.tw/retail_inquiry.aspx';
   if (typeof liff !== 'undefined' && liff.openWindow) {
     liff.openWindow({ url, external: true });
   } else {
