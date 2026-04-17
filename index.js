@@ -1054,38 +1054,23 @@ function buildAddToCartFlex(stockLines, productId, jpy, suggested, productUrl, i
     const group = colorGroups[colorJp];
     const colorLabel = group.colorZh ? `${group.colorZh}（${colorJp}）` : colorJp;
 
-    // 每個尺寸：一行顯示尺寸+庫存說明，下方一個全寬按鈕
+    // 每個尺寸：一個 button，label 包含尺寸 + 庫存狀態，簡潔清楚
     const sizeRows = group.sizes.map((item) => {
-      // statusDesc 已含 emoji（如「✅ 有庫存」），直接使用；沒有則產生預設值
-      const statusText = item.statusDesc || (item.inStock ? '✅ 有庫存' : '⚠️ 剩餘少量');
-      // 按鈕文字不含 emoji，避免截斷；label 上限 20 字
-      const btnLabel = '加入購物車';
+      const icon = item.inStock ? '✅' : '⚠️';
+      // 去掉 statusDesc 開頭的 emoji，只取文字部分（避免重複）
+      const descText = item.statusDesc
+        ? item.statusDesc.replace(/^[\u2705\u26A0\uFE0F\u274C\uD83D\uDCC5]+\s*/, '').trim()
+        : (item.inStock ? '有庫存' : '剩餘少量');
+      const btnLabel = `${icon} ${item.size} - ${descText}`.substring(0, 20);
       const displayText = `加入購物車：${item.colorZh || colorJp} ${item.size}`;
       const data = `action=add_to_cart&id=${productId}&c=${encodeURIComponent(colorJp)}&s=${encodeURIComponent(item.size)}&jpy=${jpy}&p=${suggested}`;
       return {
-        type: 'box',
-        layout: 'vertical',
-        margin: 'md',
-        contents: [
-          // 尺寸 + 庫存狀態（同一行）
-          {
-            type: 'box',
-            layout: 'horizontal',
-            contents: [
-              { type: 'text', text: item.size, weight: 'bold', size: 'sm', color: '#333333', flex: 1 },
-              { type: 'text', text: statusText, size: 'xs', color: item.inStock ? '#2e7d32' : '#e65100', align: 'end', flex: 2, wrap: false },
-            ],
-          },
-          // 加入購物車按鈕（全寬）
-          {
-            type: 'button',
-            height: 'sm',
-            style: 'primary',
-            color: item.inStock ? '#c8a882' : '#aaaaaa',
-            margin: 'xs',
-            action: { type: 'postback', label: btnLabel, data, displayText },
-          },
-        ],
+        type: 'button',
+        height: 'sm',
+        style: 'primary',
+        color: item.inStock ? '#c8a882' : '#aaaaaa',
+        margin: 'xs',
+        action: { type: 'postback', label: btnLabel, data, displayText },
       };
     });
 
@@ -1101,7 +1086,7 @@ function buildAddToCartFlex(stockLines, productId, jpy, suggested, productUrl, i
           type: 'image',
           url: cardImage,
           size: 'full',
-          aspectRatio: '4:3',
+          aspectRatio: '3:4',
           aspectMode: 'cover',
         },
       } : {}),
