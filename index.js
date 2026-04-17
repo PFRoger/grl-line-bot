@@ -1073,11 +1073,8 @@ function buildAddToCartFlex(stockLines, productId, jpy, suggested, productUrl, i
       };
     });
 
-    // 圖片：colorImages 通常是縮圖（模糊），主圖（og:image）是高清版
-    // 只有當 colorImages URL 看起來是完整圖片路徑（非 thumb/小圖）才用，否則用主圖
-    const colorImg = colorImages[colorJp] || '';
-    const isLargeImage = colorImg && !/thumb|small|_s\.|_xs\.|50x|100x|icon/i.test(colorImg);
-    const cardImage = isLargeImage ? colorImg : imageUrl;
+    // 圖片：固定使用 og:image（高清主圖），確保清晰
+    const cardImage = imageUrl;
 
     const bubble = {
       type: 'bubble',
