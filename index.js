@@ -338,13 +338,30 @@ async function scrapeGRL(url) {
   if (!priceMatch) throw new Error('無法解析價格');
   const jpy = parseInt(priceMatch[1].replace(/,/g, ''), 10);
 
-  // 商品圖片：從 og:image 取得
+  // 商品主圖：從 og:image 取得
   const imageUrl = $('meta[property="og:image"]').attr('content') || null;
 
   // 庫存：使用 GAS 相同的 raw HTML regex 解析法
   const stockLines = parseStockFromHtml(html);
 
-  return { productName, jpy, stockLines, imageUrl };
+  // 每個顏色的對應圖片：搜尋含有顏色關鍵字的 <li> 元素內的 img
+  // GRL 顏色選擇器通常是 <li> 含縮圖 + 顏色名
+  const colorImages = {};
+  $('li').each((_, el) => {
+    const liText = $(el).text().replace(/\s+/g, ' ').trim();
+    for (const colorJp of COLOR_KEYS) {
+      if (colorImages[colorJp]) continue; // 已找到則跳過
+      if (!liText.includes(colorJp)) continue;
+      const imgEl = $(el).find('img').first();
+      const src = imgEl.attr('data-src') || imgEl.attr('data-lazy') || imgEl.attr('src');
+      if (!src) continue;
+      // 過濾掉 icon / logo / banner 等非商品圖
+      if (/icon|logo|banner|sprite|loading/i.test(src)) continue;
+      colorImages[colorJp] = src.startsWith('http') ? src : `https://www.grail.bz${src}`;
+    }
+  });
+
+  return { productName, jpy, stockLines, imageUrl, colorImages };
 }
 
 // ── 新增商品到 Google Sheet（管理員功能）─────────────────────────────────────
@@ -1001,7 +1018,7 @@ init();
 }
 
 // ── 建立加入購物車按鈕 Flex（Carousel，每個顏色一張卡片）──────────────────────
-function buildAddToCartFlex(stockLines, productId, jpy, suggested, productUrl, imageUrl, productName) {
+function buildAddToCartFlex(stockLines, productId, jpy, suggested, productUrl, imageUrl, productName, colorImages = {}) {
   // 只顯示有庫存和剩餘少量的尺寸
   const available = stockLines.filter(l => l.includes('✅') || l.includes('⚠️'));
   if (available.length === 0) return null;
@@ -1037,48 +1054,52 @@ function buildAddToCartFlex(stockLines, productId, jpy, suggested, productUrl, i
     const group = colorGroups[colorJp];
     const colorLabel = group.colorZh ? `${group.colorZh}（${colorJp}）` : colorJp;
 
-    // 每個尺寸：一行顯示尺寸+庫存說明，一個加入購物車按鈕
+    // 每個尺寸：一行顯示尺寸+庫存說明，下方一個全寬按鈕
     const sizeRows = group.sizes.map((item) => {
       // statusDesc 已含 emoji（如「✅ 有庫存」），直接使用；沒有則產生預設值
       const statusText = item.statusDesc || (item.inStock ? '✅ 有庫存' : '⚠️ 剩餘少量');
-      const btnLabel = '🛒 加入購物車';
+      // 按鈕文字不含 emoji，避免截斷；label 上限 20 字
+      const btnLabel = '加入購物車';
       const displayText = `加入購物車：${item.colorZh || colorJp} ${item.size}`;
       const data = `action=add_to_cart&id=${productId}&c=${encodeURIComponent(colorJp)}&s=${encodeURIComponent(item.size)}&jpy=${jpy}&p=${suggested}`;
       return {
         type: 'box',
-        layout: 'horizontal',
-        alignItems: 'center',
-        margin: 'sm',
+        layout: 'vertical',
+        margin: 'md',
         contents: [
+          // 尺寸 + 庫存狀態（同一行）
           {
             type: 'box',
-            layout: 'vertical',
-            flex: 3,
+            layout: 'horizontal',
             contents: [
-              { type: 'text', text: item.size, weight: 'bold', size: 'sm', color: '#333333' },
-              { type: 'text', text: statusText, size: 'xs', color: item.inStock ? '#2e7d32' : '#e65100', wrap: true },
+              { type: 'text', text: item.size, weight: 'bold', size: 'sm', color: '#333333', flex: 1 },
+              { type: 'text', text: statusText, size: 'xs', color: item.inStock ? '#2e7d32' : '#e65100', align: 'end', flex: 2, wrap: false },
             ],
           },
+          // 加入購物車按鈕（全寬）
           {
             type: 'button',
-            flex: 2,
             height: 'sm',
             style: 'primary',
             color: item.inStock ? '#c8a882' : '#aaaaaa',
+            margin: 'xs',
             action: { type: 'postback', label: btnLabel, data, displayText },
           },
         ],
       };
     });
 
+    // 此顏色的圖片：優先用顏色對應圖，沒有則回退到主圖
+    const cardImage = colorImages[colorJp] || imageUrl;
+
     const bubble = {
       type: 'bubble',
       size: 'kilo',
-      // 商品圖片放在 hero 欄位（語義正確，渲染效果最佳）
-      ...(imageUrl ? {
+      // 商品圖片放在 hero 欄位
+      ...(cardImage ? {
         hero: {
           type: 'image',
-          url: imageUrl,
+          url: cardImage,
           size: 'full',
           aspectRatio: '4:3',
           aspectMode: 'cover',
@@ -1342,7 +1363,7 @@ async function handleEvent(event, client) {
     return;
   }
 
-  const { productName, jpy, stockLines, imageUrl } = productData;
+  const { productName, jpy, stockLines, imageUrl, colorImages } = productData;
   const weightInfo  = estimateWeight(productName);
   const suggested   = calcSuggestedPrice(rate, jpy, weightInfo ? weightInfo.midLbs : 1);
   const qStatus     = calcQStatus(stockLines);
@@ -1356,7 +1377,7 @@ async function handleEvent(event, client) {
   }
 
   const flexMsg = buildFlexMessage(userText, productName, jpy, suggested, stockLines, imageUrl, weightInfo);
-  const cartFlex = buildAddToCartFlex(stockLines, productId, jpy, suggested, userText, imageUrl, productName);
+  const cartFlex = buildAddToCartFlex(stockLines, productId, jpy, suggested, userText, imageUrl, productName, colorImages);
   await client.replyMessage(replyToken, cartFlex ? [flexMsg, cartFlex] : [flexMsg]);
 
   const bgTasks = [];
