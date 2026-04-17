@@ -438,6 +438,229 @@ async function logQueryToSheet(userId, displayName, productId, productName, jpy,
   }
 }
 
+// ── 查詢用戶查詢紀錄 ──────────────────────────────────────────────────────────
+async function getUserQueryHistory(userId) {
+  const sheets = getSheetsClient();
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: SHEET_ID,
+    range: '查詢紀錄!A:F',
+  });
+  const rows = (res.data.values || []).slice(1); // 跳過 header
+  const userRows = rows.filter((r) => r[2] === userId);
+  return userRows.slice(-10).reverse(); // 最近 10 筆，最新在前
+}
+
+// ── 查詢紀錄 Flex Message ─────────────────────────────────────────────────────
+function buildHistoryFlexMessage(history) {
+  if (history.length === 0) {
+    return {
+      type: 'text',
+      text: '您還沒有查詢紀錄。\n\n請傳入 GRL 商品網址開始查詢！\n範例：https://www.grail.bz/item/xxx/',
+    };
+  }
+
+  const bubbles = history.map((row) => {
+    const date     = row[0] || '';
+    const prodName = row[4] || '商品名稱不明';
+    const jpy      = row[5] ? `¥${Number(row[5]).toLocaleString('ja-JP')}` : '-';
+    const prodId   = row[3] || '';
+    const itemUrl  = prodId ? `https://www.grail.bz/disp/item/${prodId}/` : 'https://www.grail.bz';
+
+    return {
+      type: 'bubble',
+      size: 'micro',
+      body: {
+        type: 'box',
+        layout: 'vertical',
+        spacing: 'sm',
+        paddingAll: '12px',
+        contents: [
+          { type: 'text', text: prodName, size: 'sm', weight: 'bold', wrap: true, maxLines: 2, color: '#222222' },
+          { type: 'text', text: jpy,       size: 'sm', color: '#E53935' },
+          { type: 'text', text: date,      size: 'xs', color: '#aaaaaa' },
+        ],
+      },
+      footer: {
+        type: 'box',
+        layout: 'vertical',
+        paddingAll: '8px',
+        contents: [{
+          type: 'button',
+          style: 'primary',
+          color: '#FF6B9D',
+          height: 'sm',
+          action: { type: 'uri', label: '查看商品', uri: itemUrl },
+        }],
+      },
+    };
+  });
+
+  return {
+    type: 'flex',
+    altText: `您的查詢紀錄（最近 ${history.length} 筆）`,
+    contents: { type: 'carousel', contents: bubbles },
+  };
+}
+
+// ── 使用教學 Flex Message ─────────────────────────────────────────────────────
+function buildTutorialFlexMessage() {
+  const steps = [
+    {
+      title: 'Step 1｜查詢商品報價',
+      icon: '🔍',
+      lines: [
+        '複製 GRL 官網的商品網址',
+        '直接貼到這個 LINE Bot',
+        'Bot 會自動回傳：',
+        '• 日幣售價',
+        '• 台幣報價（含運費）',
+        '• 每個尺寸庫存狀態',
+        '• 估算重量',
+      ],
+    },
+    {
+      title: 'Step 2｜了解報價內容',
+      icon: '💵',
+      lines: [
+        '報價金額 = 日幣 × 匯率',
+        '+ 手續費 6%',
+        '+ 銀行手續費 1.5%',
+        '+ 運費（依磅數計算）',
+        '+ 包材 NT$20',
+        '',
+        '✅ 有庫存 → 可直接下單',
+        '⚠️ 剩餘少量 → 盡早下單',
+        '📅 預約販售 → 顯示到貨日',
+      ],
+    },
+    {
+      title: 'Step 3｜下單方式',
+      icon: '🛒',
+      lines: [
+        '1. 確認商品、尺寸、顏色',
+        '2. 截圖傳給我們',
+        '    或直接傳商品連結 + 尺寸',
+        '3. 確認報價後付款',
+        '4. 我們幫您向日本下單',
+        '5. 到貨後通知取件',
+        '',
+        '有問題歡迎直接發訊息！🌸',
+      ],
+    },
+  ];
+
+  const bubbles = steps.map((s) => ({
+    type: 'bubble',
+    size: 'kilo',
+    header: {
+      type: 'box',
+      layout: 'vertical',
+      backgroundColor: '#FF6B9D',
+      paddingAll: '14px',
+      contents: [{
+        type: 'text',
+        text: `${s.icon} ${s.title}`,
+        color: '#ffffff',
+        size: 'sm',
+        weight: 'bold',
+        wrap: true,
+      }],
+    },
+    body: {
+      type: 'box',
+      layout: 'vertical',
+      spacing: 'xs',
+      paddingAll: '14px',
+      contents: s.lines.map((l) => ({
+        type: 'text',
+        text: l || ' ',
+        size: 'sm',
+        color: l.startsWith('•') || l.startsWith('✅') || l.startsWith('⚠️') || l.startsWith('📅') ? '#555555' : '#333333',
+        wrap: true,
+      })),
+    },
+  }));
+
+  return {
+    type: 'flex',
+    altText: '使用教學｜如何查詢與下單',
+    contents: { type: 'carousel', contents: bubbles },
+  };
+}
+
+// ── Rich Menu 設定 ────────────────────────────────────────────────────────────
+async function setupRichMenu(imageUrl) {
+  const token = process.env.LINE_CHANNEL_ACCESS_TOKEN;
+  const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
+
+  // 1. 建立 Rich Menu 定義
+  const def = {
+    size: { width: 2500, height: 1686 },
+    selected: true,
+    name: 'Bijin主選單',
+    chatBarText: '主選單',
+    areas: [
+      { bounds: { x: 0,    y: 0,   width: 833, height: 843 }, action: { type: 'postback', label: '查詢紀錄', data: 'action=query_history', displayText: '查詢紀錄' } },
+      { bounds: { x: 833,  y: 0,   width: 833, height: 843 }, action: { type: 'uri',      label: '開始購物', uri: 'https://www.grail.bz' } },
+      { bounds: { x: 1666, y: 0,   width: 834, height: 843 }, action: { type: 'postback', label: '購物車',   data: 'action=cart',          displayText: '購物車' } },
+      { bounds: { x: 0,    y: 843, width: 833, height: 843 }, action: { type: 'postback', label: '使用教學', data: 'action=tutorial',       displayText: '使用教學' } },
+      { bounds: { x: 833,  y: 843, width: 833, height: 843 }, action: { type: 'uri',      label: 'IG連結',   uri: 'https://www.instagram.com/bijin.jp.2024?igsh=dHZ3eWg1a25raDhp' } },
+      { bounds: { x: 1666, y: 843, width: 834, height: 843 }, action: { type: 'postback', label: '會員中心', data: 'action=member',         displayText: '會員中心' } },
+    ],
+  };
+
+  const createRes = await axios.post('https://api.line.me/v2/bot/richmenu', def, { headers });
+  const richMenuId = createRes.data.richMenuId;
+
+  // 2. 上傳圖片（若有提供 URL）
+  if (imageUrl) {
+    const imgRes = await axios.get(imageUrl, { responseType: 'arraybuffer', timeout: 15000 });
+    await axios.post(
+      `https://api-data.line.me/v2/bot/richmenu/${richMenuId}/content`,
+      imgRes.data,
+      { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'image/jpeg' } }
+    );
+  }
+
+  // 3. 設為所有用戶預設選單
+  await axios.post(
+    `https://api.line.me/v2/bot/user/all/richmenu/${richMenuId}`,
+    {},
+    { headers }
+  );
+
+  return richMenuId;
+}
+
+// ── 處理 Rich Menu Postback 事件 ──────────────────────────────────────────────
+async function handlePostback(event, client) {
+  const userId     = event.source.userId;
+  const replyToken = event.replyToken;
+  const params     = new URLSearchParams(event.postback.data);
+  const action     = params.get('action');
+
+  if (action === 'query_history') {
+    let history = [];
+    try { history = await getUserQueryHistory(userId); } catch (e) { console.error('[history error]', e.message); }
+    await client.replyMessage(replyToken, buildHistoryFlexMessage(history));
+
+  } else if (action === 'tutorial') {
+    await client.replyMessage(replyToken, buildTutorialFlexMessage());
+
+  } else if (action === 'cart') {
+    await client.replyMessage(replyToken, {
+      type: 'text',
+      text: '🛒 購物車功能即將上線！\n\n目前請直接發訊息給我們下單，或前往 IG 查看商品 🌸\nhttps://www.instagram.com/bijin.jp.2024',
+    });
+
+  } else if (action === 'member') {
+    await client.replyMessage(replyToken, {
+      type: 'text',
+      text: '👤 會員中心即將上線！\n\n我們正在努力開發中，敬請期待 🌸',
+    });
+  }
+}
+
 // ── 建立 Flex Message ─────────────────────────────────────────────────────────
 function buildFlexMessage(url, productName, jpy, suggested, stockLines, imageUrl, weightInfo) {
   const stockContents = stockLines.length > 0
@@ -593,6 +816,9 @@ function buildFlexMessage(url, productName, jpy, suggested, stockLines, imageUrl
 
 // ── 處理單一 LINE 事件 ────────────────────────────────────────────────────────
 async function handleEvent(event, client) {
+  if (event.type === 'postback') {
+    return handlePostback(event, client);
+  }
   if (event.type !== 'message' || event.message.type !== 'text') return;
 
   console.log('userId:', event.source.userId);
@@ -745,6 +971,19 @@ app.get('/admin/insert-weight-column', async (req, res) => {
     res.json({ status: 'ok', message: '已在 J 欄插入「估算磅數（估算值）」，舊有公式已自動更新' });
   } catch (err) {
     console.error('[insert-column error]', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── 一次性：建立並啟用 Rich Menu ──────────────────────────────────────────────
+// 呼叫方式：GET /admin/setup-rich-menu?imageUrl=https://...
+app.get('/admin/setup-rich-menu', async (req, res) => {
+  const { imageUrl } = req.query;
+  try {
+    const richMenuId = await setupRichMenu(imageUrl || '');
+    res.json({ status: 'ok', richMenuId, message: 'Rich Menu 已建立並設為預設選單' });
+  } catch (err) {
+    console.error('[setup-rich-menu error]', err.message);
     res.status(500).json({ error: err.message });
   }
 });
