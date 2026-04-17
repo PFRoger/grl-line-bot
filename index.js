@@ -1039,9 +1039,9 @@ function buildAddToCartFlex(stockLines, productId, jpy, suggested, productUrl, i
 
     // 每個尺寸：一行顯示尺寸+庫存說明，一個加入購物車按鈕
     const sizeRows = group.sizes.map((item) => {
-      const statusIcon = item.inStock ? '✅' : '⚠️';
-      const statusText = item.statusDesc || (item.inStock ? '有庫存' : '剩餘少量');
-      const btnLabel = `🛒 加入購物車`.substring(0, 20);
+      // statusDesc 已含 emoji（如「✅ 有庫存」），直接使用；沒有則產生預設值
+      const statusText = item.statusDesc || (item.inStock ? '✅ 有庫存' : '⚠️ 剩餘少量');
+      const btnLabel = '🛒 加入購物車';
       const displayText = `加入購物車：${item.colorZh || colorJp} ${item.size}`;
       const data = `action=add_to_cart&id=${productId}&c=${encodeURIComponent(colorJp)}&s=${encodeURIComponent(item.size)}&jpy=${jpy}&p=${suggested}`;
       return {
@@ -1056,7 +1056,7 @@ function buildAddToCartFlex(stockLines, productId, jpy, suggested, productUrl, i
             flex: 3,
             contents: [
               { type: 'text', text: item.size, weight: 'bold', size: 'sm', color: '#333333' },
-              { type: 'text', text: `${statusIcon} ${statusText}`, size: 'xs', color: item.inStock ? '#2e7d32' : '#e65100', wrap: true },
+              { type: 'text', text: statusText, size: 'xs', color: item.inStock ? '#2e7d32' : '#e65100', wrap: true },
             ],
           },
           {
@@ -1074,40 +1074,42 @@ function buildAddToCartFlex(stockLines, productId, jpy, suggested, productUrl, i
     const bubble = {
       type: 'bubble',
       size: 'kilo',
+      // 商品圖片放在 hero 欄位（語義正確，渲染效果最佳）
+      ...(imageUrl ? {
+        hero: {
+          type: 'image',
+          url: imageUrl,
+          size: 'full',
+          aspectRatio: '4:3',
+          aspectMode: 'cover',
+        },
+      } : {}),
       body: {
         type: 'box',
         layout: 'vertical',
-        paddingAll: '0px',
+        paddingAll: '12px',
+        paddingBottom: '4px',
+        spacing: 'none',
         contents: [
-          // 商品圖片
-          ...(imageUrl ? [{
-            type: 'image',
-            url: imageUrl,
-            size: 'full',
-            aspectRatio: '4:3',
-            aspectMode: 'cover',
+          // 商品名稱（有才顯示）
+          ...(productName ? [{
+            type: 'text',
+            text: productName.substring(0, 30),
+            size: 'xs',
+            color: '#888888',
+            wrap: true,
           }] : []),
-          // 商品名稱 + 顏色 + 價格
-          {
-            type: 'box',
-            layout: 'vertical',
-            paddingAll: '12px',
-            paddingBottom: '4px',
-            backgroundColor: '#faf6f2',
-            contents: [
-              { type: 'text', text: (productName || '').substring(0, 30), size: 'xs', color: '#888888', wrap: true },
-              { type: 'text', text: colorLabel, weight: 'bold', size: 'md', color: '#3d2c1e', wrap: true, margin: 'xs' },
-              { type: 'text', text: `¥${jpy.toLocaleString()}　建議售價 NT$${suggested.toLocaleString()}`, size: 'xs', color: '#999999', margin: 'xs' },
-            ],
-          },
+          // 顏色
+          { type: 'text', text: colorLabel, weight: 'bold', size: 'md', color: '#3d2c1e', wrap: true, margin: 'xs' },
+          // 價格
+          { type: 'text', text: `¥${jpy.toLocaleString()}　建議售價 NT$${suggested.toLocaleString()}`, size: 'xs', color: '#999999', margin: 'xs' },
           // 分隔線
-          { type: 'separator' },
+          { type: 'separator', margin: 'md' },
           // 尺寸列表
           {
             type: 'box',
             layout: 'vertical',
-            paddingAll: '12px',
-            paddingTop: '8px',
+            margin: 'md',
             spacing: 'none',
             contents: sizeRows,
           },
@@ -1117,7 +1119,6 @@ function buildAddToCartFlex(stockLines, productId, jpy, suggested, productUrl, i
         type: 'box',
         layout: 'vertical',
         paddingAll: '8px',
-        paddingTop: '0px',
         contents: [{
           type: 'button',
           height: 'sm',
