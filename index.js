@@ -892,8 +892,7 @@ input:focus,select:focus,textarea:focus{border-color:#c9a98a}
     <label>收件 7-11 門市名稱 *</label>
     <div style="display:flex;gap:8px;align-items:center">
       <input id="f-store" type="text" placeholder="例：台北忠孝門市" style="flex:1">
-      <a id="store-link" href="https://www.711.com.tw/emap/" target="_blank"
-         style="white-space:nowrap;background:#007b40;color:#fff;padding:10px 12px;border-radius:8px;font-size:13px;text-decoration:none">查詢門市</a>
+      <button onclick="openStoreMap()" style="white-space:nowrap;background:#007b40;color:#fff;padding:10px 12px;border-radius:8px;font-size:13px;border:none;cursor:pointer">查詢門市</button>
     </div>
     <label>匯款帳號末 5 碼（對帳用）*</label>
     <input id="f-bank" type="text" placeholder="例：12345" maxlength="5">
@@ -965,13 +964,14 @@ async function deleteItem(idx, rowIndex) {
   render();
 }
 
-function updateStoreLink() {
-  const city = document.getElementById('f-city').value;
-  const link = document.getElementById('store-link');
-  if (city) {
-    link.href = 'https://www.711.com.tw/emap/?city=' + encodeURIComponent(city);
+function updateStoreLink() {}
+
+function openStoreMap() {
+  const url = 'https://www.711.com.tw/emap/';
+  if (typeof liff !== 'undefined' && liff.openWindow) {
+    liff.openWindow({ url, external: true });
   } else {
-    link.href = 'https://www.711.com.tw/emap/';
+    window.open(url, '_blank');
   }
 }
 
