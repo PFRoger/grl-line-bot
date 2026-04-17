@@ -880,20 +880,17 @@ input:focus,select:focus,textarea:focus{border-color:#c9a98a}
     <label>手機號碼 *</label>
     <input id="f-phone" type="tel" placeholder="09xxxxxxxx">
     <label>收件縣市 *</label>
-    <select id="f-city" onchange="updateStoreLink()">
+    <select id="f-city">
       <option value="">請選擇縣市</option>
-      <option>基隆市</option><option>台北市</option><option>新北市</option><option>桃園市</option>
-      <option>新竹市</option><option>新竹縣</option><option>苗栗縣</option><option>台中市</option>
-      <option>南投縣</option><option>彰化縣</option><option>雲林縣</option><option>嘉義市</option>
-      <option>嘉義縣</option><option>台南市</option><option>高雄市</option><option>屏東縣</option>
-      <option>宜蘭縣</option><option>花蓮縣</option><option>台東縣</option><option>澎湖縣</option>
+      <option>臺北市</option><option>新北市</option><option>桃園市</option><option>臺中市</option>
+      <option>臺南市</option><option>高雄市</option><option>基隆市</option><option>新竹市</option>
+      <option>嘉義市</option><option>新竹縣</option><option>苗栗縣</option><option>彰化縣</option>
+      <option>南投縣</option><option>雲林縣</option><option>嘉義縣</option><option>屏東縣</option>
+      <option>宜蘭縣</option><option>花蓮縣</option><option>臺東縣</option><option>澎湖縣</option>
       <option>金門縣</option><option>連江縣</option>
     </select>
     <label>收件 7-11 門市名稱 *</label>
-    <div style="display:flex;gap:8px;align-items:center">
-      <input id="f-store" type="text" placeholder="例：台北忠孝門市" style="flex:1">
-      <button onclick="openStoreMap()" style="white-space:nowrap;background:#007b40;color:#fff;padding:10px 12px;border-radius:8px;font-size:13px;border:none;cursor:pointer">查詢門市</button>
-    </div>
+    <input id="f-store" type="text" placeholder="例：忠孝門市">
     <label>匯款帳號末 5 碼（對帳用）*</label>
     <input id="f-bank" type="text" placeholder="例：12345" maxlength="5">
     <label>備註（選填）</label>
@@ -962,17 +959,6 @@ async function deleteItem(idx, rowIndex) {
   await fetch('/api/cart/item', { method:'DELETE', headers:{'Content-Type':'application/json'}, body: JSON.stringify({rowIndex}) });
   cartItems.splice(idx, 1);
   render();
-}
-
-function updateStoreLink() {}
-
-function openStoreMap() {
-  const url = 'https://www.ibon.com.tw/retail_inquiry.aspx';
-  if (typeof liff !== 'undefined' && liff.openWindow) {
-    liff.openWindow({ url, external: true });
-  } else {
-    window.open(url, '_blank');
-  }
 }
 
 async function submitOrder() {
@@ -1360,6 +1346,20 @@ app.get('/cart', (_req, res) => {
 });
 
 // ── 購物車 API ────────────────────────────────────────────────────────────────
+// ── 7-11 門市 Proxy ───────────────────────────────────────────────────────────
+app.get('/api/stores', async (req, res) => {
+  const { city, area } = req.query;
+  if (!city || !area) return res.status(400).json({ error: 'city and area required' });
+  try {
+    const url = `https://emacloz.com/posts/fetch_area_data_from_django?cityName=${encodeURIComponent(city)}&areaName=${encodeURIComponent(area)}`;
+    const r = await axios.get(url, { headers: { 'Referer': 'https://emacloz.com', 'User-Agent': 'Mozilla/5.0' }, timeout: 8000 });
+    res.json(r.data);
+  } catch (err) {
+    console.error('[api/stores error]', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get('/api/cart', express.json(), async (req, res) => {
   const { userId } = req.query;
   if (!userId) return res.status(400).json({ error: 'userId required' });
