@@ -344,20 +344,22 @@ async function scrapeGRL(url) {
   // 庫存：使用 GAS 相同的 raw HTML regex 解析法
   const stockLines = parseStockFromHtml(html);
 
-  // 每個顏色的對應圖片：搜尋含有顏色關鍵字的 <li> 元素內的 img
-  // GRL 顏色選擇器通常是 <li> 含縮圖 + 顏色名
+  // 每個顏色的對應圖片：GRL 用 <img alt="ブラック" src="...col_11.jpg"> 方式關聯顏色
+  // 縮圖路徑 /images/goods/t/ → 全尺寸改為 /images/goods/d/
   const colorImages = {};
-  $('li').each((_, el) => {
-    const liText = $(el).text().replace(/\s+/g, ' ').trim();
+  $('img[alt]').each((_, el) => {
+    const alt = $(el).attr('alt') || '';
+    const src = $(el).attr('data-src') || $(el).attr('data-lazy') || $(el).attr('src') || '';
+    if (!src) return;
     for (const colorJp of COLOR_KEYS) {
-      if (colorImages[colorJp]) continue; // 已找到則跳過
-      if (!liText.includes(colorJp)) continue;
-      const imgEl = $(el).find('img').first();
-      const src = imgEl.attr('data-src') || imgEl.attr('data-lazy') || imgEl.attr('src');
-      if (!src) continue;
-      // 過濾掉 icon / logo / banner 等非商品圖
-      if (/icon|logo|banner|sprite|loading/i.test(src)) continue;
-      colorImages[colorJp] = src.startsWith('http') ? src : `https://www.grail.bz${src}`;
+      if (colorImages[colorJp]) continue;
+      if (!alt.includes(colorJp)) continue;
+      // 縮圖 /t/ 換成全圖 /d/
+      const fullUrl = src
+        .replace('/images/goods/t/', '/images/goods/d/')
+        .replace(/^\/\//, 'https://')
+        .replace(/^\//, 'https://cdn.grail.bz/');
+      colorImages[colorJp] = fullUrl.startsWith('http') ? fullUrl : `https://cdn.grail.bz${fullUrl}`;
     }
   });
 
@@ -1073,9 +1075,21 @@ function buildAddToCartFlex(stockLines, productId, jpy, suggested, productUrl, i
       };
     });
 
+    // 顏色對應圖片（全尺寸），沒有則用主圖
+    const cardImage = colorImages[colorJp] || imageUrl;
+
     const bubble = {
       type: 'bubble',
       size: 'kilo',
+      ...(cardImage ? {
+        hero: {
+          type: 'image',
+          url: cardImage,
+          size: 'full',
+          aspectRatio: '3:4',
+          aspectMode: 'cover',
+        },
+      } : {}),
       body: {
         type: 'box',
         layout: 'vertical',
