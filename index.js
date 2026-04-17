@@ -10,6 +10,9 @@ const app = express();
 
 const ADMIN_USER_ID = 'U9fa329e70b89f4ce19089928a824bd29';
 const SHEET_ID = '148eFUK3xm0ITsVpueqtnwjK-lcKeemoiRbQgcFWbGug';
+const LIFF_ID = '2009823505-mhQivhxd';
+const CART_SHEET = '購物車';
+const ORDER_SHEET = '訂單';
 
 // ── Google Sheets 驗證 ────────────────────────────────────────────────────────
 function getSheetsClient() {
@@ -438,6 +441,131 @@ async function logQueryToSheet(userId, displayName, productId, productName, jpy,
   }
 }
 
+// ── 購物車 Sheet 操作 ─────────────────────────────────────────────────────────
+// 欄位：A=userId B=productId C=productName D=color(JP) E=size
+//        F=jpy G=suggestedPrice H=productUrl I=addedAt J=status
+const CART_HEADERS = ['userId','productId','productName','color','size','jpy','suggestedPrice','productUrl','addedAt','status'];
+
+async function ensureCartSheet(sheets) {
+  try {
+    await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${CART_SHEET}!A1` });
+  } catch {
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId: SHEET_ID,
+      resource: { requests: [{ addSheet: { properties: { title: CART_SHEET } } }] },
+    });
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: SHEET_ID,
+      range: `${CART_SHEET}!A1`,
+      valueInputOption: 'RAW',
+      resource: { values: [CART_HEADERS] },
+    });
+  }
+}
+
+async function ensureOrderSheet(sheets) {
+  try {
+    await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${ORDER_SHEET}!A1` });
+  } catch {
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId: SHEET_ID,
+      resource: { requests: [{ addSheet: { properties: { title: ORDER_SHEET } } }] },
+    });
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: SHEET_ID,
+      range: `${ORDER_SHEET}!A1`,
+      valueInputOption: 'RAW',
+      resource: { values: [['訂單ID','下單時間','userId','商品明細','總金額(NT$)','買家姓名','手機','7-11門市','匯款末5碼','備註','狀態']] },
+    });
+  }
+}
+
+async function addToCartSheet(userId, productId, productName, colorJp, size, jpy, suggestedPrice, productUrl) {
+  const sheets = getSheetsClient();
+  await ensureCartSheet(sheets);
+  const addedAt = new Date().toISOString();
+  await sheets.spreadsheets.values.append({
+    spreadsheetId: SHEET_ID,
+    range: `${CART_SHEET}!A:J`,
+    valueInputOption: 'RAW',
+    resource: { values: [[userId, productId, productName, colorJp, size, jpy, suggestedPrice, productUrl, addedAt, 'active']] },
+  });
+}
+
+async function getCartItems(userId) {
+  const sheets = getSheetsClient();
+  await ensureCartSheet(sheets);
+  const resp = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${CART_SHEET}!A:J` });
+  const rows = resp.data.values || [];
+  const now = Date.now();
+  const EXPIRE_MS = 12 * 60 * 60 * 1000; // 12 hours
+  const items = [];
+  rows.forEach((row, idx) => {
+    if (idx === 0) return; // header
+    if (row[0] !== userId) return;
+    if (row[9] !== 'active') return;
+    const addedAt = new Date(row[8]).getTime();
+    if (now - addedAt > EXPIRE_MS) return; // expired
+    items.push({
+      rowIndex: idx + 1, // 1-based sheet row
+      productId: row[1] || '',
+      productName: row[2] || '',
+      color: row[3] || '',
+      size: row[4] || '',
+      jpy: parseInt(row[5]) || 0,
+      suggestedPrice: parseInt(row[6]) || 0,
+      productUrl: row[7] || '',
+      addedAt: row[8] || '',
+    });
+  });
+  return items;
+}
+
+async function clearCartItem(rowIndex) {
+  const sheets = getSheetsClient();
+  // Mark as deleted by updating status column (J = index 9, col 10)
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: SHEET_ID,
+    range: `${CART_SHEET}!J${rowIndex}`,
+    valueInputOption: 'RAW',
+    resource: { values: [['deleted']] },
+  });
+}
+
+async function markCartItemsOrdered(userId, rowIndexes) {
+  const sheets = getSheetsClient();
+  for (const idx of rowIndexes) {
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: SHEET_ID,
+      range: `${CART_SHEET}!J${idx}`,
+      valueInputOption: 'RAW',
+      resource: { values: [['ordered']] },
+    });
+  }
+}
+
+async function submitOrder(userId, cartItems, buyerInfo) {
+  const sheets = getSheetsClient();
+  await ensureOrderSheet(sheets);
+  const orderId = `${Date.now()}-${userId.slice(-6)}`;
+  const orderTime = new Date().toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' });
+  const itemsSummary = cartItems.map(i => `${i.productId} ${i.color} ${i.size} NT$${i.suggestedPrice}`).join(' | ');
+  const totalTwd = cartItems.reduce((sum, i) => sum + (i.suggestedPrice || 0), 0);
+  await sheets.spreadsheets.values.append({
+    spreadsheetId: SHEET_ID,
+    range: `${ORDER_SHEET}!A:K`,
+    valueInputOption: 'RAW',
+    resource: { values: [[
+      orderId, orderTime, userId,
+      itemsSummary, totalTwd,
+      buyerInfo.name, buyerInfo.phone, buyerInfo.store711,
+      buyerInfo.bankLast5, buyerInfo.note || '', '待確認',
+    ]] },
+  });
+  await markCartItemsOrdered(userId, cartItems.map(i => i.rowIndex));
+  return { orderId, orderTime, totalTwd };
+}
+
 // ── 查詢用戶查詢紀錄 ──────────────────────────────────────────────────────────
 async function getUserQueryHistory(userId) {
   const sheets = getSheetsClient();
@@ -604,7 +732,7 @@ async function setupRichMenu(imageUrl) {
       { bounds: { x: 833,  y: 0,   width: 833, height: 843 }, action: { type: 'uri',      label: '開始購物', uri: 'https://www.grail.bz' } },
       { bounds: { x: 1666, y: 0,   width: 834, height: 843 }, action: { type: 'postback', label: '購物車',   data: 'action=cart',          displayText: '購物車' } },
       { bounds: { x: 0,    y: 843, width: 833, height: 843 }, action: { type: 'postback', label: '使用教學', data: 'action=tutorial',       displayText: '使用教學' } },
-      { bounds: { x: 833,  y: 843, width: 833, height: 843 }, action: { type: 'uri',      label: 'IG連結',   uri: 'https://www.instagram.com/bijin.jp.2024?igsh=dHZ3eWg1a25raDhp' } },
+      { bounds: { x: 833,  y: 843, width: 833, height: 843 }, action: { type: 'uri',      label: 'IG連結',   uri: 'https://www.instagram.com/bijin.jp.2024?igsh=MXZxY2wzc2tsdWxzeQ%3D%3D&utm_source=qr' } },
       { bounds: { x: 1666, y: 843, width: 834, height: 843 }, action: { type: 'postback', label: '會員中心', data: 'action=member',         displayText: '會員中心' } },
     ],
   };
@@ -650,7 +778,7 @@ async function handlePostback(event, client) {
   } else if (action === 'cart') {
     await client.replyMessage(replyToken, {
       type: 'text',
-      text: '🛒 購物車功能即將上線！\n\n目前請直接發訊息給我們下單，或前往 IG 查看商品 🌸\nhttps://www.instagram.com/bijin.jp.2024',
+      text: `🛒 前往購物車結帳：\nhttps://liff.line.me/${LIFF_ID}`,
     });
 
   } else if (action === 'member') {
@@ -658,7 +786,279 @@ async function handlePostback(event, client) {
       type: 'text',
       text: '👤 會員中心即將上線！\n\n我們正在努力開發中，敬請期待 🌸',
     });
+
+  } else if (action === 'add_to_cart') {
+    const productId    = params.get('id') || '';
+    const colorJp      = params.get('c') || '';
+    const size         = params.get('s') || '';
+    const jpy          = parseInt(params.get('jpy')) || 0;
+    const suggested    = parseInt(params.get('p')) || 0;
+    const productUrl   = `https://www.grail.bz/item/${productId}/`;
+
+    // 從查詢紀錄找商品名稱
+    let productName = productId;
+    try {
+      const sheets = getSheetsClient();
+      const resp = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: '查詢紀錄!A:E' });
+      const rows = (resp.data.values || []).reverse();
+      const found = rows.find(r => r[3] === productId);
+      if (found) productName = found[4] || productId;
+    } catch (e) { console.warn('[lookup name error]', e.message); }
+
+    await addToCartSheet(userId, productId, productName, colorJp, size, jpy, suggested, productUrl);
+    await client.replyMessage(replyToken, {
+      type: 'text',
+      text: `✅ ${productId} 已加入購物車\n色：${colorJp} 碼：${size}\nNT$${suggested}\n\n請按下方主選單「購物車」查看內容\n════════════\n購物車每 12 小時自動清空`,
+    });
+
+  } else if (action === 'view_cart') {
+    await client.replyMessage(replyToken, {
+      type: 'text',
+      text: `🛒 前往購物車結帳：\nhttps://liff.line.me/${LIFF_ID}`,
+    });
   }
+}
+
+// ── LIFF 購物車 HTML ──────────────────────────────────────────────────────────
+function buildCartHtml() {
+  return `<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<title>Bijin 購物車</title>
+<script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,sans-serif;background:#faf8f6;color:#333;padding-bottom:40px}
+.header{background:#c9a98a;color:#fff;padding:16px;text-align:center;font-size:18px;font-weight:bold;letter-spacing:1px}
+.section{background:#fff;margin:12px;border-radius:12px;padding:16px;box-shadow:0 1px 4px rgba(0,0,0,.08)}
+.section-title{font-size:15px;font-weight:bold;color:#7a5c3e;margin-bottom:12px;border-bottom:1px solid #f0e8de;padding-bottom:8px}
+.cart-item{border:1px solid #eee;border-radius:8px;padding:12px;margin-bottom:10px;position:relative}
+.item-name{font-size:13px;color:#888;margin-bottom:4px}
+.item-detail{font-size:14px;font-weight:600;color:#333}
+.item-price{font-size:15px;font-weight:bold;color:#c9a98a;margin-top:4px}
+.item-delete{position:absolute;top:10px;right:10px;background:none;border:1px solid #ddd;border-radius:6px;padding:4px 10px;font-size:12px;color:#999;cursor:pointer}
+.item-delete:active{background:#fee}
+.empty{text-align:center;color:#aaa;padding:30px 0;font-size:14px}
+.total-row{display:flex;justify-content:space-between;align-items:center;padding:6px 0;font-size:14px}
+.total-amount{font-size:18px;font-weight:bold;color:#c9a98a}
+label{display:block;font-size:13px;color:#888;margin-bottom:4px;margin-top:12px}
+input,select,textarea{width:100%;border:1px solid #ddd;border-radius:8px;padding:10px;font-size:14px;outline:none}
+input:focus,select:focus,textarea:focus{border-color:#c9a98a}
+.radio-group{display:flex;flex-direction:column;gap:8px;margin-top:6px}
+.radio-item{display:flex;align-items:center;gap:8px;font-size:14px}
+.submit-btn{width:100%;background:#c9a98a;color:#fff;border:none;border-radius:10px;padding:14px;font-size:16px;font-weight:bold;cursor:pointer;margin-top:16px;letter-spacing:1px}
+.submit-btn:disabled{background:#ccc}
+.submit-btn:active{background:#b8906e}
+.note-box{background:#fff8f0;border-radius:8px;padding:10px;font-size:12px;color:#888;margin-top:8px;line-height:1.6}
+#loading{text-align:center;padding:40px;color:#aaa}
+#success{display:none;text-align:center;padding:30px}
+.success-icon{font-size:48px;margin-bottom:12px}
+.success-title{font-size:18px;font-weight:bold;color:#c9a98a;margin-bottom:8px}
+.success-text{font-size:13px;color:#888;line-height:1.6}
+</style>
+</head>
+<body>
+<div class="header">🛒 Bijin 購物車</div>
+<div id="loading">載入中...</div>
+<div id="main" style="display:none">
+  <div class="section">
+    <div class="section-title">商品資訊</div>
+    <div id="cart-items"></div>
+    <div id="cart-empty" class="empty" style="display:none">購物車是空的<br><small>請先查詢商品並加入購物車</small></div>
+  </div>
+  <div id="order-section" class="section" style="display:none">
+    <div class="section-title">訂單資訊</div>
+    <div class="total-row"><span>合計</span><span class="total-amount" id="total-amount">NT$0</span></div>
+    <div class="note-box">付款方式：銀行轉帳<br>確認後將提供帳號資訊，請在 3 天內完成匯款</div>
+  </div>
+  <div id="buyer-section" class="section" style="display:none">
+    <div class="section-title">訂貨人資訊</div>
+    <label>姓名 *</label>
+    <input id="f-name" type="text" placeholder="請輸入真實姓名">
+    <label>手機號碼 *</label>
+    <input id="f-phone" type="tel" placeholder="09xxxxxxxx">
+    <label>收件 7-11 門市名稱 *</label>
+    <input id="f-store" type="text" placeholder="例：台北忠孝門市">
+    <label>匯款帳號末 5 碼（對帳用）*</label>
+    <input id="f-bank" type="text" placeholder="例：12345" maxlength="5">
+    <label>備註（選填）</label>
+    <textarea id="f-note" rows="2" placeholder="特殊需求或備注"></textarea>
+    <button class="submit-btn" id="submit-btn" onclick="submitOrder()">確認下單</button>
+  </div>
+</div>
+<div id="success">
+  <div class="success-icon">🎉</div>
+  <div class="success-title">下單成功！</div>
+  <div class="success-text" id="success-text"></div>
+</div>
+<script>
+let userId = '';
+let cartItems = [];
+
+async function init() {
+  try {
+    await liff.init({ liffId: '${LIFF_ID}' });
+    if (!liff.isLoggedIn()) { liff.login(); return; }
+    const profile = await liff.getProfile();
+    userId = profile.userId;
+    await loadCart();
+  } catch(e) {
+    document.getElementById('loading').textContent = '載入失敗，請重新開啟';
+  }
+}
+
+async function loadCart() {
+  const resp = await fetch('/api/cart?userId=' + userId);
+  const data = await resp.json();
+  cartItems = data.items || [];
+  render();
+}
+
+function render() {
+  document.getElementById('loading').style.display = 'none';
+  document.getElementById('main').style.display = 'block';
+  const el = document.getElementById('cart-items');
+  el.innerHTML = '';
+  if (cartItems.length === 0) {
+    document.getElementById('cart-empty').style.display = 'block';
+    document.getElementById('order-section').style.display = 'none';
+    document.getElementById('buyer-section').style.display = 'none';
+    return;
+  }
+  document.getElementById('cart-empty').style.display = 'none';
+  document.getElementById('order-section').style.display = 'block';
+  document.getElementById('buyer-section').style.display = 'block';
+  let total = 0;
+  cartItems.forEach((item, idx) => {
+    total += item.suggestedPrice || 0;
+    el.innerHTML += \`<div class="cart-item" id="item-\${idx}">
+      <div class="item-name">\${item.productId}</div>
+      <div class="item-detail">\${item.color} \${item.size}</div>
+      <div class="item-detail" style="font-size:12px;color:#aaa;margin-top:2px">\${item.productName.substring(0,30)}</div>
+      <div class="item-price">NT$\${item.suggestedPrice}</div>
+      <button class="item-delete" onclick="deleteItem(\${idx},\${item.rowIndex})">刪除</button>
+    </div>\`;
+  });
+  document.getElementById('total-amount').textContent = 'NT$' + total;
+}
+
+async function deleteItem(idx, rowIndex) {
+  if (!confirm('確定要移除這個商品嗎？')) return;
+  await fetch('/api/cart/item', { method:'DELETE', headers:{'Content-Type':'application/json'}, body: JSON.stringify({rowIndex}) });
+  cartItems.splice(idx, 1);
+  render();
+}
+
+async function submitOrder() {
+  const name = document.getElementById('f-name').value.trim();
+  const phone = document.getElementById('f-phone').value.trim();
+  const store = document.getElementById('f-store').value.trim();
+  const bank = document.getElementById('f-bank').value.trim();
+  const note = document.getElementById('f-note').value.trim();
+  if (!name || !phone || !store || !bank) { alert('請填寫所有必填欄位 (*)'); return; }
+  if (!/^09\\d{8}$/.test(phone)) { alert('手機號碼格式不正確'); return; }
+  if (bank.length !== 5) { alert('請輸入匯款帳號末 5 碼'); return; }
+  const btn = document.getElementById('submit-btn');
+  btn.disabled = true; btn.textContent = '送出中...';
+  try {
+    const resp = await fetch('/api/order', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ userId, cartItems, buyerInfo:{ name, phone, store711:store, bankLast5:bank, note } })
+    });
+    const data = await resp.json();
+    if (data.orderId) {
+      document.getElementById('main').style.display = 'none';
+      document.getElementById('success').style.display = 'block';
+      document.getElementById('success-text').innerHTML =
+        '訂單編號：' + data.orderId + '<br><br>我們將盡快確認您的訂單<br>請在收到確認通知後 3 天內完成匯款<br><br>如有問題請直接傳訊息給我們 🌸';
+    } else {
+      alert('下單失敗，請稍後再試');
+      btn.disabled = false; btn.textContent = '確認下單';
+    }
+  } catch(e) {
+    alert('下單失敗，請稍後再試');
+    btn.disabled = false; btn.textContent = '確認下單';
+  }
+}
+
+init();
+</script>
+</body>
+</html>`;
+}
+
+// ── 建立加入購物車按鈕 Flex ───────────────────────────────────────────────────
+function buildAddToCartFlex(stockLines, productId, jpy, suggested, productUrl) {
+  // 只顯示有庫存和剩餘少量的尺寸
+  const available = stockLines.filter(l => l.includes('✅') || l.includes('⚠️'));
+  if (available.length === 0) return null;
+
+  const buttons = available.map((line) => {
+    // 格式: "顏色(JP) 尺寸: ✅ 有庫存" 或 "顏色(JP) FREE: ⚠️ 剩餘少量"
+    const colonIdx = line.lastIndexOf(':');
+    const labelPart = colonIdx !== -1 ? line.substring(0, colonIdx).trim() : line;
+    const statusPart = colonIdx !== -1 ? line.substring(colonIdx + 1).trim() : '';
+
+    // 從 labelPart 抓出 JP 顏色名和尺寸
+    // labelPart 例: 黑色(ブラック) 24.5cm  或  黑色(ブラック) FREE
+    const jpMatch = labelPart.match(/\(([^)]+)\)/);
+    const colorJp = jpMatch ? jpMatch[1] : labelPart.split(' ')[0];
+    const sizeMatch = labelPart.match(/(\S+)$/);
+    const size = sizeMatch ? sizeMatch[1] : '';
+
+    // 按鈕標籤最長 40 chars
+    const btnLabel = `🛒 ${labelPart}`.substring(0, 40);
+    const displayText = `加入購物車：${labelPart}`;
+    const data = `action=add_to_cart&id=${productId}&c=${encodeURIComponent(colorJp)}&s=${encodeURIComponent(size)}&jpy=${jpy}&p=${suggested}`;
+
+    return {
+      type: 'box',
+      layout: 'vertical',
+      paddingBottom: '4px',
+      contents: [{
+        type: 'button',
+        height: 'sm',
+        style: 'secondary',
+        color: '#f5f0ec',
+        action: { type: 'postback', label: btnLabel, data, displayText },
+      }],
+    };
+  });
+
+  // 回商品頁按鈕
+  buttons.push({
+    type: 'box',
+    layout: 'vertical',
+    paddingTop: '6px',
+    contents: [{
+      type: 'button',
+      height: 'sm',
+      style: 'link',
+      action: { type: 'uri', label: '回官方商品頁', uri: productUrl },
+    }],
+  });
+
+  return {
+    type: 'flex',
+    altText: '選擇尺寸加入購物車',
+    contents: {
+      type: 'bubble',
+      size: 'kilo',
+      body: {
+        type: 'box',
+        layout: 'vertical',
+        paddingAll: '14px',
+        spacing: 'none',
+        contents: [
+          { type: 'text', text: '🛒 選擇尺寸加入購物車', weight: 'bold', size: 'sm', color: '#444444', margin: 'none' },
+          { type: 'separator', margin: 'sm' },
+          { type: 'box', layout: 'vertical', margin: 'sm', spacing: 'none', contents: buttons },
+        ],
+      },
+    },
+  };
 }
 
 // ── 建立 Flex Message ─────────────────────────────────────────────────────────
@@ -868,7 +1268,8 @@ async function handleEvent(event, client) {
   }
 
   const flexMsg = buildFlexMessage(userText, productName, jpy, suggested, stockLines, imageUrl, weightInfo);
-  await client.replyMessage(replyToken, flexMsg);
+  const cartFlex = buildAddToCartFlex(stockLines, productId, jpy, suggested, userText);
+  await client.replyMessage(replyToken, cartFlex ? [flexMsg, cartFlex] : [flexMsg]);
 
   const bgTasks = [];
 
@@ -925,6 +1326,55 @@ app.post('/webhook', express.raw({ type: '*/*' }), async (req, res) => {
 // ── 健康檢查 ──────────────────────────────────────────────────────────────────
 app.get('/', (_req, res) => {
   res.json({ status: 'GRL LINE Bot is running' });
+});
+
+// ── LIFF 購物車頁面 ───────────────────────────────────────────────────────────
+app.get('/cart', (_req, res) => {
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.send(buildCartHtml());
+});
+
+// ── 購物車 API ────────────────────────────────────────────────────────────────
+app.get('/api/cart', express.json(), async (req, res) => {
+  const { userId } = req.query;
+  if (!userId) return res.status(400).json({ error: 'userId required' });
+  try {
+    const items = await getCartItems(userId);
+    res.json({ items });
+  } catch (err) {
+    console.error('[api/cart error]', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/cart/item', express.json(), async (req, res) => {
+  const { rowIndex } = req.body;
+  if (!rowIndex) return res.status(400).json({ error: 'rowIndex required' });
+  try {
+    await clearCartItem(rowIndex);
+    res.json({ status: 'ok' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/order', express.json(), async (req, res) => {
+  const { userId, cartItems, buyerInfo } = req.body;
+  if (!userId || !cartItems || !buyerInfo) return res.status(400).json({ error: 'missing fields' });
+  try {
+    const result = await submitOrder(userId, cartItems, buyerInfo);
+    // 推播通知管理員
+    const client = new line.Client({ channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN });
+    const itemsText = cartItems.map(i => `・${i.productId} ${i.color} ${i.size} NT$${i.suggestedPrice}`).join('\n');
+    await client.pushMessage(ADMIN_USER_ID, {
+      type: 'text',
+      text: `🛍 新訂單！\n訂單ID: ${result.orderId}\n時間: ${result.orderTime}\n━━━━━━━━━━\n${itemsText}\n━━━━━━━━━━\n合計: NT$${result.totalTwd}\n\n買家: ${buyerInfo.name}\n手機: ${buyerInfo.phone}\n7-11門市: ${buyerInfo.store711}\n匯款末5碼: ${buyerInfo.bankLast5}${buyerInfo.note ? '\n備註: ' + buyerInfo.note : ''}`,
+    }).catch(e => console.error('[admin notify error]', e.message));
+    res.json({ status: 'ok', orderId: result.orderId });
+  } catch (err) {
+    console.error('[api/order error]', err.message);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // ── 一次性：在工作表1 插入新 J 欄「估算磅數（估算值）」──────────────────────
