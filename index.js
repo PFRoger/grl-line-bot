@@ -411,7 +411,7 @@ async function appendProductToSheet(productId, productName, jpy, stockLines, qSt
 // ── 記錄查詢到「查詢紀錄」分頁 ──────────────────────────────────────────────
 // 欄位：A日期 B顯示名稱 C UserID D商品ID E商品名稱 F日幣
 //       G估算磅數(lbs) H估算公斤(kg) I信心程度 J說明
-async function logQueryToSheet(userId, displayName, productId, productName, jpy, weightInfo) {
+async function logQueryToSheet(userId, displayName, productId, productName, jpy, weightInfo, imageUrl = '') {
   const sheets = getSheetsClient();
   const date = new Date().toISOString().slice(0, 10);
 
@@ -421,12 +421,13 @@ async function logQueryToSheet(userId, displayName, productId, productName, jpy,
     weightInfo ? weightInfo.midKg  : '',
     weightInfo ? weightInfo.confidenceLabel : '',
     weightInfo ? weightInfo.detail : '',
+    imageUrl,
   ];
 
   async function doAppend() {
     await sheets.spreadsheets.values.append({
       spreadsheetId: SHEET_ID,
-      range: '查詢紀錄!A:J',
+      range: '查詢紀錄!A:K',
       valueInputOption: 'USER_ENTERED',
       resource: { values: [dataRow] },
     });
@@ -444,12 +445,12 @@ async function logQueryToSheet(userId, displayName, productId, productName, jpy,
       });
       await sheets.spreadsheets.values.append({
         spreadsheetId: SHEET_ID,
-        range: '查詢紀錄!A:J',
+        range: '查詢紀錄!A:K',
         valueInputOption: 'USER_ENTERED',
         resource: {
           values: [
             ['日期', 'LINE 顯示名稱', 'LINE User ID', '商品 ID', '商品名稱', '日幣價格',
-             '估算磅數(lbs)', '估算公斤(kg)', '信心程度', '說明'],
+             '估算磅數(lbs)', '估算公斤(kg)', '信心程度', '說明', '圖片URL'],
             dataRow,
           ],
         },
@@ -597,7 +598,7 @@ async function getUserQueryHistory(userId) {
   const sheets = getSheetsClient();
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId: SHEET_ID,
-    range: '查詢紀錄!A:F',
+    range: '查詢紀錄!A:K',
   });
   const rows = (res.data.values || []).slice(1); // 跳過 header
   const userRows = rows.filter((r) => r[2] === userId);
@@ -629,11 +630,12 @@ function buildHistoryFlexMessage(history) {
     const prodName = row[4] || '商品名稱不明';
     const jpy      = row[5] ? `¥${Number(row[5]).toLocaleString('ja-JP')}` : '-';
     const prodId   = row[3] || '';
+    const imgUrl   = row[10] || '';
     const itemUrl  = prodId ? `https://www.grail.bz/disp/item/${prodId}/` : 'https://www.grail.bz';
 
-    return {
+    const bubble = {
       type: 'bubble',
-      size: 'micro',
+      size: 'kilo',
       body: {
         type: 'box',
         layout: 'vertical',
@@ -641,8 +643,8 @@ function buildHistoryFlexMessage(history) {
         paddingAll: '12px',
         contents: [
           { type: 'text', text: prodName, size: 'sm', weight: 'bold', wrap: true, maxLines: 2, color: '#222222' },
-          { type: 'text', text: jpy,       size: 'sm', color: '#E53935' },
-          { type: 'text', text: date,      size: 'xs', color: '#aaaaaa' },
+          { type: 'text', text: jpy,  size: 'sm', color: '#E53935' },
+          { type: 'text', text: date, size: 'xs', color: '#aaaaaa' },
         ],
       },
       footer: {
@@ -658,6 +660,18 @@ function buildHistoryFlexMessage(history) {
         }],
       },
     };
+
+    if (imgUrl) {
+      bubble.hero = {
+        type: 'image',
+        url: imgUrl,
+        size: 'full',
+        aspectRatio: '3:4',
+        aspectMode: 'cover',
+      };
+    }
+
+    return bubble;
   });
 
   return {
@@ -1536,10 +1550,10 @@ async function handleEvent(event, client) {
   bgTasks.push(
     client.getProfile(userId)
       .then((profile) =>
-        logQueryToSheet(userId, profile.displayName, productId, productName, jpy, weightInfo)
+        logQueryToSheet(userId, profile.displayName, productId, productName, jpy, weightInfo, imageUrl)
       )
       .catch(() =>
-        logQueryToSheet(userId, userId, productId, productName, jpy, weightInfo)
+        logQueryToSheet(userId, userId, productId, productName, jpy, weightInfo, imageUrl)
       )
       .catch((e) => console.error('[sheets log error]', e.message))
   );
