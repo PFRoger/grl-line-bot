@@ -831,9 +831,10 @@ async function handlePostback(event, client) {
     } catch (e) { console.warn('[lookup name error]', e.message); }
 
     await addToCartSheet(userId, productId, productName, colorJp, size, jpy, suggested, productUrl);
+    const colorDisplay = translateColorWithJp(colorJp);
     await client.replyMessage(replyToken, {
       type: 'text',
-      text: `✅ ${productId} 已加入購物車\n色：${colorJp} 碼：${size}\nNT$${suggested}\n\n請按下方主選單「購物車」查看內容\n════════════\n購物車每 12 小時自動清空`,
+      text: `✅ 已加入購物車\n商品：${productName || productId}\n色：${colorDisplay}\n碼：${size}\n售價：NT$${suggested}\n\n請按下方主選單「購物車」查看內容\n════════════\n購物車每 12 小時自動清空`,
     });
 
   } else if (action === 'view_cart') {
@@ -1014,34 +1015,40 @@ async function loadCartSilent() {
   } catch(e) {}
 }
 
+let syncTimer = null;
+function scheduleSilentSync() {
+  clearTimeout(syncTimer);
+  syncTimer = setTimeout(loadCartSilent, 1000); // 停止按壓 1 秒後才同步
+}
+
 function changeQty(idx, delta) {
   const group = groupedItems[idx];
   if (delta === -1) {
-    // 找最後一個符合的 item 從本地移除
     let removeIdx = -1;
     for (let i = cartItems.length - 1; i >= 0; i--) {
       if (cartItems[i].productId === group.productId && cartItems[i].color === group.color && cartItems[i].size === group.size) {
         removeIdx = i; break;
       }
     }
+    if (removeIdx === -1) return;
     const rowIndex = group.rowIndexes[group.rowIndexes.length - 1];
-    if (removeIdx !== -1) cartItems.splice(removeIdx, 1);
-    render(); // 立刻更新畫面
+    cartItems.splice(removeIdx, 1);
+    render();
     fetch('/api/cart/item', { method:'DELETE', headers:{'Content-Type':'application/json'}, body: JSON.stringify({rowIndex}) })
-      .then(() => loadCartSilent()).catch(() => {});
+      .catch(() => {});
   } else {
-    // 樂觀新增一筆暫時 item
     cartItems.push({ rowIndex: -1, productId: group.productId, productName: group.productName,
       color: group.color, colorDisplay: group.colorDisplay, size: group.size,
       jpy: group.jpy, suggestedPrice: group.suggestedPrice, productUrl: group.productUrl,
       addedAt: new Date().toISOString() });
-    render(); // 立刻更新畫面
+    render();
     fetch('/api/cart/add', { method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({ userId, productId: group.productId, productName: group.productName,
         color: group.color, size: group.size, jpy: group.jpy,
         suggestedPrice: group.suggestedPrice, productUrl: group.productUrl }) })
-      .then(() => loadCartSilent()).catch(() => {});
+      .catch(() => {});
   }
+  scheduleSilentSync(); // 每次按壓後重置計時器，停止後才同步一次
 }
 
 async function loadItemImages() {
