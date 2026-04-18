@@ -834,7 +834,7 @@ async function handlePostback(event, client) {
     const colorDisplay = translateColorWithJp(colorJp);
     await client.replyMessage(replyToken, {
       type: 'text',
-      text: `✅ 已加入購物車\n商品：${productName || productId}\n色：${colorDisplay}\n碼：${size}\n售價：NT$${suggested}\n\n請按下方主選單「購物車」查看內容\n════════════\n購物車每 12 小時自動清空`,
+      text: `✅ 已加入購物車\n商品：${productName || productId}\n\n顏色：${colorDisplay}\n尺寸：${size}\n\n售價：NT$${suggested}\n\n請按下方主選單「購物車」查看內容\n════════════\n購物車每 12 小時自動清空`,
     });
 
   } else if (action === 'view_cart') {
@@ -1214,7 +1214,7 @@ function buildAddToCartFlex(stockLines, productId, jpy, suggested, productUrl, i
           // 顏色
           { type: 'text', text: colorLabel, weight: 'bold', size: 'md', color: '#3d2c1e', wrap: true, margin: 'xs' },
           // 價格
-          { type: 'text', text: `¥${jpy.toLocaleString()}　建議售價 NT$${suggested.toLocaleString()}`, size: 'xs', color: '#999999', margin: 'xs' },
+          { type: 'text', text: `¥${jpy.toLocaleString()}　報價金額 NT$${suggested.toLocaleString()}`, size: 'xs', color: '#999999', margin: 'xs' },
           // 分隔線
           { type: 'separator', margin: 'md' },
           // 尺寸列表
