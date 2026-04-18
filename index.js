@@ -513,9 +513,13 @@ async function addToCartSheet(userId, productId, productName, colorJp, size, jpy
 
 async function getCartItems(userId) {
   const sheets = getSheetsClient();
-  await ensureCartSheet(sheets);
-  const resp = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${CART_SHEET}!A:J` });
-  const rows = resp.data.values || [];
+  let resp;
+  try {
+    resp = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${CART_SHEET}!A:J` });
+  } catch {
+    return []; // 工作表尚未建立，視為空購物車
+  }
+  const rows = (resp && resp.data.values) || [];
   const now = Date.now();
   const EXPIRE_MS = 12 * 60 * 60 * 1000; // 12 hours
   const items = [];
@@ -555,14 +559,14 @@ async function clearCartItem(rowIndex) {
 
 async function markCartItemsOrdered(userId, rowIndexes) {
   const sheets = getSheetsClient();
-  for (const idx of rowIndexes) {
-    await sheets.spreadsheets.values.update({
+  await Promise.all(rowIndexes.map((idx) =>
+    sheets.spreadsheets.values.update({
       spreadsheetId: SHEET_ID,
       range: `${CART_SHEET}!J${idx}`,
       valueInputOption: 'RAW',
       resource: { values: [['ordered']] },
-    });
-  }
+    })
+  ));
 }
 
 async function submitOrder(userId, cartItems, buyerInfo) {
@@ -570,7 +574,7 @@ async function submitOrder(userId, cartItems, buyerInfo) {
   await ensureOrderSheet(sheets);
   const orderId = `${Date.now()}-${userId.slice(-6)}`;
   const orderTime = new Date().toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' });
-  const itemsSummary = cartItems.map(i => `${i.productId} ${i.color} ${i.size} NT$${i.suggestedPrice}`).join(' | ');
+  const itemsSummary = cartItems.map(i => `${i.productId} ${translateColorWithJp(i.color)} ${i.size} NT$${i.suggestedPrice}`).join(' | ');
   const totalTwd = cartItems.reduce((sum, i) => sum + (i.suggestedPrice || 0), 0);
   await sheets.spreadsheets.values.append({
     spreadsheetId: SHEET_ID,
@@ -1536,7 +1540,7 @@ app.post('/api/order', express.json(), async (req, res) => {
     const result = await submitOrder(userId, cartItems, buyerInfo);
     // 推播通知管理員
     const client = new line.Client({ channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN });
-    const itemsText = cartItems.map(i => `・${i.productId} ${i.color} ${i.size} NT$${i.suggestedPrice}`).join('\n');
+    const itemsText = cartItems.map(i => `・${i.productId} ${translateColorWithJp(i.color)} ${i.size} NT$${i.suggestedPrice}`).join('\n');
     await client.pushMessage(ADMIN_USER_ID, {
       type: 'text',
       text: `🛍 新訂單！\n訂單ID: ${result.orderId}\n時間: ${result.orderTime}\n━━━━━━━━━━\n${itemsText}\n━━━━━━━━━━\n合計: NT$${result.totalTwd}\n\n買家: ${buyerInfo.name}\n手機: ${buyerInfo.phone}\n聯繫方式: ${buyerInfo.contactMethod} @${buyerInfo.contactAccount}${buyerInfo.note ? '\n備註: ' + buyerInfo.note : ''}`,
