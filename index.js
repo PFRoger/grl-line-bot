@@ -812,7 +812,7 @@ async function handlePostback(event, client) {
     const size         = params.get('s') || '';
     const jpy          = parseInt(params.get('jpy')) || 0;
     const suggested    = parseInt(params.get('p')) || 0;
-    const productUrl   = `https://www.grail.bz/item/${productId}/`;
+    const productUrl   = params.get('url') || `https://www.grail.bz/item/${productId}/`;
 
     // 從查詢紀錄找商品名稱
     let productName = productId;
@@ -979,7 +979,10 @@ async function loadItemImages() {
     const key = item.productId + '|' + encodeURIComponent(item.color);
     if (!fetched[key]) {
       try {
-        const resp = await fetch('/api/item-image?id=' + encodeURIComponent(item.productId) + '&c=' + encodeURIComponent(item.color));
+        const imageApiUrl = item.productUrl
+          ? '/api/item-image?url=' + encodeURIComponent(item.productUrl) + '&c=' + encodeURIComponent(item.color)
+          : '/api/item-image?id=' + encodeURIComponent(item.productId) + '&c=' + encodeURIComponent(item.color);
+        const resp = await fetch(imageApiUrl);
         const data = await resp.json();
         fetched[key] = data.imageUrl || '';
       } catch(e) { fetched[key] = ''; }
@@ -1082,7 +1085,7 @@ function buildAddToCartFlex(stockLines, productId, jpy, suggested, productUrl, i
         : (item.inStock ? '有庫存' : '剩餘少量');
       const btnLabel = `${item.size} - ${descText}`.substring(0, 20);
       const displayText = `加入購物車：${item.colorZh || colorJp} ${item.size}`;
-      const data = `action=add_to_cart&id=${productId}&c=${encodeURIComponent(colorJp)}&s=${encodeURIComponent(item.size)}&jpy=${jpy}&p=${suggested}`;
+      const data = `action=add_to_cart&id=${productId}&c=${encodeURIComponent(colorJp)}&s=${encodeURIComponent(item.size)}&jpy=${jpy}&p=${suggested}&url=${encodeURIComponent(productUrl)}`;
       return {
         type: 'button',
         height: 'sm',
@@ -1450,10 +1453,11 @@ app.get('/cart', (_req, res) => {
 // ── 7-11 門市 Proxy ───────────────────────────────────────────────────────────
 // 回傳指定商品 + 顏色的全尺寸圖片 URL（供 LIFF 購物車 lazy load 使用）
 app.get('/api/item-image', async (req, res) => {
-  const { id: productId, c: colorJp } = req.query;
-  if (!productId || !colorJp) return res.status(400).json({ error: 'id and c required' });
+  const { id: productId, c: colorJp, url: directUrl } = req.query;
+  if (!colorJp) return res.status(400).json({ error: 'c required' });
+  if (!productId && !directUrl) return res.status(400).json({ error: 'id or url required' });
   try {
-    const productUrl = `https://www.grail.bz/item/${productId}/`;
+    const productUrl = directUrl || `https://www.grail.bz/item/${productId}/`;
     const { data: html } = await axios.get(productUrl, {
       timeout: 10000,
       headers: {
