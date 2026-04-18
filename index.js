@@ -861,12 +861,14 @@ body{font-family:-apple-system,sans-serif;background:#faf8f6;color:#333;padding-
 .section-title{font-size:15px;font-weight:bold;color:#7a5c3e;margin-bottom:12px;border-bottom:1px solid #f0e8de;padding-bottom:8px}
 .cart-item{border:1px solid #eee;border-radius:8px;padding:12px;margin-bottom:10px;display:flex;gap:10px;position:relative}
 .item-img{width:64px;height:85px;object-fit:cover;border-radius:6px;background:#f5f0ec;flex-shrink:0}
-.item-info{flex:1;min-width:0;padding-right:54px}
+.item-info{flex:1;min-width:0}
 .item-name{font-size:13px;color:#888;margin-bottom:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .item-detail{font-size:14px;font-weight:600;color:#333}
-.item-price{font-size:15px;font-weight:bold;color:#c9a98a;margin-top:4px}
-.item-delete{position:absolute;top:10px;right:10px;background:none;border:1px solid #ddd;border-radius:6px;padding:4px 10px;font-size:12px;color:#999;cursor:pointer}
-.item-delete:active{background:#fee}
+.item-price{font-size:14px;font-weight:bold;color:#c9a98a;margin-top:4px}
+.qty-ctrl{display:flex;align-items:center;gap:10px;margin-top:8px}
+.qty-btn{width:30px;height:30px;border:1px solid #c9a98a;border-radius:6px;background:#fff;color:#c9a98a;font-size:20px;font-weight:bold;cursor:pointer;line-height:1;padding:0}
+.qty-btn:active{background:#f5ede4}
+.qty-num{font-size:16px;font-weight:bold;color:#333;min-width:20px;text-align:center}
 .empty{text-align:center;color:#aaa;padding:30px 0;font-size:14px}
 .total-row{display:flex;justify-content:space-between;align-items:center;padding:6px 0;font-size:14px}
 .total-amount{font-size:18px;font-weight:bold;color:#c9a98a}
@@ -926,6 +928,7 @@ input:focus,select:focus,textarea:focus{border-color:#c9a98a}
 <script>
 let userId = '';
 let cartItems = [];
+let groupedItems = [];
 
 async function init() {
   try {
@@ -946,12 +949,28 @@ async function loadCart() {
   render();
 }
 
+function groupCartItems(items) {
+  const groups = {};
+  const order = [];
+  items.forEach(item => {
+    const key = item.productId + '|' + item.color + '|' + item.size;
+    if (!groups[key]) {
+      groups[key] = Object.assign({}, item, { quantity: 0, rowIndexes: [] });
+      order.push(key);
+    }
+    groups[key].quantity++;
+    groups[key].rowIndexes.push(item.rowIndex);
+  });
+  return order.map(k => groups[k]);
+}
+
 function render() {
   document.getElementById('loading').style.display = 'none';
   document.getElementById('main').style.display = 'block';
   const el = document.getElementById('cart-items');
   el.innerHTML = '';
-  if (cartItems.length === 0) {
+  groupedItems = groupCartItems(cartItems);
+  if (groupedItems.length === 0) {
     document.getElementById('cart-empty').style.display = 'block';
     document.getElementById('order-section').style.display = 'none';
     document.getElementById('buyer-section').style.display = 'none';
@@ -961,26 +980,49 @@ function render() {
   document.getElementById('order-section').style.display = 'block';
   document.getElementById('buyer-section').style.display = 'block';
   let total = 0;
-  cartItems.forEach((item, idx) => {
-    total += item.suggestedPrice || 0;
+  groupedItems.forEach((group, idx) => {
+    const subtotal = (group.suggestedPrice || 0) * group.quantity;
+    total += subtotal;
+    const priceText = group.quantity > 1
+      ? \`NT$\${group.suggestedPrice} × \${group.quantity} = NT$\${subtotal}\`
+      : \`NT$\${group.suggestedPrice}\`;
     el.innerHTML += \`<div class="cart-item" id="item-\${idx}">
       <img class="item-img" id="img-\${idx}" src="" alt="" style="display:none">
       <div class="item-info">
-        <div class="item-name">\${item.productName ? item.productName.substring(0,20) : item.productId}</div>
-        <div class="item-detail">\${item.colorDisplay || item.color} \${item.size}</div>
-        <div class="item-price">NT$\${item.suggestedPrice}</div>
+        <div class="item-name">\${group.productName ? group.productName.substring(0,25) : group.productId}</div>
+        <div class="item-detail">\${group.colorDisplay || group.color} \${group.size}</div>
+        <div class="item-price">\${priceText}</div>
+        <div class="qty-ctrl">
+          <button class="qty-btn" onclick="changeQty(\${idx},-1)">−</button>
+          <span class="qty-num">\${group.quantity}</span>
+          <button class="qty-btn" onclick="changeQty(\${idx},+1)">＋</button>
+        </div>
       </div>
-      <button class="item-delete" onclick="deleteItem(\${idx},\${item.rowIndex})">刪除</button>
     </div>\`;
   });
   document.getElementById('total-amount').textContent = 'NT$' + total;
   loadItemImages();
 }
 
+async function changeQty(idx, delta) {
+  const group = groupedItems[idx];
+  if (delta === -1) {
+    const rowIndex = group.rowIndexes[group.rowIndexes.length - 1];
+    await fetch('/api/cart/item', { method:'DELETE', headers:{'Content-Type':'application/json'}, body: JSON.stringify({rowIndex}) });
+  } else {
+    await fetch('/api/cart/add', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ userId, productId: group.productId, productName: group.productName,
+        color: group.color, size: group.size, jpy: group.jpy,
+        suggestedPrice: group.suggestedPrice, productUrl: group.productUrl })
+    });
+  }
+  await loadCart();
+}
+
 async function loadItemImages() {
-  // 建立去重的 fetch 工作（同商品+顏色只打一次）
   const keyToUrl = {};
-  cartItems.forEach((item) => {
+  groupedItems.forEach((item) => {
     const key = item.productId + '|' + item.color;
     if (!keyToUrl[key]) {
       keyToUrl[key] = item.productUrl
@@ -988,7 +1030,6 @@ async function loadItemImages() {
         : '/api/item-image?id=' + encodeURIComponent(item.productId) + '&c=' + encodeURIComponent(item.color);
     }
   });
-  // 並行 fetch
   const fetched = {};
   await Promise.all(Object.entries(keyToUrl).map(async ([key, apiUrl]) => {
     try {
@@ -997,22 +1038,11 @@ async function loadItemImages() {
       fetched[key] = data.imageUrl || '';
     } catch(e) { fetched[key] = ''; }
   }));
-  // 套用圖片
-  cartItems.forEach((item, idx) => {
+  groupedItems.forEach((item, idx) => {
     const key = item.productId + '|' + item.color;
     const imgEl = document.getElementById('img-' + idx);
-    if (imgEl && fetched[key]) {
-      imgEl.src = fetched[key];
-      imgEl.style.display = 'block';
-    }
+    if (imgEl && fetched[key]) { imgEl.src = fetched[key]; imgEl.style.display = 'block'; }
   });
-}
-
-async function deleteItem(idx, rowIndex) {
-  if (!confirm('確定要移除這個商品嗎？')) return;
-  await fetch('/api/cart/item', { method:'DELETE', headers:{'Content-Type':'application/json'}, body: JSON.stringify({rowIndex}) });
-  cartItems.splice(idx, 1);
-  render();
 }
 
 async function submitOrder() {
@@ -1527,6 +1557,17 @@ app.delete('/api/cart/item', express.json(), async (req, res) => {
   if (!rowIndex) return res.status(400).json({ error: 'rowIndex required' });
   try {
     await clearCartItem(rowIndex);
+    res.json({ status: 'ok' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/cart/add', express.json(), async (req, res) => {
+  const { userId, productId, productName, color, size, jpy, suggestedPrice, productUrl } = req.body;
+  if (!userId || !productId || !color || !size) return res.status(400).json({ error: 'missing fields' });
+  try {
+    await addToCartSheet(userId, productId, productName || productId, color, size, jpy || 0, suggestedPrice || 0, productUrl || '');
     res.json({ status: 'ok' });
   } catch (err) {
     res.status(500).json({ error: err.message });
