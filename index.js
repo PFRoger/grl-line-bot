@@ -601,7 +601,18 @@ async function getUserQueryHistory(userId) {
   });
   const rows = (res.data.values || []).slice(1); // 跳過 header
   const userRows = rows.filter((r) => r[2] === userId);
-  return userRows.slice(-10).reverse(); // 最近 10 筆，最新在前
+  // 從最新往回掃，每個 productId 只保留最近一筆（去重），最多 12 筆
+  const seen = new Set();
+  const deduped = [];
+  for (let i = userRows.length - 1; i >= 0; i--) {
+    const pid = userRows[i][3] || '';
+    if (!seen.has(pid)) {
+      seen.add(pid);
+      deduped.push(userRows[i]);
+      if (deduped.length >= 12) break;
+    }
+  }
+  return deduped; // 已是最新在前
 }
 
 // ── 查詢紀錄 Flex Message ─────────────────────────────────────────────────────
@@ -651,7 +662,7 @@ function buildHistoryFlexMessage(history) {
 
   return {
     type: 'flex',
-    altText: `您的查詢紀錄（最近 ${history.length} 筆）`,
+    altText: `您的查詢紀錄（${history.length} 件商品）`,
     contents: { type: 'carousel', contents: bubbles },
   };
 }
