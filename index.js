@@ -991,7 +991,7 @@ function render() {
       ? \`NT$\${group.suggestedPrice} × \${group.quantity} = NT$\${subtotal}\`
       : \`NT$\${group.suggestedPrice}\`;
     el.innerHTML += \`<div class="cart-item" id="item-\${idx}">
-      <img class="item-img" id="img-\${idx}" src="" alt="" style="display:none">
+      <img class="item-img" id="img-\${idx}" src="" alt="">
       <div class="item-info">
         <div class="item-name">\${group.productName ? group.productName.substring(0,25) : group.productId}</div>
         <div class="item-detail">\${group.colorDisplay || group.color} \${group.size}</div>
@@ -1026,6 +1026,7 @@ function scheduleSilentSync() {
 function changeQty(idx, delta) {
   const group = groupedItems[idx];
   if (delta === -1) {
+    if (group.quantity === 1 && !confirm('確定要移除此商品嗎？')) return;
     let removeIdx = -1;
     for (let i = cartItems.length - 1; i >= 0; i--) {
       if (cartItems[i].productId === group.productId && cartItems[i].color === group.color && cartItems[i].size === group.size) {
@@ -1064,7 +1065,7 @@ async function loadItemImages() {
     const key = item.productId + '|' + item.color;
     if (imageCache[key]) {
       const imgEl = document.getElementById('img-' + idx);
-      if (imgEl) { imgEl.src = imageCache[key]; imgEl.style.display = 'block'; }
+      if (imgEl) imgEl.src = imageCache[key];
     }
   });
   // 只有 cache 沒有的才呼叫 API（舊資料沒存 imageUrl 的 fallback）
@@ -1089,7 +1090,7 @@ async function loadItemImages() {
     const key = item.productId + '|' + item.color;
     if (imageCache[key]) {
       const imgEl = document.getElementById('img-' + idx);
-      if (imgEl) { imgEl.src = imageCache[key]; imgEl.style.display = 'block'; }
+      if (imgEl) imgEl.src = imageCache[key];
     }
   });
 }
