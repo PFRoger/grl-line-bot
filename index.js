@@ -525,11 +525,13 @@ async function getCartItems(userId) {
     if (row[9] !== 'active') return;
     const addedAt = new Date(row[8]).getTime();
     if (now - addedAt > EXPIRE_MS) return; // expired
+    const colorJp = row[3] || '';
     items.push({
       rowIndex: idx + 1, // 1-based sheet row
       productId: row[1] || '',
       productName: row[2] || '',
-      color: row[3] || '',
+      color: colorJp,
+      colorDisplay: translateColorWithJp(colorJp),
       size: row[4] || '',
       jpy: parseInt(row[5]) || 0,
       suggestedPrice: parseInt(row[6]) || 0,
@@ -961,7 +963,7 @@ function render() {
       <img class="item-img" id="img-\${idx}" src="" alt="" style="display:none">
       <div class="item-info">
         <div class="item-name">\${item.productName ? item.productName.substring(0,20) : item.productId}</div>
-        <div class="item-detail">\${item.color} \${item.size}</div>
+        <div class="item-detail">\${item.colorDisplay || item.color} \${item.size}</div>
         <div class="item-price">NT$\${item.suggestedPrice}</div>
       </div>
       <button class="item-delete" onclick="deleteItem(\${idx},\${item.rowIndex})">刪除</button>
@@ -972,27 +974,34 @@ function render() {
 }
 
 async function loadItemImages() {
-  // 依商品 ID 分組，每個不同的商品只 fetch 一次
-  const fetched = {};
-  for (let idx = 0; idx < cartItems.length; idx++) {
-    const item = cartItems[idx];
-    const key = item.productId + '|' + encodeURIComponent(item.color);
-    if (!fetched[key]) {
-      try {
-        const imageApiUrl = item.productUrl
-          ? '/api/item-image?url=' + encodeURIComponent(item.productUrl) + '&c=' + encodeURIComponent(item.color)
-          : '/api/item-image?id=' + encodeURIComponent(item.productId) + '&c=' + encodeURIComponent(item.color);
-        const resp = await fetch(imageApiUrl);
-        const data = await resp.json();
-        fetched[key] = data.imageUrl || '';
-      } catch(e) { fetched[key] = ''; }
+  // 建立去重的 fetch 工作（同商品+顏色只打一次）
+  const keyToUrl = {};
+  cartItems.forEach((item) => {
+    const key = item.productId + '|' + item.color;
+    if (!keyToUrl[key]) {
+      keyToUrl[key] = item.productUrl
+        ? '/api/item-image?url=' + encodeURIComponent(item.productUrl) + '&c=' + encodeURIComponent(item.color)
+        : '/api/item-image?id=' + encodeURIComponent(item.productId) + '&c=' + encodeURIComponent(item.color);
     }
+  });
+  // 並行 fetch
+  const fetched = {};
+  await Promise.all(Object.entries(keyToUrl).map(async ([key, apiUrl]) => {
+    try {
+      const resp = await fetch(apiUrl);
+      const data = await resp.json();
+      fetched[key] = data.imageUrl || '';
+    } catch(e) { fetched[key] = ''; }
+  }));
+  // 套用圖片
+  cartItems.forEach((item, idx) => {
+    const key = item.productId + '|' + item.color;
     const imgEl = document.getElementById('img-' + idx);
     if (imgEl && fetched[key]) {
       imgEl.src = fetched[key];
       imgEl.style.display = 'block';
     }
-  }
+  });
 }
 
 async function deleteItem(idx, rowIndex) {
