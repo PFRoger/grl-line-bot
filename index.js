@@ -950,10 +950,16 @@ let cartItems = [];
 let groupedItems = [];
 const imageCache = {}; // key: productId|color → imageUrl
 let _confirmCb = null;
-function showConfirm(msg) {
+function showConfirm(group) {
   return new Promise(resolve => {
     _confirmCb = resolve;
-    document.getElementById('confirm-msg').textContent = msg;
+    const imgKey = group.productId + '|' + group.color;
+    const imgUrl = imageCache[imgKey] || group.imageUrl || '';
+    document.getElementById('confirm-msg').innerHTML =
+      (imgUrl ? \`<img src="\${imgUrl}" style="width:72px;height:96px;object-fit:cover;border-radius:8px;margin-bottom:10px"><br>\` : '') +
+      \`<strong style="font-size:14px;color:#333">\${group.productName ? group.productName.substring(0,28) : group.productId}</strong><br>\` +
+      \`<span style="font-size:13px;color:#888">\${group.colorDisplay || group.color}　\${group.size}</span><br><br>\` +
+      \`<span style="font-size:14px;color:#555">確定要移除此商品嗎？</span>\`;
     document.getElementById('confirm-overlay').style.display = 'flex';
   });
 }
@@ -1056,7 +1062,7 @@ async function changeQty(idx, delta) {
   const group = groupedItems[idx];
   if (delta === -1) {
     if (group.quantity === 1) {
-      const ok = await showConfirm('確定要移除此商品嗎？');
+      const ok = await showConfirm(group);
       if (!ok) return;
     }
     let removeIdx = -1;
