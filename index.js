@@ -929,6 +929,7 @@ input:focus,select:focus,textarea:focus{border-color:#c9a98a}
 let userId = '';
 let cartItems = [];
 let groupedItems = [];
+const imageCache = {}; // key: productId|color → imageUrl
 
 async function init() {
   try {
@@ -1021,27 +1022,38 @@ async function changeQty(idx, delta) {
 }
 
 async function loadItemImages() {
-  const keyToUrl = {};
+  // 先套用 cache 中已有的圖（避免閃爍）
+  groupedItems.forEach((item, idx) => {
+    const key = item.productId + '|' + item.color;
+    if (imageCache[key]) {
+      const imgEl = document.getElementById('img-' + idx);
+      if (imgEl) { imgEl.src = imageCache[key]; imgEl.style.display = 'block'; }
+    }
+  });
+  // 只 fetch 尚未 cache 的
+  const toFetch = {};
   groupedItems.forEach((item) => {
     const key = item.productId + '|' + item.color;
-    if (!keyToUrl[key]) {
-      keyToUrl[key] = item.productUrl
+    if (!imageCache[key] && !toFetch[key]) {
+      toFetch[key] = item.productUrl
         ? '/api/item-image?url=' + encodeURIComponent(item.productUrl) + '&c=' + encodeURIComponent(item.color)
         : '/api/item-image?id=' + encodeURIComponent(item.productId) + '&c=' + encodeURIComponent(item.color);
     }
   });
-  const fetched = {};
-  await Promise.all(Object.entries(keyToUrl).map(async ([key, apiUrl]) => {
+  await Promise.all(Object.entries(toFetch).map(async ([key, apiUrl]) => {
     try {
       const resp = await fetch(apiUrl);
       const data = await resp.json();
-      fetched[key] = data.imageUrl || '';
-    } catch(e) { fetched[key] = ''; }
+      imageCache[key] = data.imageUrl || '';
+    } catch(e) { imageCache[key] = ''; }
   }));
+  // 套用剛 fetch 回來的
   groupedItems.forEach((item, idx) => {
     const key = item.productId + '|' + item.color;
-    const imgEl = document.getElementById('img-' + idx);
-    if (imgEl && fetched[key]) { imgEl.src = fetched[key]; imgEl.style.display = 'block'; }
+    if (imageCache[key]) {
+      const imgEl = document.getElementById('img-' + idx);
+      if (imgEl) { imgEl.src = imageCache[key]; imgEl.style.display = 'block'; }
+    }
   });
 }
 
