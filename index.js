@@ -1005,20 +1005,43 @@ function render() {
   loadItemImages();
 }
 
-async function changeQty(idx, delta) {
+async function loadCartSilent() {
+  try {
+    const resp = await fetch('/api/cart?userId=' + userId);
+    const data = await resp.json();
+    cartItems = data.items || [];
+    groupedItems = groupCartItems(cartItems); // 更新 rowIndexes，但不重繪
+  } catch(e) {}
+}
+
+function changeQty(idx, delta) {
   const group = groupedItems[idx];
   if (delta === -1) {
+    // 找最後一個符合的 item 從本地移除
+    let removeIdx = -1;
+    for (let i = cartItems.length - 1; i >= 0; i--) {
+      if (cartItems[i].productId === group.productId && cartItems[i].color === group.color && cartItems[i].size === group.size) {
+        removeIdx = i; break;
+      }
+    }
     const rowIndex = group.rowIndexes[group.rowIndexes.length - 1];
-    await fetch('/api/cart/item', { method:'DELETE', headers:{'Content-Type':'application/json'}, body: JSON.stringify({rowIndex}) });
+    if (removeIdx !== -1) cartItems.splice(removeIdx, 1);
+    render(); // 立刻更新畫面
+    fetch('/api/cart/item', { method:'DELETE', headers:{'Content-Type':'application/json'}, body: JSON.stringify({rowIndex}) })
+      .then(() => loadCartSilent()).catch(() => {});
   } else {
-    await fetch('/api/cart/add', {
-      method:'POST', headers:{'Content-Type':'application/json'},
+    // 樂觀新增一筆暫時 item
+    cartItems.push({ rowIndex: -1, productId: group.productId, productName: group.productName,
+      color: group.color, colorDisplay: group.colorDisplay, size: group.size,
+      jpy: group.jpy, suggestedPrice: group.suggestedPrice, productUrl: group.productUrl,
+      addedAt: new Date().toISOString() });
+    render(); // 立刻更新畫面
+    fetch('/api/cart/add', { method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({ userId, productId: group.productId, productName: group.productName,
         color: group.color, size: group.size, jpy: group.jpy,
-        suggestedPrice: group.suggestedPrice, productUrl: group.productUrl })
-    });
+        suggestedPrice: group.suggestedPrice, productUrl: group.productUrl }) })
+      .then(() => loadCartSilent()).catch(() => {});
   }
-  await loadCart();
 }
 
 async function loadItemImages() {
