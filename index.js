@@ -1541,10 +1541,17 @@ app.post('/api/order', express.json(), async (req, res) => {
     // 推播通知管理員
     const client = new line.Client({ channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN });
     const itemsText = cartItems.map(i => `・${i.productId} ${translateColorWithJp(i.color)} ${i.size} NT$${i.suggestedPrice}`).join('\n');
-    await client.pushMessage(ADMIN_USER_ID, {
-      type: 'text',
-      text: `🛍 新訂單！\n訂單ID: ${result.orderId}\n時間: ${result.orderTime}\n━━━━━━━━━━\n${itemsText}\n━━━━━━━━━━\n合計: NT$${result.totalTwd}\n\n買家: ${buyerInfo.name}\n手機: ${buyerInfo.phone}\n聯繫方式: ${buyerInfo.contactMethod} @${buyerInfo.contactAccount}${buyerInfo.note ? '\n備註: ' + buyerInfo.note : ''}`,
-    }).catch(e => console.error('[admin notify error]', e.message));
+    // 並行推播：管理員通知 + 買家確認訊息
+    await Promise.all([
+      client.pushMessage(ADMIN_USER_ID, {
+        type: 'text',
+        text: `🛍 新訂單！\n訂單ID: ${result.orderId}\n時間: ${result.orderTime}\n━━━━━━━━━━\n${itemsText}\n━━━━━━━━━━\n合計: NT$${result.totalTwd}\n\n買家: ${buyerInfo.name}\n手機: ${buyerInfo.phone}\n聯繫方式: ${buyerInfo.contactMethod} @${buyerInfo.contactAccount}${buyerInfo.note ? '\n備註: ' + buyerInfo.note : ''}`,
+      }).catch(e => console.error('[admin notify error]', e.message)),
+      client.pushMessage(userId, {
+        type: 'text',
+        text: `🎉 訂單已收到！\n\n訂單編號：${result.orderId}\n下單時間：${result.orderTime}\n━━━━━━━━━━\n${itemsText}\n━━━━━━━━━━\n合計：NT$${result.totalTwd}\n\n我們確認後會盡快與您聯繫付款方式，請耐心等候 🌸`,
+      }).catch(e => console.error('[buyer notify error]', e.message)),
+    ]);
     res.json({ status: 'ok', orderId: result.orderId });
   } catch (err) {
     console.error('[api/order error]', err.message);
