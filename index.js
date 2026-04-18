@@ -462,8 +462,8 @@ async function logQueryToSheet(userId, displayName, productId, productName, jpy,
 
 // ── 購物車 Sheet 操作 ─────────────────────────────────────────────────────────
 // 欄位：A=userId B=productId C=productName D=color(JP) E=size
-//        F=jpy G=suggestedPrice H=productUrl I=addedAt J=status
-const CART_HEADERS = ['userId','productId','productName','color','size','jpy','suggestedPrice','productUrl','addedAt','status'];
+//        F=jpy G=suggestedPrice H=productUrl I=addedAt J=status K=imageUrl
+const CART_HEADERS = ['userId','productId','productName','color','size','jpy','suggestedPrice','productUrl','addedAt','status','imageUrl'];
 
 async function ensureCartSheet(sheets) {
   try {
@@ -499,15 +499,15 @@ async function ensureOrderSheet(sheets) {
   }
 }
 
-async function addToCartSheet(userId, productId, productName, colorJp, size, jpy, suggestedPrice, productUrl) {
+async function addToCartSheet(userId, productId, productName, colorJp, size, jpy, suggestedPrice, productUrl, imageUrl = '') {
   const sheets = getSheetsClient();
   await ensureCartSheet(sheets);
   const addedAt = new Date().toISOString();
   await sheets.spreadsheets.values.append({
     spreadsheetId: SHEET_ID,
-    range: `${CART_SHEET}!A:J`,
+    range: `${CART_SHEET}!A:K`,
     valueInputOption: 'RAW',
-    resource: { values: [[userId, productId, productName, colorJp, size, jpy, suggestedPrice, productUrl, addedAt, 'active']] },
+    resource: { values: [[userId, productId, productName, colorJp, size, jpy, suggestedPrice, productUrl, addedAt, 'active', imageUrl]] },
   });
 }
 
@@ -515,7 +515,7 @@ async function getCartItems(userId) {
   const sheets = getSheetsClient();
   let resp;
   try {
-    resp = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${CART_SHEET}!A:J` });
+    resp = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${CART_SHEET}!A:K` });
   } catch {
     return []; // 工作表尚未建立，視為空購物車
   }
@@ -541,6 +541,7 @@ async function getCartItems(userId) {
       suggestedPrice: parseInt(row[6]) || 0,
       productUrl: row[7] || '',
       addedAt: row[8] || '',
+      imageUrl: row[10] || '',
     });
   });
   return items;
@@ -819,6 +820,7 @@ async function handlePostback(event, client) {
     const jpy          = parseInt(params.get('jpy')) || 0;
     const suggested    = parseInt(params.get('p')) || 0;
     const productUrl   = params.get('url') || `https://www.grail.bz/item/${productId}/`;
+    const imgUrl       = params.get('img') || '';
 
     // 從查詢紀錄找商品名稱
     let productName = productId;
@@ -830,7 +832,7 @@ async function handlePostback(event, client) {
       if (found) productName = found[4] || productId;
     } catch (e) { console.warn('[lookup name error]', e.message); }
 
-    await addToCartSheet(userId, productId, productName, colorJp, size, jpy, suggested, productUrl);
+    await addToCartSheet(userId, productId, productName, colorJp, size, jpy, suggested, productUrl, imgUrl);
     const colorDisplay = translateColorWithJp(colorJp);
     await client.replyMessage(replyToken, {
       type: 'text',
@@ -1040,19 +1042,24 @@ function changeQty(idx, delta) {
     cartItems.push({ rowIndex: -1, productId: group.productId, productName: group.productName,
       color: group.color, colorDisplay: group.colorDisplay, size: group.size,
       jpy: group.jpy, suggestedPrice: group.suggestedPrice, productUrl: group.productUrl,
-      addedAt: new Date().toISOString() });
+      imageUrl: group.imageUrl, addedAt: new Date().toISOString() });
     render();
     fetch('/api/cart/add', { method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({ userId, productId: group.productId, productName: group.productName,
         color: group.color, size: group.size, jpy: group.jpy,
-        suggestedPrice: group.suggestedPrice, productUrl: group.productUrl }) })
+        suggestedPrice: group.suggestedPrice, productUrl: group.productUrl, imageUrl: group.imageUrl }) })
       .catch(() => {});
   }
   scheduleSilentSync(); // 每次按壓後重置計時器，停止後才同步一次
 }
 
 async function loadItemImages() {
-  // 先套用 cache 中已有的圖（避免閃爍）
+  // 先把 sheet 中已存的 imageUrl 填入 cache
+  groupedItems.forEach((item) => {
+    const key = item.productId + '|' + item.color;
+    if (!imageCache[key] && item.imageUrl) imageCache[key] = item.imageUrl;
+  });
+  // 套用 cache（含剛填入的）
   groupedItems.forEach((item, idx) => {
     const key = item.productId + '|' + item.color;
     if (imageCache[key]) {
@@ -1060,7 +1067,7 @@ async function loadItemImages() {
       if (imgEl) { imgEl.src = imageCache[key]; imgEl.style.display = 'block'; }
     }
   });
-  // 只 fetch 尚未 cache 的
+  // 只有 cache 沒有的才呼叫 API（舊資料沒存 imageUrl 的 fallback）
   const toFetch = {};
   groupedItems.forEach((item) => {
     const key = item.productId + '|' + item.color;
@@ -1070,6 +1077,7 @@ async function loadItemImages() {
         : '/api/item-image?id=' + encodeURIComponent(item.productId) + '&c=' + encodeURIComponent(item.color);
     }
   });
+  if (Object.keys(toFetch).length === 0) return;
   await Promise.all(Object.entries(toFetch).map(async ([key, apiUrl]) => {
     try {
       const resp = await fetch(apiUrl);
@@ -1077,7 +1085,6 @@ async function loadItemImages() {
       imageCache[key] = data.imageUrl || '';
     } catch(e) { imageCache[key] = ''; }
   }));
-  // 套用剛 fetch 回來的
   groupedItems.forEach((item, idx) => {
     const key = item.productId + '|' + item.color;
     if (imageCache[key]) {
@@ -1170,7 +1177,8 @@ function buildAddToCartFlex(stockLines, productId, jpy, suggested, productUrl, i
         : (item.inStock ? '有庫存' : '剩餘少量');
       const btnLabel = `${item.size} - ${descText}`.substring(0, 20);
       const displayText = `加入購物車：${item.colorZh || colorJp} ${item.size}`;
-      const data = `action=add_to_cart&id=${productId}&c=${encodeURIComponent(colorJp)}&s=${encodeURIComponent(item.size)}&jpy=${jpy}&p=${suggested}&url=${encodeURIComponent(productUrl)}`;
+      const imgUrl = colorImages[colorJp] || imageUrl || '';
+      const data = `action=add_to_cart&id=${productId}&c=${encodeURIComponent(colorJp)}&s=${encodeURIComponent(item.size)}&jpy=${jpy}&p=${suggested}&url=${encodeURIComponent(productUrl)}&img=${encodeURIComponent(imgUrl)}`;
       return {
         type: 'button',
         height: 'sm',
@@ -1459,18 +1467,12 @@ async function handleEvent(event, client) {
   const suggested   = calcSuggestedPrice(rate, jpy, weightInfo ? weightInfo.midLbs : 1);
   const qStatus     = calcQStatus(stockLines);
 
-  let displayName = userId;
-  try {
-    const profile = await client.getProfile(userId);
-    displayName = profile.displayName;
-  } catch (e) {
-    console.warn('[getProfile error]', e.message);
-  }
-
+  // 先回覆，不等 getProfile（省 200~500ms）
   const flexMsg = buildFlexMessage(userText, productName, jpy, suggested, stockLines, imageUrl, weightInfo);
   const cartFlex = buildAddToCartFlex(stockLines, productId, jpy, suggested, userText, imageUrl, productName, colorImages);
   await client.replyMessage(replyToken, cartFlex ? [flexMsg, cartFlex] : [flexMsg]);
 
+  // 背景任務：getProfile + 寫 Sheet（不阻塞回覆）
   const bgTasks = [];
 
   if (userId === ADMIN_USER_ID) {
@@ -1482,9 +1484,14 @@ async function handleEvent(event, client) {
   }
 
   bgTasks.push(
-    logQueryToSheet(userId, displayName, productId, productName, jpy, weightInfo).catch((e) =>
-      console.error('[sheets log error]', e.message)
-    )
+    client.getProfile(userId)
+      .then((profile) =>
+        logQueryToSheet(userId, profile.displayName, productId, productName, jpy, weightInfo)
+      )
+      .catch(() =>
+        logQueryToSheet(userId, userId, productId, productName, jpy, weightInfo)
+      )
+      .catch((e) => console.error('[sheets log error]', e.message))
   );
 
   await Promise.all(bgTasks);
@@ -1606,10 +1613,10 @@ app.delete('/api/cart/item', express.json(), async (req, res) => {
 });
 
 app.post('/api/cart/add', express.json(), async (req, res) => {
-  const { userId, productId, productName, color, size, jpy, suggestedPrice, productUrl } = req.body;
+  const { userId, productId, productName, color, size, jpy, suggestedPrice, productUrl, imageUrl } = req.body;
   if (!userId || !productId || !color || !size) return res.status(400).json({ error: 'missing fields' });
   try {
-    await addToCartSheet(userId, productId, productName || productId, color, size, jpy || 0, suggestedPrice || 0, productUrl || '');
+    await addToCartSheet(userId, productId, productName || productId, color, size, jpy || 0, suggestedPrice || 0, productUrl || '', imageUrl || '');
     res.json({ status: 'ok' });
   } catch (err) {
     res.status(500).json({ error: err.message });
