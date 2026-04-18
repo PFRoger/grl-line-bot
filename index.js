@@ -853,7 +853,9 @@ body{font-family:-apple-system,sans-serif;background:#faf8f6;color:#333;padding-
 .header{background:#c9a98a;color:#fff;padding:16px;text-align:center;font-size:18px;font-weight:bold;letter-spacing:1px}
 .section{background:#fff;margin:12px;border-radius:12px;padding:16px;box-shadow:0 1px 4px rgba(0,0,0,.08)}
 .section-title{font-size:15px;font-weight:bold;color:#7a5c3e;margin-bottom:12px;border-bottom:1px solid #f0e8de;padding-bottom:8px}
-.cart-item{border:1px solid #eee;border-radius:8px;padding:12px;margin-bottom:10px;position:relative}
+.cart-item{border:1px solid #eee;border-radius:8px;padding:12px;margin-bottom:10px;display:flex;gap:10px;position:relative}
+.item-img{width:64px;height:85px;object-fit:cover;border-radius:6px;background:#f5f0ec;flex-shrink:0}
+.item-info{flex:1;min-width:0}
 .item-name{font-size:13px;color:#888;margin-bottom:4px}
 .item-detail{font-size:14px;font-weight:600;color:#333}
 .item-price{font-size:15px;font-weight:bold;color:#c9a98a;margin-top:4px}
@@ -864,9 +866,10 @@ body{font-family:-apple-system,sans-serif;background:#faf8f6;color:#333;padding-
 .total-amount{font-size:18px;font-weight:bold;color:#c9a98a}
 label{display:block;font-size:13px;color:#888;margin-bottom:4px;margin-top:12px}
 input,select,textarea{width:100%;border:1px solid #ddd;border-radius:8px;padding:10px;font-size:14px;outline:none}
+input[type="radio"]{width:auto;border:none;padding:0;margin:0;border-radius:0;box-shadow:none}
 input:focus,select:focus,textarea:focus{border-color:#c9a98a}
-.radio-group{display:flex;flex-direction:column;gap:8px;margin-top:6px}
-.radio-item{display:flex;align-items:center;gap:8px;font-size:14px}
+.radio-group{display:flex;flex-direction:row;gap:16px;margin-top:6px;margin-bottom:8px}
+.radio-item{display:flex;align-items:center;gap:6px;font-size:14px;color:#333;font-weight:normal;margin:0;cursor:pointer}
 .submit-btn{width:100%;background:#c9a98a;color:#fff;border:none;border-radius:10px;padding:14px;font-size:16px;font-weight:bold;cursor:pointer;margin-top:16px;letter-spacing:1px}
 .submit-btn:disabled{background:#ccc}
 .submit-btn:active{background:#b8906e}
@@ -955,14 +958,38 @@ function render() {
   cartItems.forEach((item, idx) => {
     total += item.suggestedPrice || 0;
     el.innerHTML += \`<div class="cart-item" id="item-\${idx}">
-      <div class="item-name">\${item.productId}</div>
-      <div class="item-detail">\${item.color} \${item.size}</div>
-      <div class="item-detail" style="font-size:12px;color:#aaa;margin-top:2px">\${item.productName.substring(0,30)}</div>
-      <div class="item-price">NT$\${item.suggestedPrice}</div>
+      <img class="item-img" id="img-\${idx}" src="" alt="" style="display:none">
+      <div class="item-info">
+        <div class="item-name">\${item.productName ? item.productName.substring(0,20) : item.productId}</div>
+        <div class="item-detail">\${item.color} \${item.size}</div>
+        <div class="item-price">NT$\${item.suggestedPrice}</div>
+      </div>
       <button class="item-delete" onclick="deleteItem(\${idx},\${item.rowIndex})">刪除</button>
     </div>\`;
   });
   document.getElementById('total-amount').textContent = 'NT$' + total;
+  loadItemImages();
+}
+
+async function loadItemImages() {
+  // 依商品 ID 分組，每個不同的商品只 fetch 一次
+  const fetched = {};
+  for (let idx = 0; idx < cartItems.length; idx++) {
+    const item = cartItems[idx];
+    const key = item.productId + '|' + encodeURIComponent(item.color);
+    if (!fetched[key]) {
+      try {
+        const resp = await fetch('/api/item-image?id=' + encodeURIComponent(item.productId) + '&c=' + encodeURIComponent(item.color));
+        const data = await resp.json();
+        fetched[key] = data.imageUrl || '';
+      } catch(e) { fetched[key] = ''; }
+    }
+    const imgEl = document.getElementById('img-' + idx);
+    if (imgEl && fetched[key]) {
+      imgEl.src = fetched[key];
+      imgEl.style.display = 'block';
+    }
+  }
 }
 
 async function deleteItem(idx, rowIndex) {
@@ -1421,6 +1448,38 @@ app.get('/cart', (_req, res) => {
 
 // ── 購物車 API ────────────────────────────────────────────────────────────────
 // ── 7-11 門市 Proxy ───────────────────────────────────────────────────────────
+// 回傳指定商品 + 顏色的全尺寸圖片 URL（供 LIFF 購物車 lazy load 使用）
+app.get('/api/item-image', async (req, res) => {
+  const { id: productId, c: colorJp } = req.query;
+  if (!productId || !colorJp) return res.status(400).json({ error: 'id and c required' });
+  try {
+    const productUrl = `https://www.grail.bz/item/${productId}/`;
+    const { data: html } = await axios.get(productUrl, {
+      timeout: 10000,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        'Accept-Language': 'ja,zh-TW;q=0.9',
+      },
+    });
+    const $ = cheerio.load(html);
+    let imageUrl = null;
+    $('img[alt]').each((_, el) => {
+      if (imageUrl) return;
+      const alt = $(el).attr('alt') || '';
+      if (!alt.includes(colorJp)) return;
+      const src = $(el).attr('data-src') || $(el).attr('data-lazy') || $(el).attr('src') || '';
+      if (!src) return;
+      const full = src.replace('/images/goods/t/', '/images/goods/d/');
+      imageUrl = full.startsWith('http') ? full : `https://cdn.grail.bz${full}`;
+    });
+    // fallback to og:image
+    if (!imageUrl) imageUrl = $('meta[property="og:image"]').attr('content') || null;
+    res.json({ imageUrl });
+  } catch (e) {
+    res.json({ imageUrl: null });
+  }
+});
+
 app.get('/api/stores', async (req, res) => {
   const { city, area } = req.query;
   if (!city || !area) return res.status(400).json({ error: 'city and area required' });
