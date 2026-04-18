@@ -885,8 +885,15 @@ input:focus,select:focus,textarea:focus{border-color:#c9a98a}
 .submit-btn:disabled{background:#ccc}
 .submit-btn:active{background:#b8906e}
 .note-box{background:#fff8f0;border-radius:8px;padding:10px;font-size:12px;color:#888;margin-top:8px;line-height:1.6}
+.item-jpy{font-size:12px;color:#aaa;margin-top:2px}
 #loading{text-align:center;padding:40px;color:#aaa}
 #success{display:none;text-align:center;padding:30px}
+#confirm-overlay{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.45);z-index:999;align-items:center;justify-content:center}
+#confirm-box{background:#fff;border-radius:14px;padding:24px 20px;margin:24px;text-align:center;max-width:280px;width:100%}
+#confirm-msg{font-size:15px;color:#333;margin-bottom:20px;line-height:1.5}
+.confirm-btns{display:flex;gap:12px}
+.confirm-btn-cancel{flex:1;padding:12px;border:1px solid #ddd;border-radius:8px;background:#fff;font-size:15px;color:#666;cursor:pointer}
+.confirm-btn-ok{flex:1;padding:12px;border:none;border-radius:8px;background:#c9a98a;color:#fff;font-size:15px;font-weight:bold;cursor:pointer}
 .success-icon{font-size:48px;margin-bottom:12px}
 .success-title{font-size:18px;font-weight:bold;color:#c9a98a;margin-bottom:8px}
 .success-text{font-size:13px;color:#888;line-height:1.6}
@@ -928,11 +935,32 @@ input:focus,select:focus,textarea:focus{border-color:#c9a98a}
   <div class="success-title">下單成功！</div>
   <div class="success-text" id="success-text"></div>
 </div>
+<div id="confirm-overlay" style="display:none">
+  <div id="confirm-box">
+    <div id="confirm-msg"></div>
+    <div class="confirm-btns">
+      <button class="confirm-btn-cancel" onclick="onConfirmBtn(false)">取消</button>
+      <button class="confirm-btn-ok" onclick="onConfirmBtn(true)">確定</button>
+    </div>
+  </div>
+</div>
 <script>
 let userId = '';
 let cartItems = [];
 let groupedItems = [];
 const imageCache = {}; // key: productId|color → imageUrl
+let _confirmCb = null;
+function showConfirm(msg) {
+  return new Promise(resolve => {
+    _confirmCb = resolve;
+    document.getElementById('confirm-msg').textContent = msg;
+    document.getElementById('confirm-overlay').style.display = 'flex';
+  });
+}
+function onConfirmBtn(result) {
+  document.getElementById('confirm-overlay').style.display = 'none';
+  if (_confirmCb) { _confirmCb(result); _confirmCb = null; }
+}
 
 async function init() {
   try {
@@ -994,7 +1022,8 @@ function render() {
       <img class="item-img" id="img-\${idx}" src="" alt="">
       <div class="item-info">
         <div class="item-name">\${group.productName ? group.productName.substring(0,25) : group.productId}</div>
-        <div class="item-detail">\${group.colorDisplay || group.color} \${group.size}</div>
+        <div class="item-detail">\${group.colorDisplay || group.color}　\${group.size}</div>
+        <div class="item-jpy">¥\${(group.jpy||0).toLocaleString()}</div>
         <div class="item-price">\${priceText}</div>
         <div class="qty-ctrl">
           <button class="qty-btn" onclick="changeQty(\${idx},-1)">−</button>
@@ -1023,10 +1052,13 @@ function scheduleSilentSync() {
   syncTimer = setTimeout(loadCartSilent, 1000); // 停止按壓 1 秒後才同步
 }
 
-function changeQty(idx, delta) {
+async function changeQty(idx, delta) {
   const group = groupedItems[idx];
   if (delta === -1) {
-    if (group.quantity === 1 && !confirm('確定要移除此商品嗎？')) return;
+    if (group.quantity === 1) {
+      const ok = await showConfirm('確定要移除此商品嗎？');
+      if (!ok) return;
+    }
     let removeIdx = -1;
     for (let i = cartItems.length - 1; i >= 0; i--) {
       if (cartItems[i].productId === group.productId && cartItems[i].color === group.color && cartItems[i].size === group.size) {
