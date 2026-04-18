@@ -855,8 +855,8 @@ body{font-family:-apple-system,sans-serif;background:#faf8f6;color:#333;padding-
 .section-title{font-size:15px;font-weight:bold;color:#7a5c3e;margin-bottom:12px;border-bottom:1px solid #f0e8de;padding-bottom:8px}
 .cart-item{border:1px solid #eee;border-radius:8px;padding:12px;margin-bottom:10px;display:flex;gap:10px;position:relative}
 .item-img{width:64px;height:85px;object-fit:cover;border-radius:6px;background:#f5f0ec;flex-shrink:0}
-.item-info{flex:1;min-width:0}
-.item-name{font-size:13px;color:#888;margin-bottom:4px}
+.item-info{flex:1;min-width:0;padding-right:54px}
+.item-name{font-size:13px;color:#888;margin-bottom:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .item-detail{font-size:14px;font-weight:600;color:#333}
 .item-price{font-size:15px;font-weight:bold;color:#c9a98a;margin-top:4px}
 .item-delete{position:absolute;top:10px;right:10px;background:none;border:1px solid #ddd;border-radius:6px;padding:4px 10px;font-size:12px;color:#999;cursor:pointer}
