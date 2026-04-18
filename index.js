@@ -494,7 +494,7 @@ async function ensureOrderSheet(sheets) {
       spreadsheetId: SHEET_ID,
       range: `${ORDER_SHEET}!A1`,
       valueInputOption: 'RAW',
-      resource: { values: [['訂單ID','下單時間','userId','商品明細','總金額(NT$)','買家姓名','手機','7-11門市','匯款末5碼','備註','狀態']] },
+      resource: { values: [['訂單ID','下單時間','userId','商品明細','總金額(NT$)','買家姓名','手機','聯繫方式','聯繫帳號','備註','狀態']] },
     });
   }
 }
@@ -577,8 +577,8 @@ async function submitOrder(userId, cartItems, buyerInfo) {
     resource: { values: [[
       orderId, orderTime, userId,
       itemsSummary, totalTwd,
-      buyerInfo.name, buyerInfo.phone, buyerInfo.store711,
-      buyerInfo.bankLast5, buyerInfo.note || '', '待確認',
+      buyerInfo.name, buyerInfo.phone, buyerInfo.contactMethod || '',
+      buyerInfo.contactAccount || '', buyerInfo.note || '', '待確認',
     ]] },
   });
   await markCartItemsOrdered(userId, cartItems.map(i => i.rowIndex));
@@ -898,20 +898,12 @@ input:focus,select:focus,textarea:focus{border-color:#c9a98a}
     <input id="f-name" type="text" placeholder="請輸入真實姓名">
     <label>手機號碼 *</label>
     <input id="f-phone" type="tel" placeholder="09xxxxxxxx">
-    <label>收件縣市 *</label>
-    <select id="f-city">
-      <option value="">請選擇縣市</option>
-      <option>臺北市</option><option>新北市</option><option>桃園市</option><option>臺中市</option>
-      <option>臺南市</option><option>高雄市</option><option>基隆市</option><option>新竹市</option>
-      <option>嘉義市</option><option>新竹縣</option><option>苗栗縣</option><option>彰化縣</option>
-      <option>南投縣</option><option>雲林縣</option><option>嘉義縣</option><option>屏東縣</option>
-      <option>宜蘭縣</option><option>花蓮縣</option><option>臺東縣</option><option>澎湖縣</option>
-      <option>金門縣</option><option>連江縣</option>
-    </select>
-    <label>收件 7-11 門市名稱 *</label>
-    <input id="f-store" type="text" placeholder="例：忠孝門市">
-    <label>匯款帳號末 5 碼（對帳用）*</label>
-    <input id="f-bank" type="text" placeholder="例：12345" maxlength="5">
+    <label>聯繫方式 *</label>
+    <div class="radio-group" style="margin-bottom:6px">
+      <label class="radio-item"><input type="radio" name="contact-method" value="IG"> IG</label>
+      <label class="radio-item"><input type="radio" name="contact-method" value="LINE"> LINE</label>
+    </div>
+    <input id="f-contact-account" type="text" placeholder="請輸入帳號（不含 @）">
     <label>備註（選填）</label>
     <textarea id="f-note" rows="2" placeholder="特殊需求或備注"></textarea>
     <button class="submit-btn" id="submit-btn" onclick="submitOrder()">確認下單</button>
@@ -983,19 +975,18 @@ async function deleteItem(idx, rowIndex) {
 async function submitOrder() {
   const name = document.getElementById('f-name').value.trim();
   const phone = document.getElementById('f-phone').value.trim();
-  const city = document.getElementById('f-city').value;
-  const store = document.getElementById('f-store').value.trim();
-  const bank = document.getElementById('f-bank').value.trim();
+  const contactMethodEl = document.querySelector('input[name="contact-method"]:checked');
+  const contactMethod = contactMethodEl ? contactMethodEl.value : '';
+  const contactAccount = document.getElementById('f-contact-account').value.trim();
   const note = document.getElementById('f-note').value.trim();
-  if (!name || !phone || !city || !store || !bank) { alert('請填寫所有必填欄位 (*)'); return; }
+  if (!name || !phone || !contactMethod || !contactAccount) { alert('請填寫所有必填欄位 (*)'); return; }
   if (!/^09\\d{8}$/.test(phone)) { alert('手機號碼格式不正確'); return; }
-  if (bank.length !== 5) { alert('請輸入匯款帳號末 5 碼'); return; }
   const btn = document.getElementById('submit-btn');
   btn.disabled = true; btn.textContent = '送出中...';
   try {
     const resp = await fetch('/api/order', {
       method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ userId, cartItems, buyerInfo:{ name, phone, store711: city + ' ' + store, bankLast5:bank, note } })
+      body: JSON.stringify({ userId, cartItems, buyerInfo:{ name, phone, contactMethod, contactAccount, note } })
     });
     const data = await resp.json();
     if (data.orderId) {
@@ -1476,7 +1467,7 @@ app.post('/api/order', express.json(), async (req, res) => {
     const itemsText = cartItems.map(i => `・${i.productId} ${i.color} ${i.size} NT$${i.suggestedPrice}`).join('\n');
     await client.pushMessage(ADMIN_USER_ID, {
       type: 'text',
-      text: `🛍 新訂單！\n訂單ID: ${result.orderId}\n時間: ${result.orderTime}\n━━━━━━━━━━\n${itemsText}\n━━━━━━━━━━\n合計: NT$${result.totalTwd}\n\n買家: ${buyerInfo.name}\n手機: ${buyerInfo.phone}\n7-11門市: ${buyerInfo.store711}\n匯款末5碼: ${buyerInfo.bankLast5}${buyerInfo.note ? '\n備註: ' + buyerInfo.note : ''}`,
+      text: `🛍 新訂單！\n訂單ID: ${result.orderId}\n時間: ${result.orderTime}\n━━━━━━━━━━\n${itemsText}\n━━━━━━━━━━\n合計: NT$${result.totalTwd}\n\n買家: ${buyerInfo.name}\n手機: ${buyerInfo.phone}\n聯繫方式: ${buyerInfo.contactMethod} @${buyerInfo.contactAccount}${buyerInfo.note ? '\n備註: ' + buyerInfo.note : ''}`,
     }).catch(e => console.error('[admin notify error]', e.message));
     res.json({ status: 'ok', orderId: result.orderId });
   } catch (err) {
