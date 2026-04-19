@@ -659,13 +659,27 @@ function buildHistoryFlexMessage(history) {
         type: 'box',
         layout: 'vertical',
         paddingAll: '8px',
-        contents: [{
-          type: 'button',
-          style: 'primary',
-          color: '#FF6B9D',
-          height: 'sm',
-          action: { type: 'uri', label: '查看商品', uri: itemUrl },
-        }],
+        spacing: 'xs',
+        contents: [
+          {
+            type: 'button',
+            style: 'primary',
+            color: '#b8895a',
+            height: 'sm',
+            action: {
+              type: 'message',
+              label: '🔄 重新查詢報價',
+              text: `https://www.grail.bz/item/${prodId}/`,
+            },
+          },
+          {
+            type: 'button',
+            style: 'link',
+            color: '#aaaaaa',
+            height: 'sm',
+            action: { type: 'uri', label: '查看商品頁', uri: itemUrl },
+          },
+        ],
       },
     };
 
