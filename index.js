@@ -2055,6 +2055,16 @@ header p{font-size:12px;color:#aaa;margin-top:2px}
 .s-已發貨{background:#e8f5e9;color:#2e7d32}
 .s-已完成{background:#f3e5f5;color:#6a1b9a}
 .s-已取消{background:#fce4ec;color:#880e4f}
+/* date modal */
+.date-modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:200;display:none;align-items:center;justify-content:center}
+.date-modal-box{background:#fff;border-radius:14px;padding:24px 20px;width:280px;box-shadow:0 8px 32px rgba(0,0,0,.18)}
+.date-modal-title{font-size:15px;font-weight:bold;color:#333;margin-bottom:6px}
+.date-modal-sub{font-size:12px;color:#888;margin-bottom:14px}
+.date-modal-input{width:100%;border:1px solid #ddd;border-radius:8px;padding:10px;font-size:16px;outline:none;box-sizing:border-box;text-align:center;letter-spacing:2px}
+.date-modal-input:focus{border-color:#c9a98a}
+.date-modal-btns{display:flex;gap:10px;margin-top:16px}
+.date-modal-cancel{flex:1;background:#eee;color:#555;border:none;border-radius:8px;padding:10px;font-size:14px;cursor:pointer}
+.date-modal-ok{flex:1;background:#c9a98a;color:#fff;border:none;border-radius:8px;padding:10px;font-size:14px;font-weight:bold;cursor:pointer}
 .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#333;color:#fff;padding:10px 20px;border-radius:20px;font-size:13px;opacity:0;transition:opacity .3s;pointer-events:none;z-index:100}
 .toast.show{opacity:1}
 #empty{text-align:center;color:#bbb;padding:60px 20px;font-size:14px}
@@ -2076,7 +2086,10 @@ details.closed-section[open] summary::after{content:'▾'}
     <option value="待確認">待確認</option>
     <option value="待買家完成下單">待買家完成下單</option>
     <option value="處理中">處理中</option>
-    <option value="已發貨">已發貨</option>
+    <option value="已發貨(官網出貨)">已發貨(官網出貨)</option>
+    <option value="已發貨(已達台灣海關作業)">已發貨(已達台灣海關作業)</option>
+    <option value="已發貨(賣貨便出貨)">已發貨(賣貨便出貨)</option>
+    <option value="待買家取貨">待買家取貨</option>
     <option value="已完成">已完成</option>
     <option value="已取消">已取消</option>
   </select>
@@ -2091,7 +2104,23 @@ details.closed-section[open] summary::after{content:'▾'}
 
 <script>
 const KEY = '${ADMIN_KEY}';
-const STATUSES = ['待確認','待買家完成下單','處理中','已發貨','已完成','已取消'];
+const STATUSES = ['待確認','待買家完成下單','處理中','已發貨(官網出貨)','已發貨(已達台灣海關作業)','已發貨(賣貨便出貨)','待買家取貨','已完成','已取消'];
+const NOTIFY_STATUSES = new Set(['處理中','已發貨(官網出貨)','已發貨(已達台灣海關作業)','已發貨(賣貨便出貨)','待買家取貨']);
+const STATUS_STYLE = {
+  '待確認':'background:#fff3e0;color:#e65100',
+  '待買家完成下單':'background:#e3f2fd;color:#1565c0',
+  '處理中':'background:#ede7f6;color:#4527a0',
+  '已發貨(官網出貨)':'background:#e8f5e9;color:#2e7d32',
+  '已發貨(已達台灣海關作業)':'background:#e0f2f1;color:#004d40',
+  '已發貨(賣貨便出貨)':'background:#f1f8e9;color:#33691e',
+  '待買家取貨':'background:#fce4ec;color:#880e4f',
+  '已完成':'background:#f3e5f5;color:#6a1b9a',
+  '已取消':'background:#fafafa;color:#aaa',
+};
+function statusBadge(s) {
+  const st = STATUS_STYLE[s] || 'background:#eee;color:#666';
+  return \`<span class="status-badge" style="\${st}">\${s||'待確認'}</span>\`;
+}
 let allOrders = [];
 
 async function loadOrders() {
@@ -2132,7 +2161,7 @@ function createCard(o) {
   const statusOpts = STATUSES.map(s =>
     '<option value="' + s + '"' + (o.status === s ? ' selected' : '') + '>' + s + '</option>'
   ).join('');
-  const badge = '<span class="status-badge s-' + (o.status||'待確認') + '">' + (o.status||'待確認') + '</span>';
+  const badge = statusBadge(o.status||'待確認');
   const contact = o.contact ? o.contact + (o.contactId ? '：' + o.contactId : '') : '';
   return \`<div class="order-card" id="card-\${o.rowIndex}">
   <div class="order-header">
@@ -2162,7 +2191,7 @@ function createCard(o) {
 }
 
 function createClosedRow(o) {
-  const badge = '<span class="status-badge s-' + o.status + '">' + o.status + '</span>';
+  const badge = statusBadge(o.status);
   return '<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 16px;border-bottom:1px solid #f0ebe4;font-size:13px">'
     + '<div><span style="color:#aaa;font-family:monospace;font-size:11px">' + o.orderId + '</span>'
     + ' ' + badge + ' <span style="color:#555;margin-left:8px">' + (o.buyerName||'—') + '</span></div>'
@@ -2176,6 +2205,10 @@ function toggleNotify(rowIndex) {
 
 async function saveStatus(rowIndex, orderId) {
   const status = document.getElementById('sel-' + rowIndex).value;
+  if (NOTIFY_STATUSES.has(status)) {
+    showDateModal(rowIndex, orderId, status);
+    return;
+  }
   try {
     const r = await fetch('/api/admin/order-status', {
       method: 'POST',
@@ -2191,6 +2224,42 @@ async function saveStatus(rowIndex, orderId) {
       const d = await r.json();
       showToast('❌ ' + (d.error || '失敗'));
     }
+  } catch(e) { showToast('❌ 網路錯誤'); }
+}
+
+let _dateCtx = null;
+function showDateModal(rowIndex, orderId, status) {
+  _dateCtx = { rowIndex, orderId, status };
+  document.getElementById('dm-status').textContent = status;
+  const now = new Date();
+  const mm = String(now.getMonth()+1).padStart(2,'0');
+  const dd = String(now.getDate()).padStart(2,'0');
+  document.getElementById('dm-input').value = mm + '/' + dd;
+  document.getElementById('date-modal').style.display = 'flex';
+  setTimeout(() => document.getElementById('dm-input').select(), 50);
+}
+function closeDateModal() {
+  document.getElementById('date-modal').style.display = 'none';
+  _dateCtx = null;
+}
+async function confirmDateModal() {
+  const date = document.getElementById('dm-input').value.trim();
+  if (!date) { showToast('請輸入日期'); return; }
+  const { rowIndex, orderId, status } = _dateCtx;
+  document.getElementById('date-modal').style.display = 'none';
+  try {
+    const r = await fetch('/api/admin/notify-progress', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ key: KEY, orderId, rowIndex, status, date }),
+    });
+    const d = await r.json();
+    if (r.ok) {
+      const o = allOrders.find(x => x.rowIndex === rowIndex);
+      if (o) o.status = status;
+      showToast('✅ 狀態已更新並通知買家');
+      renderOrders();
+    } else showToast('❌ ' + (d.error || '失敗'));
   } catch(e) { showToast('❌ 網路錯誤'); }
 }
 
@@ -2219,6 +2288,19 @@ function showToast(msg) {
 
 loadOrders();
 </script>
+
+<div id="date-modal" class="date-modal-overlay" onclick="if(event.target===this)closeDateModal()">
+  <div class="date-modal-box">
+    <div class="date-modal-title">輸入進度日期</div>
+    <div class="date-modal-sub">狀態：<strong id="dm-status"></strong></div>
+    <input id="dm-input" class="date-modal-input" type="text" placeholder="MM/DD" maxlength="5"
+      onkeydown="if(event.key==='Enter')confirmDateModal()">
+    <div class="date-modal-btns">
+      <button class="date-modal-cancel" onclick="closeDateModal()">取消</button>
+      <button class="date-modal-ok" onclick="confirmDateModal()">確定並通知買家</button>
+    </div>
+  </div>
+</div>
 </body>
 </html>`);
 });
@@ -2301,6 +2383,58 @@ app.get('/admin/notify-buyer', async (req, res) => {
     res.json({ status: 'ok', message: `已通知買家 ${buyerName}（${buyerUserId}）` });
   } catch (err) {
     console.error('[notify-buyer error]', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── 管理員 API：進度通知買家 ──────────────────────────────────────────────────
+app.post('/api/admin/notify-progress', express.json(), async (req, res) => {
+  const { key, orderId, rowIndex, status, date } = req.body;
+  if (key !== ADMIN_KEY) return res.status(401).json({ error: 'Unauthorized' });
+  if (!orderId || !status || !date || !rowIndex) return res.status(400).json({ error: 'Missing fields' });
+
+  try {
+    const sheets = getSheetsClient();
+    const resp = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${ORDER_SHEET}!A:K` });
+    const rows = resp.data.values || [];
+    const orderRow = rows.find(r => r[0] === orderId);
+    if (!orderRow) return res.status(404).json({ error: `找不到訂單 ${orderId}` });
+
+    const buyerUserId = orderRow[2] || '';
+    const buyerName   = orderRow[5] || '';
+    const itemsSummary = orderRow[3] || '';
+    if (!buyerUserId) return res.status(400).json({ error: '訂單缺少 userId' });
+
+    // 組合進度文字
+    let progressLines = '';
+    if (status === '處理中') {
+      progressLines = `${date} GRL官網下單完成`;
+    } else if (status === '已發貨(官網出貨)') {
+      progressLines = `${date} GRL官網出貨`;
+    } else if (status === '已發貨(已達台灣海關作業)') {
+      progressLines = `${date} 已到台灣，過海關中`;
+    } else if (status === '已發貨(賣貨便出貨)') {
+      progressLines = `${date} 我們這邊已安排出貨囉❤️`;
+    } else if (status === '待買家取貨') {
+      progressLines = `提醒您～商品已到門市囉！\n${date} 前請記得去取貨唷☺️`;
+    }
+
+    const msgText = `您好～🚚商品\n${itemsSummary}\n進度回報：\n${progressLines}`;
+
+    const client = new line.Client({ channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN });
+    await client.pushMessage(buyerUserId, { type: 'text', text: msgText });
+
+    // 更新訂單狀態
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: SHEET_ID,
+      range: `${ORDER_SHEET}!K${rowIndex}`,
+      valueInputOption: 'RAW',
+      resource: { values: [[status]] },
+    });
+
+    res.json({ status: 'ok', message: `已通知 ${buyerName}` });
+  } catch (err) {
+    console.error('[notify-progress error]', err.message);
     res.status(500).json({ error: err.message });
   }
 });
