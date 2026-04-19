@@ -960,7 +960,7 @@ input:focus,select:focus,textarea:focus{border-color:#c9a98a}
     <input id="f-contact-account" type="text" placeholder="請輸入帳號（不含 @）">
     <label>備註（選填）</label>
     <textarea id="f-note" rows="2" placeholder="特殊需求或備注"></textarea>
-    <button class="submit-btn" id="submit-btn" onclick="submitOrder()">確認下單</button>
+    <button class="submit-btn" id="submit-btn" onclick="submitOrder()">訂單送出</button>
   </div>
 </div>
 <div id="success">
@@ -1190,11 +1190,11 @@ async function submitOrder() {
         '訂單編號：' + data.orderId + '<br><br>我們將盡快確認您的訂單<br>請在收到確認通知後 3 天內完成匯款<br><br>如有問題請直接傳訊息給我們 🌸';
     } else {
       alert('下單失敗，請稍後再試');
-      btn.disabled = false; btn.textContent = '確認下單';
+      btn.disabled = false; btn.textContent = '訂單送出';
     }
   } catch(e) {
     alert('下單失敗，請稍後再試');
-    btn.disabled = false; btn.textContent = '確認下單';
+    btn.disabled = false; btn.textContent = '訂單送出';
   }
 }
 
