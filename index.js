@@ -315,18 +315,28 @@ function estimateWeight(productName) {
 }
 
 // ── 爬取 GRL 商品資訊 ─────────────────────────────────────────────────────────
+// GRL 部分商品只有 /disp/item/ 路徑，/item/ 會 404；自動 fallback
 async function scrapeGRL(url) {
-  const { data: html } = await axios.get(url, {
-    timeout: 12000,
-    headers: {
-      'User-Agent':
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
-        '(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-      'Accept-Language': 'ja,zh-TW;q=0.9,zh;q=0.8,en-US;q=0.7',
-      Accept:
-        'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-    },
-  });
+  const headers = {
+    'User-Agent':
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
+      '(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+    'Accept-Language': 'ja,zh-TW;q=0.9,zh;q=0.8,en-US;q=0.7',
+    Accept:
+      'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+  };
+  let html;
+  try {
+    ({ data: html } = await axios.get(url, { timeout: 12000, headers }));
+  } catch (err) {
+    // 若 /item/ 路徑 404，改用 /disp/item/ 重試
+    if (err.response && err.response.status === 404) {
+      const dispUrl = url.replace(/\/(item\/)/, '/disp/item/');
+      if (dispUrl !== url) {
+        ({ data: html } = await axios.get(dispUrl, { timeout: 12000, headers }));
+      } else throw err;
+    } else throw err;
+  }
 
   const $ = cheerio.load(html);
 
@@ -1570,6 +1580,103 @@ function buildFlexMessage(url, productName, jpy, suggested, stockLines, imageUrl
   };
 }
 
+// ── 管理者專用：根據日文商品名稱產生中文命名建議 ────────────────────────────
+function generateNameSuggestions(japaneseName) {
+  const jn = japaneseName || '';
+
+  // 商品類型對應（順序重要，較具體的放前面）
+  const typeMap = [
+    { re: /ミニワンピ/,         zh: ['短洋裝', '迷你連身裙', '短版洋裝'] },
+    { re: /ロングワンピ|ロング.*ワンピ/, zh: ['長洋裝', '長版連身裙', '長版洋裝'] },
+    { re: /ワンピース|ワンピ/,   zh: ['洋裝', '連身裙', '洋裝'] },
+    { re: /プリーツスカート/,     zh: ['百褶裙', '壓褶裙', '百褶半身裙'] },
+    { re: /フレアスカート/,       zh: ['傘裙', 'A字裙', '傘狀裙'] },
+    { re: /タイトスカート/,       zh: ['緊身裙', '包臀裙', '魚尾裙'] },
+    { re: /マーメイドスカート|マーメイド/, zh: ['魚尾裙', '人魚裙', '魚尾長裙'] },
+    { re: /スカート/,            zh: ['半身裙', '裙子', '下身裙'] },
+    { re: /カーディガン/,         zh: ['針織外套', '開衫', '針織開衫'] },
+    { re: /ブルゾン/,            zh: ['短外套', '飛行外套', '短版外套'] },
+    { re: /コート/,              zh: ['大衣', '外套', '長版外套'] },
+    { re: /ジャケット/,           zh: ['西裝外套', '外套', '短版外套'] },
+    { re: /ワイドパンツ|ワイド.*パンツ/, zh: ['寬褲', '闊腿褲', '寬版褲子'] },
+    { re: /パンツ/,              zh: ['褲子', '長褲', '寬版褲'] },
+    { re: /セットアップ/,         zh: ['套裝', '兩件組', '套裝組'] },
+    { re: /ロンT|ロングT/,        zh: ['長袖上衣', '薄長袖', '長袖T恤'] },
+    { re: /Tシャツ/,             zh: ['T恤', '短袖上衣', '寬版T恤'] },
+    { re: /ニット.*トップス|ニット/, zh: ['針織上衣', '毛衣上衣', '針織毛衣'] },
+    { re: /ブラウス/,            zh: ['上衣', '襯衫', '短版上衣'] },
+    { re: /キャミソール|キャミ/,   zh: ['吊帶背心', '細肩帶上衣', '吊帶上衣'] },
+    { re: /トップス/,            zh: ['上衣', '短版上衣', '輕薄上衣'] },
+  ];
+
+  // 特色關鍵字
+  const featureMap = [
+    { re: /チュール/,        zh: '薄紗' },
+    { re: /フリル/,          zh: '荷葉邊' },
+    { re: /リボン/,          zh: '蝴蝶結' },
+    { re: /シアー/,          zh: '透膚' },
+    { re: /レース/,          zh: '蕾絲' },
+    { re: /ラメ/,            zh: '細閃' },
+    { re: /ベロア/,          zh: '絲絨' },
+    { re: /チェック/,        zh: '格紋' },
+    { re: /フラワー|花柄/,   zh: '碎花' },
+    { re: /ストライプ/,      zh: '條紋' },
+    { re: /シャギー/,        zh: '毛茸茸' },
+    { re: /バルーン.*スリーブ|バルーン/, zh: '氣球袖' },
+    { re: /ティアード/,      zh: '層次' },
+    { re: /ギャザー/,        zh: '皺褶' },
+    { re: /ドレープ/,        zh: '垂墜感' },
+    { re: /オフショル/,      zh: '露肩' },
+    { re: /ホルター/,        zh: '繞頸' },
+    { re: /ワンショルダー/,  zh: '斜肩' },
+    { re: /バックオープン/,  zh: '露背' },
+    { re: /ハイネック/,      zh: '高領' },
+    { re: /ショート丈/,      zh: '短版' },
+    { re: /2Way|2way/i,      zh: '2way' },
+    { re: /エンボス/,        zh: '壓紋' },
+    { re: /シャーリング/,    zh: '縮褶' },
+    { re: /ペプラム/,        zh: '荷葉腰' },
+  ];
+
+  // 風格標語池
+  const styles = [
+    '甜美女孩', '氣質美女', '可愛少女', '優雅女孩',
+    '輕盈浪漫', '甜酷女孩', '日系女子', '法式甜美',
+    '溫柔婉約', '知性女孩', '甜心女孩', '仙女必備',
+  ];
+
+  // 偶爾出現的 emoji（約 40% 機率）
+  const emojiPool = ['🎀', '💗', '🌸', '✨', '🩷', '🌼'];
+  const maybeEmoji = () => Math.random() < 0.4
+    ? ' ' + emojiPool[Math.floor(Math.random() * emojiPool.length)]
+    : '';
+
+  // 解析類型（取 3 個備選）
+  let types = ['上衣', '上衣', '上衣'];
+  for (const t of typeMap) {
+    if (t.re.test(jn)) { types = t.zh; break; }
+  }
+
+  // 解析特色（最多取 2 個）
+  const features = [];
+  for (const f of featureMap) {
+    if (f.re.test(jn) && features.length < 2) features.push(f.zh);
+  }
+  const feat = features.join('');
+  const feat1 = features[0] || '';
+
+  // 隨機抽 3 個不重複的風格詞
+  const shuffled = [...styles].sort(() => Math.random() - 0.5);
+  const [s1, s2, s3] = shuffled;
+
+  const prefix = '〚Bijin♥️日本正品代購〛GRL ';
+  return [
+    `${prefix}${s1} ${feat}${types[0]}${maybeEmoji()}`,
+    `${prefix}${s2} ${feat1}${types[1]}${maybeEmoji()}`,
+    `${prefix}${s3} ${feat}${types[2]}${maybeEmoji()}`,
+  ];
+}
+
 // ── 處理單一 LINE 事件 ────────────────────────────────────────────────────────
 async function handleEvent(event, client) {
   if (event.type === 'postback') {
@@ -1628,6 +1735,14 @@ async function handleEvent(event, client) {
       appendProductToSheet(productId, productName, jpy, stockLines, qStatus, weightInfo).catch((e) =>
         console.error('[sheets append error]', e.message)
       )
+    );
+    // 推送中文命名建議給管理者
+    const suggestions = generateNameSuggestions(productName);
+    bgTasks.push(
+      client.pushMessage(ADMIN_USER_ID, {
+        type: 'text',
+        text: `📝 命名建議：\n\n${suggestions.map((s, i) => `${i + 1}. ${s}`).join('\n\n')}`,
+      }).catch((e) => console.error('[name suggestion push error]', e.message))
     );
   }
 
