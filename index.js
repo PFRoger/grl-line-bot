@@ -1206,8 +1206,8 @@ init();
 
 // ── 建立加入購物車按鈕 Flex（Carousel，每個顏色一張卡片）──────────────────────
 function buildAddToCartFlex(stockLines, productId, jpy, suggested, productUrl, imageUrl, productName, colorImages = {}) {
-  // 只顯示有庫存和剩餘少量的尺寸
-  const available = stockLines.filter(l => l.includes('✅') || l.includes('⚠️'));
+  // 顯示有庫存、剩餘少量、預約販售（排除純缺貨）
+  const available = stockLines.filter(l => l.includes('✅') || l.includes('⚠️') || l.includes('📅'));
   if (available.length === 0) return null;
 
   // 解析每行，格式: "顏色ZH(colorJP) 尺寸: ✅/⚠️ 說明"
@@ -1222,7 +1222,8 @@ function buildAddToCartFlex(stockLines, productId, jpy, suggested, productUrl, i
     const afterColor = jpMatch ? labelPart.substring(labelPart.indexOf(')') + 1).trim() : '';
     const size = afterColor || 'FREE';
     const inStock = line.includes('✅');
-    return { colorJp, colorZh, size, inStock, statusDesc };
+    const isPreorder = line.includes('📅');
+    return { colorJp, colorZh, size, inStock, isPreorder, statusDesc };
   });
 
   // 依 colorJp 分組（保持第一次出現的順序）
@@ -1244,18 +1245,21 @@ function buildAddToCartFlex(stockLines, productId, jpy, suggested, productUrl, i
     // 每個尺寸：一個 button，label 用純文字（尺寸 + 庫存說明），不用 emoji icon
     const sizeRows = group.sizes.map((item) => {
       // 去掉 statusDesc 開頭的 emoji，只取文字部分
-      const descText = item.statusDesc
-        ? item.statusDesc.replace(/^[\u2705\u26A0\uFE0F\u274C\uD83D\uDCC5\u231B]+\s*/, '').trim()
-        : (item.inStock ? '有庫存' : '剩餘少量');
-      const btnLabel = `${item.size} - ${descText}`.substring(0, 20);
+      const rawDesc = item.statusDesc
+        ? item.statusDesc.replace(/^[\u2705\u26A0\uFE0F\u274C\uD83D\uDCC5\u231B\uFE0F]+\s*/, '').trim()
+        : (item.inStock ? '有庫存' : item.isPreorder ? '預約販售' : '剩餘少量');
+      // 預約販售若含到貨日期則截短為「預約販售」
+      const descText = item.isPreorder ? '預約販售' : rawDesc;
+      const btnLabel = `加入 ${item.size} - ${descText}`.substring(0, 20);
       const displayText = `加入購物車：${item.colorZh || colorJp} ${item.size}`;
       const imgUrl = colorImages[colorJp] || imageUrl || '';
       const data = `action=add_to_cart&id=${productId}&c=${encodeURIComponent(colorJp)}&s=${encodeURIComponent(item.size)}&jpy=${jpy}&p=${suggested}&url=${encodeURIComponent(productUrl)}&img=${encodeURIComponent(imgUrl)}`;
+      const btnColor = item.inStock ? '#c8a882' : item.isPreorder ? '#8b9fc4' : '#aaaaaa';
       return {
         type: 'button',
         height: 'sm',
         style: 'primary',
-        color: item.inStock ? '#c8a882' : '#aaaaaa',
+        color: btnColor,
         margin: 'xs',
         action: { type: 'postback', label: btnLabel, data, displayText },
       };
