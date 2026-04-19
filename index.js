@@ -13,6 +13,7 @@ const SHEET_ID = '148eFUK3xm0ITsVpueqtnwjK-lcKeemoiRbQgcFWbGug';
 const LIFF_ID = '2009823505-mhQivhxd';
 const CART_SHEET = '購物車';
 const ORDER_SHEET = '訂單';
+const ADMIN_KEY = process.env.ADMIN_KEY || 'grl-admin-2026';
 
 // ── Google Sheets 驗證 ────────────────────────────────────────────────────────
 function getSheetsClient() {
@@ -1784,7 +1785,7 @@ app.get('/admin/setup-rich-menu', async (req, res) => {
 // ── 管理員頁面 ────────────────────────────────────────────────────────────────
 app.get('/admin', (req, res) => {
   const { key } = req.query;
-  if (key !== process.env.ADMIN_KEY) return res.status(401).send('Unauthorized');
+  if (key !== ADMIN_KEY) return res.status(401).send('Unauthorized');
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
   res.send(`<!DOCTYPE html>
 <html lang="zh-TW">
@@ -1826,7 +1827,7 @@ async function notifyBuyer() {
   const result = document.getElementById('result');
   if (!orderId || !url) { showResult('請填寫所有欄位', false); return; }
   try {
-    const resp = await fetch('/admin/notify-buyer?key=${process.env.ADMIN_KEY || ''}&orderId=' + encodeURIComponent(orderId) + '&url=' + encodeURIComponent(url));
+    const resp = await fetch('/admin/notify-buyer?key=${ADMIN_KEY}&orderId=' + encodeURIComponent(orderId) + '&url=' + encodeURIComponent(url));
     const data = await resp.json();
     if (resp.ok) showResult('✅ ' + data.message, true);
     else showResult('❌ ' + (data.error || '失敗'), false);
@@ -1847,7 +1848,7 @@ function showResult(msg, ok) {
 // 呼叫方式：GET /admin/notify-buyer?key=grl-admin-2026&orderId=XXX&url=https://...
 app.get('/admin/notify-buyer', async (req, res) => {
   const { key, orderId, url: storeUrl } = req.query;
-  if (key !== process.env.ADMIN_KEY) return res.status(401).json({ error: 'Unauthorized' });
+  if (key !== ADMIN_KEY) return res.status(401).json({ error: 'Unauthorized' });
   if (!orderId || !storeUrl) return res.status(400).json({ error: 'orderId and url required' });
 
   try {
