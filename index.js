@@ -599,9 +599,10 @@ async function submitOrder(userId, cartItems, buyerInfo) {
     if (!itemMap[key]) itemMap[key] = { ...i, qty: 0 };
     itemMap[key].qty += 1;
   }
+  const totalQty = cartItems.length;
   const itemsSummary = Object.values(itemMap)
     .map(i => `${i.productId} ${translateColorWithJp(i.color)} ${i.size} NT$${i.suggestedPrice}${i.qty > 1 ? ` ×${i.qty}` : ''}`)
-    .join('\n');
+    .join('\n') + `\n共 ${totalQty} 件`;
   const totalTwd = cartItems.reduce((sum, i) => sum + (i.suggestedPrice || 0), 0);
   await sheets.spreadsheets.values.append({
     spreadsheetId: SHEET_ID,
@@ -1008,7 +1009,7 @@ input:focus,select:focus,textarea:focus{border-color:#c9a98a}
   <div id="order-section" class="section" style="display:none">
     <div class="section-title">訂單資訊</div>
     <div class="total-row"><span>合計</span><span class="total-amount" id="total-amount">NT$0</span></div>
-    <div class="note-box">付款方式：銀行轉帳<br>確認後將提供帳號資訊，請在 3 天內完成匯款</div>
+    <div class="note-box">送出後，我們將盡快提供賣貨便下單連結</div>
   </div>
   <div id="buyer-section" class="section" style="display:none">
     <div class="section-title">訂貨人資訊</div>
@@ -1251,7 +1252,7 @@ async function submitOrder() {
       document.getElementById('main').style.display = 'none';
       document.getElementById('success').style.display = 'block';
       document.getElementById('success-text').innerHTML =
-        '訂單編號：' + data.orderId + '<br><br>我們將盡快確認您的訂單<br>請在收到確認通知後 3 天內完成匯款<br><br>如有問題請直接傳訊息給我們 🌸';
+        '訂單編號：' + data.orderId + '<br><br>我們將盡快確認您的訂單並提供賣貨便連結<br><br>如有問題請至官方 IG <span onclick="copyIG()" style="text-decoration:underline;cursor:pointer;color:#7a8fb5">bijin.jp.2024</span> 傳訊息給我們 🌸';
     } else {
       alert('下單失敗，請稍後再試');
       btn.disabled = false; btn.textContent = '訂單送出';
@@ -1263,6 +1264,14 @@ async function submitOrder() {
 }
 
 init();
+
+function copyIG() {
+  navigator.clipboard.writeText('bijin.jp.2024').then(() => {
+    alert('已複製 IG 帳號：bijin.jp.2024');
+  }).catch(() => {
+    prompt('請複製以下 IG 帳號：', 'bijin.jp.2024');
+  });
+}
 </script>
 </body>
 </html>`;
