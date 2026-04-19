@@ -1580,103 +1580,6 @@ function buildFlexMessage(url, productName, jpy, suggested, stockLines, imageUrl
   };
 }
 
-// ── 管理者專用：根據日文商品名稱產生中文命名建議 ────────────────────────────
-function generateNameSuggestions(japaneseName) {
-  const jn = japaneseName || '';
-
-  // 商品類型對應（順序重要，較具體的放前面）
-  const typeMap = [
-    { re: /ミニワンピ/,         zh: ['短洋裝', '迷你連身裙', '短版洋裝'] },
-    { re: /ロングワンピ|ロング.*ワンピ/, zh: ['長洋裝', '長版連身裙', '長版洋裝'] },
-    { re: /ワンピース|ワンピ/,   zh: ['洋裝', '連身裙', '洋裝'] },
-    { re: /プリーツスカート/,     zh: ['百褶裙', '壓褶裙', '百褶半身裙'] },
-    { re: /フレアスカート/,       zh: ['傘裙', 'A字裙', '傘狀裙'] },
-    { re: /タイトスカート/,       zh: ['緊身裙', '包臀裙', '魚尾裙'] },
-    { re: /マーメイドスカート|マーメイド/, zh: ['魚尾裙', '人魚裙', '魚尾長裙'] },
-    { re: /スカート/,            zh: ['半身裙', '裙子', '下身裙'] },
-    { re: /カーディガン/,         zh: ['針織外套', '開衫', '針織開衫'] },
-    { re: /ブルゾン/,            zh: ['短外套', '飛行外套', '短版外套'] },
-    { re: /コート/,              zh: ['大衣', '外套', '長版外套'] },
-    { re: /ジャケット/,           zh: ['西裝外套', '外套', '短版外套'] },
-    { re: /ワイドパンツ|ワイド.*パンツ/, zh: ['寬褲', '闊腿褲', '寬版褲子'] },
-    { re: /パンツ/,              zh: ['褲子', '長褲', '寬版褲'] },
-    { re: /セットアップ/,         zh: ['套裝', '兩件組', '套裝組'] },
-    { re: /ロンT|ロングT/,        zh: ['長袖上衣', '薄長袖', '長袖T恤'] },
-    { re: /Tシャツ/,             zh: ['T恤', '短袖上衣', '寬版T恤'] },
-    { re: /ニット.*トップス|ニット/, zh: ['針織上衣', '毛衣上衣', '針織毛衣'] },
-    { re: /ブラウス/,            zh: ['上衣', '襯衫', '短版上衣'] },
-    { re: /キャミソール|キャミ/,   zh: ['吊帶背心', '細肩帶上衣', '吊帶上衣'] },
-    { re: /トップス/,            zh: ['上衣', '短版上衣', '輕薄上衣'] },
-  ];
-
-  // 特色關鍵字
-  const featureMap = [
-    { re: /チュール/,        zh: '薄紗' },
-    { re: /フリル/,          zh: '荷葉邊' },
-    { re: /リボン/,          zh: '蝴蝶結' },
-    { re: /シアー/,          zh: '透膚' },
-    { re: /レース/,          zh: '蕾絲' },
-    { re: /ラメ/,            zh: '細閃' },
-    { re: /ベロア/,          zh: '絲絨' },
-    { re: /チェック/,        zh: '格紋' },
-    { re: /フラワー|花柄/,   zh: '碎花' },
-    { re: /ストライプ/,      zh: '條紋' },
-    { re: /シャギー/,        zh: '毛茸茸' },
-    { re: /バルーン.*スリーブ|バルーン/, zh: '氣球袖' },
-    { re: /ティアード/,      zh: '層次' },
-    { re: /ギャザー/,        zh: '皺褶' },
-    { re: /ドレープ/,        zh: '垂墜感' },
-    { re: /オフショル/,      zh: '露肩' },
-    { re: /ホルター/,        zh: '繞頸' },
-    { re: /ワンショルダー/,  zh: '斜肩' },
-    { re: /バックオープン/,  zh: '露背' },
-    { re: /ハイネック/,      zh: '高領' },
-    { re: /ショート丈/,      zh: '短版' },
-    { re: /2Way|2way/i,      zh: '2way' },
-    { re: /エンボス/,        zh: '壓紋' },
-    { re: /シャーリング/,    zh: '縮褶' },
-    { re: /ペプラム/,        zh: '荷葉腰' },
-  ];
-
-  // 風格標語池
-  const styles = [
-    '甜美女孩', '氣質美女', '可愛少女', '優雅女孩',
-    '輕盈浪漫', '甜酷女孩', '日系女子', '法式甜美',
-    '溫柔婉約', '知性女孩', '甜心女孩', '仙女必備',
-  ];
-
-  // 偶爾出現的 emoji（約 40% 機率）
-  const emojiPool = ['🎀', '💗', '🌸', '✨', '🩷', '🌼'];
-  const maybeEmoji = () => Math.random() < 0.4
-    ? ' ' + emojiPool[Math.floor(Math.random() * emojiPool.length)]
-    : '';
-
-  // 解析類型（取 3 個備選）
-  let types = ['上衣', '上衣', '上衣'];
-  for (const t of typeMap) {
-    if (t.re.test(jn)) { types = t.zh; break; }
-  }
-
-  // 解析特色（最多取 2 個）
-  const features = [];
-  for (const f of featureMap) {
-    if (f.re.test(jn) && features.length < 2) features.push(f.zh);
-  }
-  const feat = features.join('');
-  const feat1 = features[0] || '';
-
-  // 隨機抽 3 個不重複的風格詞
-  const shuffled = [...styles].sort(() => Math.random() - 0.5);
-  const [s1, s2, s3] = shuffled;
-
-  const prefix = '〚Bijin♥️日本正品代購〛GRL ';
-  return [
-    `${prefix}${s1} ${feat}${types[0]}${maybeEmoji()}`,
-    `${prefix}${s2} ${feat1}${types[1]}${maybeEmoji()}`,
-    `${prefix}${s3} ${feat}${types[2]}${maybeEmoji()}`,
-  ];
-}
-
 // ── 處理單一 LINE 事件 ────────────────────────────────────────────────────────
 async function handleEvent(event, client) {
   if (event.type === 'postback') {
@@ -1735,14 +1638,6 @@ async function handleEvent(event, client) {
       appendProductToSheet(productId, productName, jpy, stockLines, qStatus, weightInfo).catch((e) =>
         console.error('[sheets append error]', e.message)
       )
-    );
-    // 推送中文命名建議給管理者
-    const suggestions = generateNameSuggestions(productName);
-    bgTasks.push(
-      client.pushMessage(ADMIN_USER_ID, {
-        type: 'text',
-        text: `📝 命名建議：\n\n${suggestions.map((s, i) => `${i + 1}. ${s}`).join('\n\n')}`,
-      }).catch((e) => console.error('[name suggestion push error]', e.message))
     );
   }
 
@@ -1973,6 +1868,55 @@ app.get('/admin/setup-rich-menu', async (req, res) => {
   }
 });
 
+// ── 管理員 API：取得所有訂單 ──────────────────────────────────────────────────
+app.get('/api/admin/orders', async (req, res) => {
+  if (req.query.key !== ADMIN_KEY) return res.status(401).json({ error: 'Unauthorized' });
+  try {
+    const sheets = getSheetsClient();
+    const resp = await sheets.spreadsheets.values.get({
+      spreadsheetId: SHEET_ID,
+      range: `${ORDER_SHEET}!A:K`,
+    });
+    const rows = (resp.data.values || []).slice(1);
+    const orders = rows.map((row, i) => ({
+      rowIndex: i + 2,
+      orderId:   row[0] || '',
+      orderTime: row[1] || '',
+      userId:    row[2] || '',
+      items:     row[3] || '',
+      total:     row[4] || '',
+      buyerName: row[5] || '',
+      phone:     row[6] || '',
+      contact:   row[7] || '',
+      contactId: row[8] || '',
+      note:      row[9] || '',
+      status:    row[10] || '待確認',
+    })).reverse();
+    res.json({ orders });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── 管理員 API：更新訂單狀態 ──────────────────────────────────────────────────
+app.post('/api/admin/order-status', express.json(), async (req, res) => {
+  const { key, rowIndex, status } = req.body;
+  if (key !== ADMIN_KEY) return res.status(401).json({ error: 'Unauthorized' });
+  if (!rowIndex || !status) return res.status(400).json({ error: 'rowIndex and status required' });
+  try {
+    const sheets = getSheetsClient();
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: SHEET_ID,
+      range: `${ORDER_SHEET}!K${rowIndex}`,
+      valueInputOption: 'RAW',
+      resource: { values: [[status]] },
+    });
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── 管理員頁面 ────────────────────────────────────────────────────────────────
 app.get('/admin', (req, res) => {
   const { key } = req.query;
@@ -1986,50 +1930,167 @@ app.get('/admin', (req, res) => {
 <title>Bijin 管理後台</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:-apple-system,sans-serif;background:#faf8f6;padding:24px;color:#333}
-h1{font-size:20px;font-weight:bold;color:#7a5c3e;margin-bottom:24px}
-.card{background:#fff;border-radius:12px;padding:20px;box-shadow:0 1px 4px rgba(0,0,0,.08);margin-bottom:20px}
-.card h2{font-size:15px;font-weight:bold;color:#7a5c3e;margin-bottom:16px}
-label{display:block;font-size:13px;color:#888;margin-bottom:4px;margin-top:12px}
-input{width:100%;border:1px solid #ddd;border-radius:8px;padding:10px;font-size:14px;outline:none}
-input:focus{border-color:#c9a98a}
-button{width:100%;background:#c9a98a;color:#fff;border:none;border-radius:10px;padding:13px;font-size:15px;font-weight:bold;cursor:pointer;margin-top:16px}
-button:active{background:#b8906e}
-#result{margin-top:12px;padding:10px;border-radius:8px;font-size:13px;display:none}
-.ok{background:#e8f5e9;color:#2e7d32}
-.err{background:#fdecea;color:#c62828}
+body{font-family:-apple-system,sans-serif;background:#faf8f6;min-height:100vh;color:#333}
+header{background:#fff;border-bottom:1px solid #ece8e2;padding:16px 20px;position:sticky;top:0;z-index:10}
+header h1{font-size:18px;font-weight:bold;color:#7a5c3e}
+header p{font-size:12px;color:#aaa;margin-top:2px}
+.toolbar{padding:12px 20px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.toolbar select{border:1px solid #ddd;border-radius:8px;padding:6px 10px;font-size:13px;background:#fff;color:#555}
+.toolbar button{background:#c9a98a;color:#fff;border:none;border-radius:8px;padding:7px 14px;font-size:13px;font-weight:bold;cursor:pointer}
+#orders{padding:0 12px 80px}
+.order-card{background:#fff;border-radius:12px;margin-bottom:12px;box-shadow:0 1px 4px rgba(0,0,0,.07);overflow:hidden}
+.order-header{padding:12px 16px;display:flex;justify-content:space-between;align-items:flex-start;border-bottom:1px solid #f0ebe4}
+.order-id{font-size:11px;color:#aaa;font-family:monospace}
+.order-time{font-size:11px;color:#bbb;text-align:right}
+.order-body{padding:12px 16px}
+.buyer-name{font-size:15px;font-weight:bold;color:#3d2c1e;margin-bottom:4px}
+.order-items{font-size:12px;color:#888;line-height:1.6;margin-bottom:8px;white-space:pre-wrap}
+.order-total{font-size:14px;font-weight:bold;color:#c9a98a}
+.order-contact{font-size:12px;color:#aaa;margin-top:4px}
+.order-footer{padding:10px 16px;display:flex;gap:8px;align-items:center;background:#faf8f6;flex-wrap:wrap}
+.status-select{border:1px solid #ddd;border-radius:8px;padding:6px 10px;font-size:13px;background:#fff;flex:1;min-width:100px}
+.btn-save{background:#c9a98a;color:#fff;border:none;border-radius:8px;padding:7px 14px;font-size:13px;font-weight:bold;cursor:pointer;white-space:nowrap}
+.btn-save:disabled{opacity:.5;cursor:default}
+.btn-notify{background:#7a8fb5;color:#fff;border:none;border-radius:8px;padding:7px 14px;font-size:13px;font-weight:bold;cursor:pointer;white-space:nowrap}
+.notify-row{display:none;padding:10px 16px;border-top:1px solid #f0ebe4;gap:8px;align-items:center}
+.notify-row input{flex:1;border:1px solid #ddd;border-radius:8px;padding:7px 10px;font-size:13px;outline:none}
+.notify-row input:focus{border-color:#7a8fb5}
+.btn-send{background:#7a8fb5;color:#fff;border:none;border-radius:8px;padding:7px 14px;font-size:13px;font-weight:bold;cursor:pointer}
+.status-badge{display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:bold}
+.s-待確認{background:#fff3e0;color:#e65100}
+.s-已確認{background:#e3f2fd;color:#1565c0}
+.s-已下單{background:#ede7f6;color:#4527a0}
+.s-已到貨{background:#e8f5e9;color:#2e7d32}
+.s-已完成{background:#f3e5f5;color:#6a1b9a}
+.s-已取消{background:#fce4ec;color:#880e4f}
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#333;color:#fff;padding:10px 20px;border-radius:20px;font-size:13px;opacity:0;transition:opacity .3s;pointer-events:none;z-index:100}
+.toast.show{opacity:1}
+#empty{text-align:center;color:#bbb;padding:60px 20px;font-size:14px}
 </style>
 </head>
 <body>
-<h1>🌸 Bijin 管理後台</h1>
-<div class="card">
-  <h2>📢 通知買家賣場網址</h2>
-  <label>訂單 ID</label>
-  <input id="orderId" type="text" placeholder="從訂單通知訊息或 Sheet 取得">
-  <label>賣場網址</label>
-  <input id="storeUrl" type="url" placeholder="https://...">
-  <button onclick="notifyBuyer()">傳送給買家</button>
-  <div id="result"></div>
+<header>
+  <h1>🌸 Bijin 管理後台</h1>
+  <p id="order-count">載入中…</p>
+</header>
+<div class="toolbar">
+  <select id="filter-status" onchange="renderOrders()">
+    <option value="">全部訂單</option>
+    <option value="待確認">待確認</option>
+    <option value="已確認">已確認</option>
+    <option value="已下單">已下單</option>
+    <option value="已到貨">已到貨</option>
+    <option value="已完成">已完成</option>
+    <option value="已取消">已取消</option>
+  </select>
+  <button onclick="loadOrders()">重新整理</button>
 </div>
+<div id="orders"><div id="empty" style="display:none">沒有符合條件的訂單</div></div>
+<div class="toast" id="toast"></div>
+
 <script>
-async function notifyBuyer() {
-  const orderId = document.getElementById('orderId').value.trim();
-  const url = document.getElementById('storeUrl').value.trim();
-  const result = document.getElementById('result');
-  if (!orderId || !url) { showResult('請填寫所有欄位', false); return; }
+const KEY = '${ADMIN_KEY}';
+const STATUSES = ['待確認','已確認','已下單','已到貨','已完成','已取消'];
+let allOrders = [];
+
+async function loadOrders() {
   try {
-    const resp = await fetch('/admin/notify-buyer?key=${ADMIN_KEY}&orderId=' + encodeURIComponent(orderId) + '&url=' + encodeURIComponent(url));
-    const data = await resp.json();
-    if (resp.ok) showResult('✅ ' + data.message, true);
-    else showResult('❌ ' + (data.error || '失敗'), false);
-  } catch(e) { showResult('❌ 網路錯誤', false); }
+    const r = await fetch('/api/admin/orders?key=' + KEY);
+    const d = await r.json();
+    allOrders = d.orders || [];
+    renderOrders();
+  } catch(e) { showToast('載入失敗：' + e.message); }
 }
-function showResult(msg, ok) {
-  const el = document.getElementById('result');
-  el.textContent = msg;
-  el.className = ok ? 'ok' : 'err';
-  el.style.display = 'block';
+
+function renderOrders() {
+  const filter = document.getElementById('filter-status').value;
+  const list = filter ? allOrders.filter(o => o.status === filter) : allOrders;
+  document.getElementById('order-count').textContent =
+    '共 ' + allOrders.length + ' 筆訂單' + (filter ? '，篩選中：' + list.length + ' 筆' : '');
+  const container = document.getElementById('orders');
+  document.getElementById('empty').style.display = list.length ? 'none' : 'block';
+  const cards = list.map(o => createCard(o)).join('');
+  // Keep empty div, insert cards before it
+  container.innerHTML = '<div id="empty" style="display:' + (list.length?'none':'block') + '">沒有符合條件的訂單</div>' + cards;
 }
+
+function createCard(o) {
+  const statusOpts = STATUSES.map(s =>
+    '<option value="' + s + '"' + (o.status === s ? ' selected' : '') + '>' + s + '</option>'
+  ).join('');
+  const badge = '<span class="status-badge s-' + (o.status||'待確認') + '">' + (o.status||'待確認') + '</span>';
+  const contact = o.contact ? o.contact + (o.contactId ? '：' + o.contactId : '') : '';
+  return \`<div class="order-card" id="card-\${o.rowIndex}">
+  <div class="order-header">
+    <div>
+      <div class="order-id">\${o.orderId}</div>
+      <div style="margin-top:4px">\${badge}</div>
+    </div>
+    <div class="order-time">\${o.orderTime}</div>
+  </div>
+  <div class="order-body">
+    <div class="buyer-name">\${o.buyerName || '（未填姓名）'}</div>
+    <div class="order-items">\${o.items}</div>
+    <div class="order-total">NT$\${o.total}</div>
+    \${contact ? '<div class="order-contact">' + contact + '</div>' : ''}
+    \${o.note ? '<div class="order-contact">備註：' + o.note + '</div>' : ''}
+  </div>
+  <div class="order-footer">
+    <select class="status-select" id="sel-\${o.rowIndex}">\${statusOpts}</select>
+    <button class="btn-save" onclick="saveStatus(\${o.rowIndex}, '\${o.orderId}')">儲存狀態</button>
+    <button class="btn-notify" onclick="toggleNotify(\${o.rowIndex})">📢 通知買家</button>
+  </div>
+  <div class="notify-row" id="notify-\${o.rowIndex}" style="display:none;display:flex">
+    <input type="url" id="url-\${o.rowIndex}" placeholder="貼上賣場網址…">
+    <button class="btn-send" onclick="sendNotify('\${o.orderId}', \${o.rowIndex})">傳送</button>
+  </div>
+</div>\`;
+}
+
+function toggleNotify(rowIndex) {
+  const row = document.getElementById('notify-' + rowIndex);
+  row.style.display = row.style.display === 'none' ? 'flex' : 'none';
+}
+
+async function saveStatus(rowIndex, orderId) {
+  const status = document.getElementById('sel-' + rowIndex).value;
+  try {
+    const r = await fetch('/api/admin/order-status', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ key: KEY, rowIndex, status }),
+    });
+    if (r.ok) {
+      const o = allOrders.find(x => x.rowIndex === rowIndex);
+      if (o) o.status = status;
+      showToast('✅ 狀態已更新');
+      renderOrders();
+    } else {
+      const d = await r.json();
+      showToast('❌ ' + (d.error || '失敗'));
+    }
+  } catch(e) { showToast('❌ 網路錯誤'); }
+}
+
+async function sendNotify(orderId, rowIndex) {
+  const url = document.getElementById('url-' + rowIndex).value.trim();
+  if (!url) { showToast('請填入賣場網址'); return; }
+  try {
+    const r = await fetch('/admin/notify-buyer?key=' + KEY + '&orderId=' + encodeURIComponent(orderId) + '&url=' + encodeURIComponent(url));
+    const d = await r.json();
+    if (r.ok) { showToast('✅ ' + d.message); toggleNotify(rowIndex); }
+    else showToast('❌ ' + (d.error || '失敗'));
+  } catch(e) { showToast('❌ 網路錯誤'); }
+}
+
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2500);
+}
+
+loadOrders();
 </script>
 </body>
 </html>`);
