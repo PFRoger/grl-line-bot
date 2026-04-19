@@ -995,6 +995,10 @@ input:focus,select:focus,textarea:focus{border-color:#c9a98a}
 .success-icon{font-size:48px;margin-bottom:12px}
 .success-title{font-size:18px;font-weight:bold;color:#c9a98a;margin-bottom:8px}
 .success-text{font-size:13px;color:#888;line-height:1.6}
+#alert-overlay{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.45);z-index:1000;align-items:center;justify-content:center}
+#alert-box{background:#fff;border-radius:14px;padding:24px 20px;margin:24px;text-align:center;max-width:280px;width:100%}
+#alert-msg{font-size:15px;color:#333;margin-bottom:20px;line-height:1.5}
+.alert-btn-ok{width:100%;padding:12px;border:none;border-radius:8px;background:#c9a98a;color:#fff;font-size:15px;font-weight:bold;cursor:pointer}
 </style>
 </head>
 <body>
@@ -1042,12 +1046,25 @@ input:focus,select:focus,textarea:focus{border-color:#c9a98a}
     </div>
   </div>
 </div>
+<div id="alert-overlay" style="display:none">
+  <div id="alert-box">
+    <div id="alert-msg"></div>
+    <button class="alert-btn-ok" onclick="closeAlert()">確定</button>
+  </div>
+</div>
 <script>
 let userId = '';
 let cartItems = [];
 let groupedItems = [];
 const imageCache = {}; // key: productId|color → imageUrl
 let _confirmCb = null;
+function showAlert(msg) {
+  document.getElementById('alert-msg').innerHTML = msg;
+  document.getElementById('alert-overlay').style.display = 'flex';
+}
+function closeAlert() {
+  document.getElementById('alert-overlay').style.display = 'none';
+}
 function showConfirm(group) {
   return new Promise(resolve => {
     _confirmCb = resolve;
@@ -1238,8 +1255,8 @@ async function submitOrder() {
   const contactMethod = contactMethodEl ? contactMethodEl.value : '';
   const contactAccount = document.getElementById('f-contact-account').value.trim();
   const note = document.getElementById('f-note').value.trim();
-  if (!name || !phone || !contactMethod || !contactAccount) { alert('請填寫所有必填欄位 (*)'); return; }
-  if (!/^09\\d{8}$/.test(phone)) { alert('手機號碼格式不正確'); return; }
+  if (!name || !phone || !contactMethod || !contactAccount) { showAlert('請填寫所有必填欄位 (*)'); return; }
+  if (!/^09\\d{8}$/.test(phone)) { showAlert('手機號碼格式不正確'); return; }
   const btn = document.getElementById('submit-btn');
   btn.disabled = true; btn.textContent = '送出中...';
   try {
@@ -1254,7 +1271,7 @@ async function submitOrder() {
       document.getElementById('success-text').innerHTML =
         '訂單編號：' + data.orderId + '<br><br>我們將盡快確認您的訂單並提供賣貨便連結<br><br>如有問題請至官方 IG <span onclick="copyIG()" style="text-decoration:underline;cursor:pointer;color:#7a8fb5">bijin.jp.2024</span> 傳訊息給我們 🌸';
     } else {
-      alert('下單失敗，請稍後再試');
+      showAlert('下單失敗，請稍後再試');
       btn.disabled = false; btn.textContent = '訂單送出';
     }
   } catch(e) {
@@ -1267,9 +1284,9 @@ init();
 
 function copyIG() {
   navigator.clipboard.writeText('bijin.jp.2024').then(() => {
-    alert('已複製 IG 帳號：bijin.jp.2024');
+    showAlert('已複製！<br><b>bijin.jp.2024</b>');
   }).catch(() => {
-    prompt('請複製以下 IG 帳號：', 'bijin.jp.2024');
+    showAlert('請手動複製 IG 帳號：<br><b>bijin.jp.2024</b>');
   });
 }
 </script>
