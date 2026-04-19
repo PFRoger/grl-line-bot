@@ -1965,6 +1965,8 @@ header p{font-size:12px;color:#aaa;margin-top:2px}
 .s-待買家完成下單{background:#e3f2fd;color:#1565c0}
 .s-處理中{background:#ede7f6;color:#4527a0}
 .s-已發貨{background:#e8f5e9;color:#2e7d32}
+.s-已完成{background:#f3e5f5;color:#6a1b9a}
+.s-已取消{background:#fce4ec;color:#880e4f}
 .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#333;color:#fff;padding:10px 20px;border-radius:20px;font-size:13px;opacity:0;transition:opacity .3s;pointer-events:none;z-index:100}
 .toast.show{opacity:1}
 #empty{text-align:center;color:#bbb;padding:60px 20px;font-size:14px}
@@ -1982,6 +1984,8 @@ header p{font-size:12px;color:#aaa;margin-top:2px}
     <option value="待買家完成下單">待買家完成下單</option>
     <option value="處理中">處理中</option>
     <option value="已發貨">已發貨</option>
+    <option value="已完成">已完成</option>
+    <option value="已取消">已取消</option>
   </select>
   <button onclick="loadOrders()">重新整理</button>
 </div>
@@ -1990,7 +1994,7 @@ header p{font-size:12px;color:#aaa;margin-top:2px}
 
 <script>
 const KEY = '${ADMIN_KEY}';
-const STATUSES = ['待確認','待買家完成下單','處理中','已發貨'];
+const STATUSES = ['待確認','待買家完成下單','處理中','已發貨','已完成','已取消'];
 let allOrders = [];
 
 async function loadOrders() {
