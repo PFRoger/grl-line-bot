@@ -590,7 +590,11 @@ async function markCartItemsOrdered(userId, rowIndexes) {
 async function submitOrder(userId, cartItems, buyerInfo) {
   const sheets = getSheetsClient();
   await ensureOrderSheet(sheets);
-  const orderId = `${Date.now()}-${userId.slice(-6)}`;
+  // 21碼英數字訂單號：9碼時間戳(base36) + 12碼隨機英數
+  const tsBase36 = Date.now().toString(36).padStart(9, '0');
+  const randChars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  const randPart = Array.from({length: 12}, () => randChars[Math.floor(Math.random() * randChars.length)]).join('');
+  const orderId = (tsBase36 + randPart).toUpperCase();
   const orderTime = new Date().toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' });
   // 合併相同商品（productId+color+size），顯示數量
   const itemMap = {};
@@ -2005,6 +2009,11 @@ header p{font-size:12px;color:#aaa;margin-top:2px}
 .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#333;color:#fff;padding:10px 20px;border-radius:20px;font-size:13px;opacity:0;transition:opacity .3s;pointer-events:none;z-index:100}
 .toast.show{opacity:1}
 #empty{text-align:center;color:#bbb;padding:60px 20px;font-size:14px}
+.closed-section{margin:12px;border-radius:12px;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.07);overflow:hidden}
+.closed-section summary{padding:14px 16px;font-size:14px;font-weight:bold;color:#999;cursor:pointer;list-style:none;display:flex;justify-content:space-between;align-items:center}
+.closed-section summary::-webkit-details-marker{display:none}
+details.closed-section[open] summary::after{content:'▾'}
+.closed-section summary::after{content:'▸';font-size:12px}
 </style>
 </head>
 <body>
@@ -2025,6 +2034,10 @@ header p{font-size:12px;color:#aaa;margin-top:2px}
   <button onclick="loadOrders()">重新整理</button>
 </div>
 <div id="orders"><div id="empty" style="display:none">沒有符合條件的訂單</div></div>
+<details class="closed-section">
+  <summary>已完成 / 已取消訂單</summary>
+  <div id="closed-orders"></div>
+</details>
 <div class="toast" id="toast"></div>
 
 <script>
@@ -2041,16 +2054,29 @@ async function loadOrders() {
   } catch(e) { showToast('載入失敗：' + e.message); }
 }
 
+const CLOSED_STATUSES = new Set(['已完成','已取消']);
+
 function renderOrders() {
   const filter = document.getElementById('filter-status').value;
-  const list = filter ? allOrders.filter(o => o.status === filter) : allOrders;
+  const active = allOrders.filter(o => !CLOSED_STATUSES.has(o.status));
+  const closed = allOrders.filter(o => CLOSED_STATUSES.has(o.status));
+  const list = filter
+    ? (CLOSED_STATUSES.has(filter) ? closed : active).filter(o => o.status === filter)
+    : active;
+
   document.getElementById('order-count').textContent =
-    '共 ' + allOrders.length + ' 筆訂單' + (filter ? '，篩選中：' + list.length + ' 筆' : '');
+    '進行中 ' + active.length + ' 筆' + (closed.length ? '　已結束 ' + closed.length + ' 筆' : '');
+
   const container = document.getElementById('orders');
-  document.getElementById('empty').style.display = list.length ? 'none' : 'block';
-  const cards = list.map(o => createCard(o)).join('');
-  // Keep empty div, insert cards before it
-  container.innerHTML = '<div id="empty" style="display:' + (list.length?'none':'block') + '">沒有符合條件的訂單</div>' + cards;
+  const emptyHtml = '<div id="empty" style="grid-column:1/-1;text-align:center;color:#bbb;padding:40px;display:' + (list.length?'none':'block') + '">沒有符合條件的訂單</div>';
+  container.innerHTML = emptyHtml + list.map(o => createCard(o)).join('');
+
+  // Closed orders collapsible
+  const closedEl = document.getElementById('closed-orders');
+  const closedFiltered = filter && CLOSED_STATUSES.has(filter) ? closed.filter(o=>o.status===filter) : closed;
+  closedEl.innerHTML = closedFiltered.length
+    ? closedFiltered.map(o => createClosedRow(o)).join('')
+    : '<div style="color:#bbb;padding:12px;font-size:13px">無已完成或已取消訂單</div>';
 }
 
 function createCard(o) {
@@ -2086,6 +2112,14 @@ function createCard(o) {
 </div>\`;
 }
 
+function createClosedRow(o) {
+  const badge = '<span class="status-badge s-' + o.status + '">' + o.status + '</span>';
+  return '<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 16px;border-bottom:1px solid #f0ebe4;font-size:13px">'
+    + '<div><span style="color:#aaa;font-family:monospace;font-size:11px">' + o.orderId + '</span>'
+    + ' ' + badge + ' <span style="color:#555;margin-left:8px">' + (o.buyerName||'—') + '</span></div>'
+    + '<div style="color:#aaa;font-size:11px">' + o.orderTime + '</div></div>';
+}
+
 function toggleNotify(rowIndex) {
   const row = document.getElementById('notify-' + rowIndex);
   row.style.display = row.style.display === 'none' ? 'flex' : 'none';
@@ -2117,8 +2151,13 @@ async function sendNotify(orderId, rowIndex) {
   try {
     const r = await fetch('/admin/notify-buyer?key=' + KEY + '&orderId=' + encodeURIComponent(orderId) + '&url=' + encodeURIComponent(url));
     const d = await r.json();
-    if (r.ok) { showToast('✅ ' + d.message); toggleNotify(rowIndex); }
-    else showToast('❌ ' + (d.error || '失敗'));
+    if (r.ok) {
+      // 自動更新本地狀態，不需重整頁面
+      const o = allOrders.find(x => x.rowIndex === rowIndex);
+      if (o) o.status = '待買家完成下單';
+      showToast('✅ ' + d.message);
+      renderOrders();
+    } else showToast('❌ ' + (d.error || '失敗'));
   } catch(e) { showToast('❌ 網路錯誤'); }
 }
 
