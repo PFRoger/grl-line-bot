@@ -1242,19 +1242,22 @@ function buildAddToCartFlex(stockLines, productId, jpy, suggested, productUrl, i
     const group = colorGroups[colorJp];
     const colorLabel = group.colorZh ? `${group.colorZh}（${colorJp}）` : colorJp;
 
-    // 每個尺寸：一個 button，label 用純文字（尺寸 + 庫存說明），不用 emoji icon
+    // 每個尺寸：一個 button，格式「🛒 加入購物車｜S 有庫存」
     const sizeRows = group.sizes.map((item) => {
-      // 去掉 statusDesc 開頭的 emoji，只取文字部分
-      const rawDesc = item.statusDesc
-        ? item.statusDesc.replace(/^[\u2705\u26A0\uFE0F\u274C\uD83D\uDCC5\u231B\uFE0F]+\s*/, '').trim()
-        : (item.inStock ? '有庫存' : item.isPreorder ? '預約販售' : '剩餘少量');
-      // 預約販售若含到貨日期則截短為「預約販售」
-      const descText = item.isPreorder ? '預約販售' : rawDesc;
-      const btnLabel = `加入 ${item.size} - ${descText}`.substring(0, 20);
+      // 從 statusDesc 提取預約到貨月份（如「5月下旬」）
+      let shortDate = '';
+      if (item.isPreorder && item.statusDesc) {
+        const dateMatch = item.statusDesc.match(/(\d+月[^\s）()（]+)/);
+        if (dateMatch) shortDate = dateMatch[1];
+      }
+      const shortStatus = item.inStock ? '有庫存' : item.isPreorder
+        ? (shortDate ? `預約${shortDate}` : '預約販售')
+        : '剩餘少量';
+      const btnLabel = `🛒 加入購物車｜${item.size} ${shortStatus}`.substring(0, 20);
       const displayText = `加入購物車：${item.colorZh || colorJp} ${item.size}`;
       const imgUrl = colorImages[colorJp] || imageUrl || '';
       const data = `action=add_to_cart&id=${productId}&c=${encodeURIComponent(colorJp)}&s=${encodeURIComponent(item.size)}&jpy=${jpy}&p=${suggested}&url=${encodeURIComponent(productUrl)}&img=${encodeURIComponent(imgUrl)}`;
-      const btnColor = item.inStock ? '#c8a882' : item.isPreorder ? '#8b9fc4' : '#aaaaaa';
+      const btnColor = item.inStock ? '#2a6b5e' : item.isPreorder ? '#4a6090' : '#555555';
       return {
         type: 'button',
         height: 'sm',
@@ -1284,23 +1287,24 @@ function buildAddToCartFlex(stockLines, productId, jpy, suggested, productUrl, i
         type: 'box',
         layout: 'vertical',
         paddingAll: '12px',
-        paddingBottom: '4px',
+        paddingBottom: '8px',
         spacing: 'none',
+        backgroundColor: '#1e3835',
         contents: [
           // 商品名稱（有才顯示）
           ...(productName ? [{
             type: 'text',
             text: productName.substring(0, 30),
             size: 'xs',
-            color: '#888888',
+            color: '#8bbcb0',
             wrap: true,
           }] : []),
           // 顏色
-          { type: 'text', text: colorLabel, weight: 'bold', size: 'md', color: '#3d2c1e', wrap: true, margin: 'xs' },
+          { type: 'text', text: colorLabel, weight: 'bold', size: 'md', color: '#ffffff', wrap: true, margin: 'xs' },
           // 價格
-          { type: 'text', text: `¥${jpy.toLocaleString()}　報價金額 NT$${suggested.toLocaleString()}`, size: 'xs', color: '#999999', margin: 'xs' },
+          { type: 'text', text: `¥${jpy.toLocaleString()}　報價金額 NT$${suggested.toLocaleString()}`, size: 'xs', color: '#8bbcb0', margin: 'xs' },
           // 分隔線
-          { type: 'separator', margin: 'md' },
+          { type: 'separator', margin: 'md', color: '#2d5550' },
           // 尺寸列表
           {
             type: 'box',
@@ -1315,11 +1319,12 @@ function buildAddToCartFlex(stockLines, productId, jpy, suggested, productUrl, i
         type: 'box',
         layout: 'vertical',
         paddingAll: '8px',
+        backgroundColor: '#1e3835',
         contents: [{
           type: 'button',
           height: 'sm',
           style: 'link',
-          color: '#999999',
+          color: '#8bbcb0',
           action: { type: 'uri', label: '回官方商品頁', uri: productUrl },
         }],
       },
