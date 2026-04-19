@@ -1026,7 +1026,7 @@ input:focus,select:focus,textarea:focus{border-color:#c9a98a}
       <label class="radio-item"><input type="radio" name="contact-method" value="IG"> IG</label>
       <label class="radio-item"><input type="radio" name="contact-method" value="LINE"> LINE</label>
     </div>
-    <input id="f-contact-account" type="text" placeholder="請輸入帳號（不含 @）">
+    <input id="f-contact-account" type="text" placeholder="請輸入帳號">
     <label>備註（選填）</label>
     <textarea id="f-note" rows="2" placeholder="特殊需求或備注"></textarea>
     <button class="submit-btn" id="submit-btn" onclick="submitOrder()">訂單送出</button>
