@@ -104,7 +104,8 @@ function extractProductId(url) {
   if (!m) return null;
   const raw = m[1];
   const stripped = raw.replace(/\d{4}$/, '');
-  return /^[a-z]{2}\d+$/i.test(stripped) ? stripped : raw;
+  const result = /^[a-z]{2}\d+$/i.test(stripped) ? stripped : raw;
+  return result.toUpperCase();
 }
 
 // ── 解析庫存（參考 GAS parseStockForBot 邏輯）────────────────────────────────
@@ -605,7 +606,7 @@ async function submitOrder(userId, cartItems, buyerInfo) {
   }
   const totalQty = cartItems.length;
   const itemsSummary = Object.values(itemMap)
-    .map(i => `${i.productId} ${translateColorWithJp(i.color)} ${i.size} NT$${i.suggestedPrice}${i.qty > 1 ? ` ×${i.qty}` : ''}`)
+    .map(i => `${(i.productId||'').toUpperCase()} ${translateColorWithJp(i.color)} ${i.size} NT$${i.suggestedPrice}${i.qty > 1 ? ` ×${i.qty}` : ''}`)
     .join('\n') + `\n共 ${totalQty} 件`;
   const totalTwd = cartItems.reduce((sum, i) => sum + (i.suggestedPrice || 0), 0);
   await sheets.spreadsheets.values.append({
@@ -1190,7 +1191,7 @@ function render() {
     el.innerHTML += \`<div class="cart-item" id="item-\${idx}">
       <img class="item-img" id="img-\${idx}" src="" alt="">
       <div class="item-info">
-        <div class="item-name">\${group.productName ? group.productName.substring(0,25) : group.productId}</div>
+        <div class="item-name">\${(group.productId||'').toUpperCase()}　\${group.productName ? group.productName.substring(0,20) : ''}</div>
         <div class="item-detail">\${group.colorDisplay || group.color}　\${group.size}</div>
         <div class="item-jpy">¥\${(group.jpy||0).toLocaleString()}</div>
         <div class="item-price">\${priceText}</div>
