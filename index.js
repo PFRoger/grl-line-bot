@@ -592,7 +592,7 @@ async function submitOrder(userId, cartItems, buyerInfo) {
   await ensureOrderSheet(sheets);
   const orderId = `${Date.now()}-${userId.slice(-6)}`;
   const orderTime = new Date().toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' });
-  const itemsSummary = cartItems.map(i => `${i.productId} ${translateColorWithJp(i.color)} ${i.size} NT$${i.suggestedPrice}`).join(' | ');
+  const itemsSummary = cartItems.map(i => `${i.productId} ${translateColorWithJp(i.color)} ${i.size} NT$${i.suggestedPrice}`).join('\n');
   const totalTwd = cartItems.reduce((sum, i) => sum + (i.suggestedPrice || 0), 0);
   await sheets.spreadsheets.values.append({
     spreadsheetId: SHEET_ID,
@@ -1937,14 +1937,18 @@ header p{font-size:12px;color:#aaa;margin-top:2px}
 .toolbar{padding:12px 20px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .toolbar select{border:1px solid #ddd;border-radius:8px;padding:6px 10px;font-size:13px;background:#fff;color:#555}
 .toolbar button{background:#c9a98a;color:#fff;border:none;border-radius:8px;padding:7px 14px;font-size:13px;font-weight:bold;cursor:pointer}
-#orders{padding:0 12px 80px}
-.order-card{background:#fff;border-radius:12px;margin-bottom:12px;box-shadow:0 1px 4px rgba(0,0,0,.07);overflow:hidden}
+#orders{padding:0 12px 80px;display:grid;grid-template-columns:repeat(4,1fr);gap:12px;align-items:start}
+@media(max-width:1200px){#orders{grid-template-columns:repeat(3,1fr)}}
+@media(max-width:800px){#orders{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:500px){#orders{grid-template-columns:1fr}}
+#empty{grid-column:1/-1}
+.order-card{background:#fff;border-radius:12px;box-shadow:0 1px 4px rgba(0,0,0,.07);overflow:hidden}
 .order-header{padding:12px 16px;display:flex;justify-content:space-between;align-items:flex-start;border-bottom:1px solid #f0ebe4}
 .order-id{font-size:11px;color:#aaa;font-family:monospace}
 .order-time{font-size:11px;color:#bbb;text-align:right}
 .order-body{padding:12px 16px}
 .buyer-name{font-size:15px;font-weight:bold;color:#3d2c1e;margin-bottom:4px}
-.order-items{font-size:12px;color:#888;line-height:1.6;margin-bottom:8px;white-space:pre-wrap}
+.order-items{font-size:12px;color:#888;line-height:1.8;margin-bottom:8px}
 .order-total{font-size:14px;font-weight:bold;color:#c9a98a}
 .order-contact{font-size:12px;color:#aaa;margin-top:4px}
 .order-footer{padding:10px 16px;display:flex;gap:8px;align-items:center;background:#faf8f6;flex-wrap:wrap}
@@ -2030,7 +2034,7 @@ function createCard(o) {
   </div>
   <div class="order-body">
     <div class="buyer-name">\${o.buyerName || '（未填姓名）'}</div>
-    <div class="order-items">\${o.items}</div>
+    <div class="order-items">\${o.items.split('\\n').map(l=>'<div>'+l+'</div>').join('')}</div>
     <div class="order-total">NT$\${o.total}</div>
     \${contact ? '<div class="order-contact">' + contact + '</div>' : ''}
     \${o.note ? '<div class="order-contact">備註：' + o.note + '</div>' : ''}
@@ -2122,7 +2126,7 @@ app.get('/admin/notify-buyer', async (req, res) => {
     const client = new line.Client({ channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN });
     await client.pushMessage(buyerUserId, {
       type: 'flex',
-      altText: '您的訂單賣場已建立，請前往付款 🛍',
+      altText: '您的訂單賣貨便已建立，請前往下單 🛍',
       contents: {
         type: 'bubble',
         size: 'kilo',
@@ -2131,7 +2135,7 @@ app.get('/admin/notify-buyer', async (req, res) => {
           layout: 'vertical',
           backgroundColor: '#c9a98a',
           paddingAll: '14px',
-          contents: [{ type: 'text', text: '🛍 賣場已建立！', color: '#ffffff', size: 'md', weight: 'bold' }],
+          contents: [{ type: 'text', text: '🛍 賣貨便已建立！', color: '#ffffff', size: 'md', weight: 'bold' }],
         },
         body: {
           type: 'box',
@@ -2144,7 +2148,7 @@ app.get('/admin/notify-buyer', async (req, res) => {
             { type: 'text', text: itemsSummary, size: 'xs', color: '#888888', wrap: true, margin: 'sm' },
             { type: 'text', text: `合計：NT$${totalTwd}`, size: 'sm', weight: 'bold', color: '#c9a98a', margin: 'sm' },
             { type: 'separator', margin: 'sm' },
-            { type: 'text', text: '請點下方按鈕前往賣場完成付款 👇', size: 'sm', color: '#555555', margin: 'sm', wrap: true },
+            { type: 'text', text: '請點選下方按鈕前往賣貨便完成下單 👇', size: 'sm', color: '#555555', margin: 'sm', wrap: true },
           ],
         },
         footer: {
@@ -2156,7 +2160,7 @@ app.get('/admin/notify-buyer', async (req, res) => {
             style: 'primary',
             color: '#c9a98a',
             height: 'sm',
-            action: { type: 'uri', label: '前往賣場付款', uri: storeUrl },
+            action: { type: 'uri', label: '前往賣貨便下單', uri: storeUrl },
           }],
         },
       },
