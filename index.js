@@ -538,7 +538,7 @@ async function getCartItems(userId) {
   }
   const rows = (resp && resp.data.values) || [];
   const now = Date.now();
-  const EXPIRE_MS = 12 * 60 * 60 * 1000; // 12 hours
+  const EXPIRE_MS = 48 * 60 * 60 * 1000; // 48 hours
   const items = [];
   rows.forEach((row, idx) => {
     if (idx === 0) return; // header
@@ -763,7 +763,7 @@ function buildTutorialFlexMessage() {
         '點按尺寸按鈕即可加入購物車',
         '（可多件商品一起結帳）',
         '',
-        '⚠️ 購物車內容 12 小時後',
+        '⚠️ 購物車內容 48 小時後',
         '    自動清空，請盡早結帳',
       ],
     },
@@ -938,7 +938,7 @@ async function handlePostback(event, client) {
     const colorDisplay = translateColorWithJp(colorJp);
     await client.replyMessage(replyToken, {
       type: 'text',
-      text: `✅ 已加入購物車\n商品：${productName || productId}\n\n顏色：${colorDisplay}\n尺寸：${size}\n\n售價：NT$${suggested}\n\n請按下方主選單「購物車」查看內容\n════════════\n購物車每 12 小時自動清空`,
+      text: `✅ 已加入購物車\n商品：${productName || productId}\n\n顏色：${colorDisplay}\n尺寸：${size}\n\n售價：NT$${suggested}\n\n請按下方主選單「購物車」查看內容\n════════════\n購物車每 48 小時自動清空`,
     });
 
   } else if (action === 'view_cart') {
@@ -1136,6 +1136,17 @@ function render() {
   document.getElementById('cart-empty').style.display = 'none';
   document.getElementById('order-section').style.display = 'block';
   document.getElementById('buyer-section').style.display = 'block';
+  // 自動帶入上次填寫的買家資訊
+  try {
+    const saved = JSON.parse(localStorage.getItem('bijin_buyer') || '{}');
+    if (saved.name) document.getElementById('f-name').value = saved.name;
+    if (saved.phone) document.getElementById('f-phone').value = saved.phone;
+    if (saved.contactMethod) {
+      const radio = document.querySelector(\`input[name="contact-method"][value="\${saved.contactMethod}"]\`);
+      if (radio) radio.checked = true;
+    }
+    if (saved.contactAccount) document.getElementById('f-contact-account').value = saved.contactAccount;
+  } catch(e) {}
   let total = 0;
   groupedItems.forEach((group, idx) => {
     const subtotal = (group.suggestedPrice || 0) * group.quantity;
@@ -1264,6 +1275,8 @@ async function submitOrder() {
   const btn = document.getElementById('submit-btn');
   btn.disabled = true; btn.textContent = '送出中...';
   try {
+    // 儲存買家資訊到 localStorage（下次自動帶入）
+    localStorage.setItem('bijin_buyer', JSON.stringify({ name, phone, contactMethod, contactAccount }));
     const resp = await fetch('/api/order', {
       method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({ userId, cartItems, buyerInfo:{ name, phone, contactMethod, contactAccount, note } })
@@ -1279,7 +1292,7 @@ async function submitOrder() {
       btn.disabled = false; btn.textContent = '訂單送出';
     }
   } catch(e) {
-    alert('下單失敗，請稍後再試');
+    showAlert('下單失敗，請稍後再試');
     btn.disabled = false; btn.textContent = '訂單送出';
   }
 }
