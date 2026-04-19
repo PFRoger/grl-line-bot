@@ -2051,7 +2051,7 @@ header p{font-size:12px;color:#aaa;margin-top:2px}
 .status-badge{display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:bold}
 .s-待確認{background:#fff3e0;color:#e65100}
 .s-待買家完成下單{background:#e3f2fd;color:#1565c0}
-.s-處理中{background:#ede7f6;color:#4527a0}
+.s-處理中(待處理或完成官網下單){background:#ede7f6;color:#4527a0}
 .s-已發貨{background:#e8f5e9;color:#2e7d32}
 .s-已完成{background:#f3e5f5;color:#6a1b9a}
 .s-已取消{background:#fce4ec;color:#880e4f}
@@ -2085,7 +2085,7 @@ details.closed-section[open] summary::after{content:'▾'}
     <option value="">全部訂單</option>
     <option value="待確認">待確認</option>
     <option value="待買家完成下單">待買家完成下單</option>
-    <option value="處理中">處理中</option>
+    <option value="處理中(待處理或完成官網下單)">處理中(待處理或完成官網下單)</option>
     <option value="已發貨(官網出貨)">已發貨(官網出貨)</option>
     <option value="已發貨(已達台灣海關作業)">已發貨(已達台灣海關作業)</option>
     <option value="已發貨(賣貨便出貨)">已發貨(賣貨便出貨)</option>
@@ -2104,12 +2104,12 @@ details.closed-section[open] summary::after{content:'▾'}
 
 <script>
 const KEY = '${ADMIN_KEY}';
-const STATUSES = ['待確認','待買家完成下單','處理中','已發貨(官網出貨)','已發貨(已達台灣海關作業)','已發貨(賣貨便出貨)','待買家取貨','已完成','已取消'];
-const NOTIFY_STATUSES = new Set(['處理中','已發貨(官網出貨)','已發貨(已達台灣海關作業)','已發貨(賣貨便出貨)','待買家取貨']);
+const STATUSES = ['待確認','待買家完成下單','處理中(待處理或完成官網下單)','已發貨(官網出貨)','已發貨(已達台灣海關作業)','已發貨(賣貨便出貨)','待買家取貨','已完成','已取消'];
+const NOTIFY_STATUSES = new Set(['處理中(待處理或完成官網下單)','已發貨(官網出貨)','已發貨(已達台灣海關作業)','已發貨(賣貨便出貨)','待買家取貨']);
 const STATUS_STYLE = {
   '待確認':'background:#fff3e0;color:#e65100',
   '待買家完成下單':'background:#e3f2fd;color:#1565c0',
-  '處理中':'background:#ede7f6;color:#4527a0',
+  '處理中(待處理或完成官網下單)':'background:#ede7f6;color:#4527a0',
   '已發貨(官網出貨)':'background:#e8f5e9;color:#2e7d32',
   '已發貨(已達台灣海關作業)':'background:#e0f2f1;color:#004d40',
   '已發貨(賣貨便出貨)':'background:#f1f8e9;color:#33691e',
@@ -2407,7 +2407,7 @@ app.post('/api/admin/notify-progress', express.json(), async (req, res) => {
 
     // 組合進度文字
     let progressLines = '';
-    if (status === '處理中') {
+    if (status === '處理中(待處理或完成官網下單)') {
       progressLines = `${date} GRL官網下單完成`;
     } else if (status === '已發貨(官網出貨)') {
       progressLines = `${date} GRL官網出貨`;
