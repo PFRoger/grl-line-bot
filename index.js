@@ -846,6 +846,13 @@ async function handlePostback(event, client) {
       text: '👤 會員中心即將上線！\n\n我們正在努力開發中，敬請期待 🌸',
     });
 
+  } else if (action === 'out_of_stock') {
+    const size = params.get('s') || '';
+    await client.replyMessage(replyToken, {
+      type: 'text',
+      text: `😔 ${size} 目前缺貨，請選擇其他尺寸。`,
+    });
+
   } else if (action === 'add_to_cart') {
     const productId    = params.get('id') || '';
     const colorJp      = params.get('c') || '';
@@ -1249,16 +1256,19 @@ function buildAddToCartFlex(stockLines, productId, jpy, suggested, productUrl, i
     // 每個尺寸：缺貨顯示文字列，有庫存/預約/少量顯示按鈕
     const sizeRows = group.sizes.map((item) => {
       if (item.isOutOfStock) {
-        // 缺貨：純文字列，不可點擊
+        // 缺貨：灰色按鈕，點擊後提示缺貨
         return {
-          type: 'box',
-          layout: 'horizontal',
+          type: 'button',
+          height: 'sm',
+          style: 'primary',
+          color: '#c8bbb0',
           margin: 'xs',
-          paddingAll: '6px',
-          contents: [
-            { type: 'text', text: `❌ ${item.size}`, size: 'sm', color: '#c0a898', flex: 0 },
-            { type: 'text', text: '缺貨', size: 'sm', color: '#c0a898', align: 'end' },
-          ],
+          action: {
+            type: 'postback',
+            label: `❌ ${item.size} 缺貨`.substring(0, 20),
+            data: `action=out_of_stock&s=${encodeURIComponent(item.size)}`,
+            displayText: `${item.size} 目前缺貨`,
+          },
         };
       }
       // 從 statusDesc 提取預約到貨月份（如「5月下旬」）
