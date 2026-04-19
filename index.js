@@ -2181,9 +2181,8 @@ function createCard(o) {
   <div class="order-footer">
     <select class="status-select" id="sel-\${o.rowIndex}">\${statusOpts}</select>
     <button class="btn-save" onclick="saveStatus(\${o.rowIndex}, '\${o.orderId}')">儲存狀態</button>
-    \${(o.status||'待確認')==='待確認' ? '<button class="btn-notify" onclick="toggleNotify('+o.rowIndex+')">📢 通知買家</button>' : ''}
   </div>
-  \${(o.status||'待確認')==='待確認' ? \`<div class="notify-row" id="notify-\${o.rowIndex}" style="display:none">
+  \${(o.status||'待確認')==='待確認' ? \`<div class="notify-row" id="notify-\${o.rowIndex}" style="display:flex">
     <input type="url" id="url-\${o.rowIndex}" placeholder="貼上賣場網址…">
     <button class="btn-send" onclick="sendNotify('\${o.orderId}', \${o.rowIndex})">傳送</button>
   </div>\` : ''}
