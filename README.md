@@ -1,140 +1,116 @@
-# GRL LINE Bot
+# Bijin 日本正品代購 LINE Bot
 
-當用戶傳入 [GRL（grail.bz）](https://grail.bz) 商品網址時，自動回覆商品名稱、日幣售價、建議售價（TWD）及各顏色尺寸庫存狀態。
-
----
-
-## 功能
-
-- 抓取 GRL 商品名稱、日幣價格、庫存狀態
-- 顏色自動翻譯（日文 → 繁體中文）
-- 庫存狀態翻譯（在庫あり / 在庫なし / 残りわずか / 予約販売）
-- 即時 JPY → TWD 匯率（exchangerate-api.com）
-- 自動計算含關稅運費的建議售價
-- LINE Webhook 簽名驗證
+LINE Bot 服務，主要功能為 GRL (grail.bz) 商品報價查詢、購物車管理與訂單追蹤。
 
 ---
 
-## 前置需求
+## 功能總覽
 
-| 工具 | 說明 |
+### 用戶功能
+- 傳入 GRL 商品網址 → 自動回覆商品名稱、日幣售價、建議售價（TWD）及各顏色庫存狀態
+- 加入購物車（Flex Carousel，米色系設計，一色一卡片）
+- LIFF 購物車頁面：查看購物車、填寫訂貨人資訊、提交訂單
+- 表單自動記憶上次填寫的姓名、電話、聯繫帳號、備註（各欄位最多 3 筆歷史）
+- Rich Menu：查詢紀錄、開始購物、購物車、購物指南、穿搭靈感、會員中心
+
+### 管理員功能（後台網頁）
+- 查看所有訂單（4 欄格線）
+- 訂單狀態管理 + 自動通知買家
+- 待確認訂單可直接傳送賣貨便網址給買家
+- 已完成 / 已取消訂單折疊顯示
+
+---
+
+## 技術架構
+
+| 項目 | 說明 |
 |------|------|
-| Node.js ≥ 18 | 本地開發 |
-| [LINE Developers 帳號](https://developers.line.biz/) | 取得 Channel Access Token & Channel Secret |
-| 網路連線 | 匯率自動從免費公開端點取得，無需 API Key |
-| [Vercel 帳號](https://vercel.com/) | 部署平台 |
+| Runtime | Node.js (Express) |
+| 部署平台 | Vercel (Serverless) |
+| Vercel 專案 | `pfroger-linebot-2` |
+| Production URL | `https://pfroger-linebot-2.vercel.app` |
+| Webhook URL | `https://pfroger-linebot-2.vercel.app/webhook` |
+| 資料庫 | Google Sheets（服務帳號認證） |
+| LIFF | LINE Login Channel，LIFF ID: `2009823505-mhQivhxd` |
+| 原始碼 | `index.js`（單一檔案） |
 
 ---
 
-## 本地開發
+## 部署方式
 
-### 1. 安裝依賴
-
-```bash
-npm install
-```
-
-### 2. 設定環境變數
+### 推薦：GitHub 自動部署
 
 ```bash
-cp .env.example .env
+git add .
+git commit -m "..."
+git push origin main
+# Vercel 自動偵測 push 並部署
 ```
 
-編輯 `.env` 填入：
+### 使用 Vercel Token（備用）
 
-```env
-LINE_CHANNEL_ACCESS_TOKEN=<你的 Access Token>
-LINE_CHANNEL_SECRET=<你的 Channel Secret>
-```
-
-### 3. 啟動伺服器
+> Windows 使用者名稱含中文，`vercel login` 會失敗，改用 Token。
 
 ```bash
-npm start
-# 或使用 --watch 自動重載
-npm run dev
+VERCEL_TOKEN=<token> npx vercel --prod --yes --scope pfrogers-projects
 ```
 
-### 4. 使用 ngrok 測試 Webhook（選用）
-
-```bash
-ngrok http 3000
-```
-
-將 ngrok 產生的 URL 加上 `/webhook` 填入 LINE Developers Console 的 Webhook URL。
+Token 建立：https://vercel.com/account/tokens（Full Account，No Expiration）
 
 ---
 
-## 部署到 Vercel
+## 環境變數
 
-### 方法一：Vercel CLI
-
-```bash
-# 安裝 CLI
-npm i -g vercel
-
-# 登入
-vercel login
-
-# 部署（首次會引導設定）
-vercel
-
-# 正式部署
-vercel --prod
-```
-
-### 方法二：GitHub 自動部署
-
-1. 將專案推送到 GitHub Repository
-2. 前往 [vercel.com](https://vercel.com) → **Add New Project**
-3. 匯入 GitHub Repo
-4. 在 **Environment Variables** 頁籤填入以下兩個變數：
-
-   | 變數名稱 | 說明 |
-   |----------|------|
-   | `LINE_CHANNEL_ACCESS_TOKEN` | LINE Channel Access Token |
-   | `LINE_CHANNEL_SECRET` | LINE Channel Secret |
-
-5. 點擊 **Deploy**
-
-部署完成後，Webhook URL 為：
-
-```
-https://<your-project>.vercel.app/webhook
-```
+| 變數 | 說明 |
+|------|------|
+| `LINE_CHANNEL_ACCESS_TOKEN` | LINE Channel Access Token |
+| `LINE_CHANNEL_SECRET` | LINE Channel Secret |
+| `ADMIN_KEY` | 管理員 API 金鑰（預設 `grl-admin-2026`） |
+| `GOOGLE_SERVICE_ACCOUNT_JSON` | Google 服務帳號 JSON（Vercel 設定，本地不需要） |
 
 ---
 
-## 設定 LINE Webhook
+## Google Sheets 結構
 
-1. 前往 [LINE Developers Console](https://developers.line.biz/console/)
-2. 選擇你的 Messaging API Channel
-3. **Messaging API** → **Webhook settings**
-4. 填入 Webhook URL：`https://<your-project>.vercel.app/webhook`
-5. 開啟 **Use webhook**
-6. 點擊 **Verify** 確認連線正常（應回傳 200）
+| 工作表 | 用途 |
+|--------|------|
+| `查詢紀錄` | 每次商品查詢記錄（userId、商品 ID、名稱、日幣、TWD、圖片、商品網址等） |
+| `購物車` | 臨時購物車（48 小時後過期，J 欄標記 deleted/ordered） |
+| `訂單` | 已成立訂單（含買家資訊、商品、金額、狀態） |
 
 ---
 
-## 回覆格式範例
+## API 路由
 
-```
-🌸 GRL 商品報價
+| 路由 | 方法 | 說明 |
+|------|------|------|
+| `/webhook` | POST | LINE Webhook 進入點 |
+| `/cart` | GET | LIFF 購物車頁面（HTML） |
+| `/api/cart` | GET | 取得購物車（?userId=...） |
+| `/api/cart/item` | DELETE | 刪除購物車單項 |
+| `/api/order` | POST | 提交訂單 |
+| `/api/stores` | GET | 7-11 門市查詢代理 |
+| `/admin` | GET | 管理員訂單後台（?key=...） |
+| `/api/admin/orders` | GET | 取得所有訂單 |
+| `/api/admin/order-status` | POST | 更新訂單狀態 |
+| `/api/admin/notify-progress` | POST | 通知買家進度（含 LINE 推播） |
+| `/admin/notify-buyer` | GET | 通知買家賣貨便網址 |
 
-フレアスリーブニット
-💴 日幣：¥2,990
-💵 建議售價：NT$479
+---
 
-📦 庫存：
-  黑色 S: ✅ 有庫存
-  黑色 M: ✅ 有庫存
-  黑色 L: ❌ 缺貨
-  米白色 S: ⚠️ 剩餘少量
-  米白色 M: 📅 預約販售（預計5月下旬到貨）
+## 訂單狀態流程
 
-⚠️ 以上報價以 1 磅計算
-實際重量若超過 1 磅，運費將增加，售價會有所調整。
-```
+| 狀態 | 說明 | 通知買家 |
+|------|------|----------|
+| 待確認 | 訂單剛建立 | 可傳賣貨便網址 |
+| 待買家完成下單 | 已傳網址，等待買家完成 | — |
+| 處理中(待處理或完成官網下單) | 處理中 | ✅ 需輸入日期 |
+| 已發貨(官網出貨) | GRL 已出貨 | ✅ 需輸入日期 |
+| 已發貨(已達台灣海關作業) | 已到台灣過海關 | ✅ 需輸入日期 |
+| 已發貨(賣貨便出貨) | 我方已安排出貨 | ✅ 需輸入日期 |
+| 待買家取貨 | 商品已到門市 | ✅ 需輸入日期 |
+| 已完成 | 訂單完成 | — |
+| 已取消 | 訂單取消 | — |
 
 ---
 
@@ -143,8 +119,23 @@ https://<your-project>.vercel.app/webhook
 ```
 匯率 = JPY→TWD 即時匯率 + 0.015
 成本 = 匯率 × 日幣價格 × 1.075 + 180
-建議售價：個位數 ≤4 → 調整為 5；個位數 ≥6 → 調整為 9
+個位數 ≤4 → 調整為 5；個位數 ≥6 → 調整為 9（或進位）
 ```
+
+---
+
+## Rich Menu
+
+**Rich Menu ID**：`richmenu-5f78e8bccf8aebb4f3201064da3f01ec`
+
+| 按鈕 | 動作 |
+|------|------|
+| 查詢紀錄 | postback: `action=query_history` |
+| 開始購物 | URI: `https://www.grail.bz` |
+| 購物車 | URI: `https://liff.line.me/2009823505-mhQivhxd` |
+| 購物指南 | postback: `action=tutorial` |
+| 穿搭靈感 | URI: Instagram |
+| 會員中心 | postback: `action=member` |
 
 ---
 
@@ -152,9 +143,17 @@ https://<your-project>.vercel.app/webhook
 
 ```
 .
-├── index.js          # 主程式（Express + LINE Bot Webhook）
+├── index.js          # 主程式（Express + LINE Bot + LIFF + 管理後台）
 ├── package.json
 ├── vercel.json       # Vercel 部署設定
 ├── .env.example      # 環境變數範例
 └── README.md
 ```
+
+---
+
+## 已知限制
+
+- `vercel login` 在此機器失效（Windows 使用者名稱含中文），改用 Token 或 GitHub 自動部署
+- LIFF 需建在 LINE Login Channel（非 Messaging API Channel）
+- 管理後台 URL 輸入欄位目前沒有輸入格式驗證
