@@ -1962,11 +1962,9 @@ header p{font-size:12px;color:#aaa;margin-top:2px}
 .btn-send{background:#7a8fb5;color:#fff;border:none;border-radius:8px;padding:7px 14px;font-size:13px;font-weight:bold;cursor:pointer}
 .status-badge{display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:bold}
 .s-待確認{background:#fff3e0;color:#e65100}
-.s-已確認{background:#e3f2fd;color:#1565c0}
-.s-已下單{background:#ede7f6;color:#4527a0}
-.s-已到貨{background:#e8f5e9;color:#2e7d32}
-.s-已完成{background:#f3e5f5;color:#6a1b9a}
-.s-已取消{background:#fce4ec;color:#880e4f}
+.s-待買家完成下單{background:#e3f2fd;color:#1565c0}
+.s-處理中{background:#ede7f6;color:#4527a0}
+.s-已發貨{background:#e8f5e9;color:#2e7d32}
 .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#333;color:#fff;padding:10px 20px;border-radius:20px;font-size:13px;opacity:0;transition:opacity .3s;pointer-events:none;z-index:100}
 .toast.show{opacity:1}
 #empty{text-align:center;color:#bbb;padding:60px 20px;font-size:14px}
@@ -1981,11 +1979,9 @@ header p{font-size:12px;color:#aaa;margin-top:2px}
   <select id="filter-status" onchange="renderOrders()">
     <option value="">全部訂單</option>
     <option value="待確認">待確認</option>
-    <option value="已確認">已確認</option>
-    <option value="已下單">已下單</option>
-    <option value="已到貨">已到貨</option>
-    <option value="已完成">已完成</option>
-    <option value="已取消">已取消</option>
+    <option value="待買家完成下單">待買家完成下單</option>
+    <option value="處理中">處理中</option>
+    <option value="已發貨">已發貨</option>
   </select>
   <button onclick="loadOrders()">重新整理</button>
 </div>
@@ -1994,7 +1990,7 @@ header p{font-size:12px;color:#aaa;margin-top:2px}
 
 <script>
 const KEY = '${ADMIN_KEY}';
-const STATUSES = ['待確認','已確認','已下單','已到貨','已完成','已取消'];
+const STATUSES = ['待確認','待買家完成下單','處理中','已發貨'];
 let allOrders = [];
 
 async function loadOrders() {
@@ -2115,6 +2111,7 @@ app.get('/admin/notify-buyer', async (req, res) => {
     const orderRow = rows.find((r) => r[0] === orderId);
     if (!orderRow) return res.status(404).json({ error: `找不到訂單 ${orderId}` });
 
+    const orderRowIndex = rows.indexOf(orderRow) + 1; // 1-indexed (includes header)
     const buyerUserId  = orderRow[2] || '';
     const buyerName    = orderRow[5] || '';
     const itemsSummary = orderRow[3] || '';
@@ -2164,6 +2161,14 @@ app.get('/admin/notify-buyer', async (req, res) => {
           }],
         },
       },
+    });
+
+    // 自動更新訂單狀態為「待買家完成下單」
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: SHEET_ID,
+      range: `${ORDER_SHEET}!K${orderRowIndex}`,
+      valueInputOption: 'RAW',
+      resource: { values: [['待買家完成下單']] },
     });
 
     res.json({ status: 'ok', message: `已通知買家 ${buyerName}（${buyerUserId}）` });
