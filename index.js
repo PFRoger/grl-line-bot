@@ -1257,6 +1257,7 @@ function buildAddToCartFlex(stockLines, productId, jpy, suggested, productUrl, i
     const sizeRows = group.sizes.map((item) => {
       if (item.isOutOfStock) {
         // 缺貨：灰色按鈕，點擊後提示缺貨
+        const outLabel = Array.from(`❌ ${item.size} 缺貨`).slice(0, 20).join('');
         return {
           type: 'button',
           height: 'sm',
@@ -1265,7 +1266,7 @@ function buildAddToCartFlex(stockLines, productId, jpy, suggested, productUrl, i
           margin: 'xs',
           action: {
             type: 'postback',
-            label: `❌ ${item.size} 缺貨`.substring(0, 20),
+            label: outLabel,
             data: `action=out_of_stock&s=${encodeURIComponent(item.size)}`,
             displayText: `${item.size} 目前缺貨`,
           },
@@ -1280,7 +1281,8 @@ function buildAddToCartFlex(stockLines, productId, jpy, suggested, productUrl, i
       const shortStatus = item.inStock ? '有庫存' : item.isPreorder
         ? (shortDate ? `預約${shortDate}` : '預約販售')
         : '剩餘少量';
-      const btnLabel = `🛒 加入購物車｜${item.size} ${shortStatus}`.substring(0, 20);
+      // Array.from 確保 emoji(🛒) 算 1 個字元，不會超過 LINE 20 字限制
+      const btnLabel = Array.from(`🛒 加入購物車｜${item.size} ${shortStatus}`).slice(0, 20).join('');
       const displayText = `加入購物車：${item.colorZh || colorJp} ${item.size}`;
       const imgUrl = colorImages[colorJp] || imageUrl || '';
       const data = `action=add_to_cart&id=${productId}&c=${encodeURIComponent(colorJp)}&s=${encodeURIComponent(item.size)}&jpy=${jpy}&p=${suggested}&url=${encodeURIComponent(productUrl)}&img=${encodeURIComponent(imgUrl)}`;
@@ -1300,7 +1302,7 @@ function buildAddToCartFlex(stockLines, productId, jpy, suggested, productUrl, i
 
     const bubble = {
       type: 'bubble',
-      size: 'kilo',
+      size: 'mega',
       ...(cardImage ? {
         hero: {
           type: 'image',
