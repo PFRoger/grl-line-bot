@@ -1781,6 +1781,68 @@ app.get('/admin/setup-rich-menu', async (req, res) => {
   }
 });
 
+// ── 管理員頁面 ────────────────────────────────────────────────────────────────
+app.get('/admin', (req, res) => {
+  const { key } = req.query;
+  if (key !== process.env.ADMIN_KEY) return res.status(401).send('Unauthorized');
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.send(`<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Bijin 管理後台</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,sans-serif;background:#faf8f6;padding:24px;color:#333}
+h1{font-size:20px;font-weight:bold;color:#7a5c3e;margin-bottom:24px}
+.card{background:#fff;border-radius:12px;padding:20px;box-shadow:0 1px 4px rgba(0,0,0,.08);margin-bottom:20px}
+.card h2{font-size:15px;font-weight:bold;color:#7a5c3e;margin-bottom:16px}
+label{display:block;font-size:13px;color:#888;margin-bottom:4px;margin-top:12px}
+input{width:100%;border:1px solid #ddd;border-radius:8px;padding:10px;font-size:14px;outline:none}
+input:focus{border-color:#c9a98a}
+button{width:100%;background:#c9a98a;color:#fff;border:none;border-radius:10px;padding:13px;font-size:15px;font-weight:bold;cursor:pointer;margin-top:16px}
+button:active{background:#b8906e}
+#result{margin-top:12px;padding:10px;border-radius:8px;font-size:13px;display:none}
+.ok{background:#e8f5e9;color:#2e7d32}
+.err{background:#fdecea;color:#c62828}
+</style>
+</head>
+<body>
+<h1>🌸 Bijin 管理後台</h1>
+<div class="card">
+  <h2>📢 通知買家賣場網址</h2>
+  <label>訂單 ID</label>
+  <input id="orderId" type="text" placeholder="從訂單通知訊息或 Sheet 取得">
+  <label>賣場網址</label>
+  <input id="storeUrl" type="url" placeholder="https://...">
+  <button onclick="notifyBuyer()">傳送給買家</button>
+  <div id="result"></div>
+</div>
+<script>
+async function notifyBuyer() {
+  const orderId = document.getElementById('orderId').value.trim();
+  const url = document.getElementById('storeUrl').value.trim();
+  const result = document.getElementById('result');
+  if (!orderId || !url) { showResult('請填寫所有欄位', false); return; }
+  try {
+    const resp = await fetch('/admin/notify-buyer?key=${process.env.ADMIN_KEY || ''}&orderId=' + encodeURIComponent(orderId) + '&url=' + encodeURIComponent(url));
+    const data = await resp.json();
+    if (resp.ok) showResult('✅ ' + data.message, true);
+    else showResult('❌ ' + (data.error || '失敗'), false);
+  } catch(e) { showResult('❌ 網路錯誤', false); }
+}
+function showResult(msg, ok) {
+  const el = document.getElementById('result');
+  el.textContent = msg;
+  el.className = ok ? 'ok' : 'err';
+  el.style.display = 'block';
+}
+</script>
+</body>
+</html>`);
+});
+
 // ── 管理員：通知買家賣場網址 ──────────────────────────────────────────────────
 // 呼叫方式：GET /admin/notify-buyer?key=grl-admin-2026&orderId=XXX&url=https://...
 app.get('/admin/notify-buyer', async (req, res) => {
