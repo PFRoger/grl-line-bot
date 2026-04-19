@@ -592,7 +592,16 @@ async function submitOrder(userId, cartItems, buyerInfo) {
   await ensureOrderSheet(sheets);
   const orderId = `${Date.now()}-${userId.slice(-6)}`;
   const orderTime = new Date().toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' });
-  const itemsSummary = cartItems.map(i => `${i.productId} ${translateColorWithJp(i.color)} ${i.size} NT$${i.suggestedPrice}`).join('\n');
+  // 合併相同商品（productId+color+size），顯示數量
+  const itemMap = {};
+  for (const i of cartItems) {
+    const key = `${i.productId}|${i.color}|${i.size}`;
+    if (!itemMap[key]) itemMap[key] = { ...i, qty: 0 };
+    itemMap[key].qty += 1;
+  }
+  const itemsSummary = Object.values(itemMap)
+    .map(i => `${i.productId} ${translateColorWithJp(i.color)} ${i.size} NT$${i.suggestedPrice}${i.qty > 1 ? ` ×${i.qty}` : ''}`)
+    .join('\n');
   const totalTwd = cartItems.reduce((sum, i) => sum + (i.suggestedPrice || 0), 0);
   await sheets.spreadsheets.values.append({
     spreadsheetId: SHEET_ID,
