@@ -1781,6 +1781,79 @@ app.get('/admin/setup-rich-menu', async (req, res) => {
   }
 });
 
+// ── 管理員：通知買家賣場網址 ──────────────────────────────────────────────────
+// 呼叫方式：GET /admin/notify-buyer?key=grl-admin-2026&orderId=XXX&url=https://...
+app.get('/admin/notify-buyer', async (req, res) => {
+  const { key, orderId, url: storeUrl } = req.query;
+  if (key !== process.env.ADMIN_KEY) return res.status(401).json({ error: 'Unauthorized' });
+  if (!orderId || !storeUrl) return res.status(400).json({ error: 'orderId and url required' });
+
+  try {
+    // 從訂單 sheet 找 orderId
+    const sheets = getSheetsClient();
+    const resp = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${ORDER_SHEET}!A:K` });
+    const rows = resp.data.values || [];
+    const orderRow = rows.find((r) => r[0] === orderId);
+    if (!orderRow) return res.status(404).json({ error: `找不到訂單 ${orderId}` });
+
+    const buyerUserId  = orderRow[2] || '';
+    const buyerName    = orderRow[5] || '';
+    const itemsSummary = orderRow[3] || '';
+    const totalTwd     = orderRow[4] || '';
+
+    if (!buyerUserId) return res.status(400).json({ error: '訂單缺少 userId' });
+
+    // Push LINE 訊息給買家
+    const client = new line.Client({ channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN });
+    await client.pushMessage(buyerUserId, {
+      type: 'flex',
+      altText: '您的訂單賣場已建立，請前往付款 🛍',
+      contents: {
+        type: 'bubble',
+        size: 'kilo',
+        header: {
+          type: 'box',
+          layout: 'vertical',
+          backgroundColor: '#c9a98a',
+          paddingAll: '14px',
+          contents: [{ type: 'text', text: '🛍 賣場已建立！', color: '#ffffff', size: 'md', weight: 'bold' }],
+        },
+        body: {
+          type: 'box',
+          layout: 'vertical',
+          spacing: 'sm',
+          paddingAll: '14px',
+          contents: [
+            { type: 'text', text: `${buyerName} 您好`, size: 'sm', color: '#555555' },
+            { type: 'separator', margin: 'sm' },
+            { type: 'text', text: itemsSummary, size: 'xs', color: '#888888', wrap: true, margin: 'sm' },
+            { type: 'text', text: `合計：NT$${totalTwd}`, size: 'sm', weight: 'bold', color: '#c9a98a', margin: 'sm' },
+            { type: 'separator', margin: 'sm' },
+            { type: 'text', text: '請點下方按鈕前往賣場完成付款 👇', size: 'sm', color: '#555555', margin: 'sm', wrap: true },
+          ],
+        },
+        footer: {
+          type: 'box',
+          layout: 'vertical',
+          paddingAll: '10px',
+          contents: [{
+            type: 'button',
+            style: 'primary',
+            color: '#c9a98a',
+            height: 'sm',
+            action: { type: 'uri', label: '前往賣場付款', uri: storeUrl },
+          }],
+        },
+      },
+    });
+
+    res.json({ status: 'ok', message: `已通知買家 ${buyerName}（${buyerUserId}）` });
+  } catch (err) {
+    console.error('[notify-buyer error]', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── 本地開發啟動 ──────────────────────────────────────────────────────────────
 if (require.main === module) {
   const PORT = process.env.PORT || 3000;
