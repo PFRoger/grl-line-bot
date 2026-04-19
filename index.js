@@ -97,11 +97,14 @@ async function fetchRate() {
   return rate + 0.015;
 }
 
-// ── 從網址擷取商品 ID（去掉最後 4 碼數字後綴，例如 ru14381119→ru1438）────────
+// ── 從網址擷取商品 ID（去掉顏色後綴 4 碼，例如 ru14381119→ru1438）────────────
+// 只有去掉後仍保有數字（即 ru\d+）才執行截短，避免把 ru1197 截成 ru
 function extractProductId(url) {
   const m = url.match(/\/item\/([a-z]{2}\d+)/i);
   if (!m) return null;
-  return m[1].replace(/\d{4}$/, '');
+  const raw = m[1];
+  const stripped = raw.replace(/\d{4}$/, '');
+  return /^[a-z]{2}\d+$/i.test(stripped) ? stripped : raw;
 }
 
 // ── 解析庫存（參考 GAS parseStockForBot 邏輯）────────────────────────────────
@@ -411,8 +414,8 @@ async function appendProductToSheet(productId, productName, jpy, stockLines, qSt
 
 // ── 記錄查詢到「查詢紀錄」分頁 ──────────────────────────────────────────────
 // 欄位：A日期 B顯示名稱 C UserID D商品ID E商品名稱 F日幣
-//       G估算磅數(lbs) H估算公斤(kg) I信心程度 J說明
-async function logQueryToSheet(userId, displayName, productId, productName, jpy, weightInfo, imageUrl = '', suggestedPrice = 0) {
+//       G估算磅數(lbs) H估算公斤(kg) I信心程度 J說明 K圖片URL L報價 M商品URL
+async function logQueryToSheet(userId, displayName, productId, productName, jpy, weightInfo, imageUrl = '', suggestedPrice = 0, productUrl = '') {
   const sheets = getSheetsClient();
   const date = new Date().toISOString().slice(0, 10);
 
@@ -424,12 +427,13 @@ async function logQueryToSheet(userId, displayName, productId, productName, jpy,
     weightInfo ? weightInfo.detail : '',
     imageUrl,
     suggestedPrice,
+    productUrl,
   ];
 
   async function doAppend() {
     await sheets.spreadsheets.values.append({
       spreadsheetId: SHEET_ID,
-      range: '查詢紀錄!A:L',
+      range: '查詢紀錄!A:M',
       valueInputOption: 'USER_ENTERED',
       resource: { values: [dataRow] },
     });
@@ -447,12 +451,12 @@ async function logQueryToSheet(userId, displayName, productId, productName, jpy,
       });
       await sheets.spreadsheets.values.append({
         spreadsheetId: SHEET_ID,
-        range: '查詢紀錄!A:L',
+        range: '查詢紀錄!A:M',
         valueInputOption: 'USER_ENTERED',
         resource: {
           values: [
             ['日期', 'LINE 顯示名稱', 'LINE User ID', '商品 ID', '商品名稱', '日幣價格',
-             '估算磅數(lbs)', '估算公斤(kg)', '信心程度', '說明', '圖片URL', '報價(NT$)'],
+             '估算磅數(lbs)', '估算公斤(kg)', '信心程度', '說明', '圖片URL', '報價(NT$)', '商品URL'],
             dataRow,
           ],
         },
@@ -600,7 +604,7 @@ async function getUserQueryHistory(userId) {
   const sheets = getSheetsClient();
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId: SHEET_ID,
-    range: '查詢紀錄!A:L',
+    range: '查詢紀錄!A:M',
   });
   const rows = (res.data.values || []).slice(1); // 跳過 header
   const userRows = rows.filter((r) => r[2] === userId);
@@ -632,9 +636,12 @@ function buildHistoryFlexMessage(history) {
     const prodName  = row[4] || '商品名稱不明';
     const jpyText   = row[5] ? `¥${Number(row[5]).toLocaleString('ja-JP')}` : '-';
     const prodId    = row[3] || '';
-    const imgUrl    = row[10] || '';
-    const suggested = row[11] ? `NT$${Number(row[11]).toLocaleString()}` : '';
-    const itemUrl   = prodId ? `https://www.grail.bz/disp/item/${prodId}/` : 'https://www.grail.bz';
+    const imgUrl      = row[10] || '';
+    const suggested   = row[11] ? `NT$${Number(row[11]).toLocaleString()}` : '';
+    const storedUrl   = row[12] || '';
+    const itemUrl     = prodId ? `https://www.grail.bz/disp/item/${prodId}/` : 'https://www.grail.bz';
+    // 重新查詢用原始儲存 URL；若舊紀錄沒有，以 prodId 推算
+    const requeryUrl  = storedUrl || (prodId ? `https://www.grail.bz/item/${prodId}/` : '');
 
     const priceContents = [
       { type: 'text', text: jpyText, size: 'sm', color: '#888888' },
@@ -661,7 +668,7 @@ function buildHistoryFlexMessage(history) {
         paddingAll: '8px',
         spacing: 'xs',
         contents: [
-          {
+          ...(requeryUrl ? [{
             type: 'button',
             style: 'primary',
             color: '#b8895a',
@@ -669,9 +676,9 @@ function buildHistoryFlexMessage(history) {
             action: {
               type: 'message',
               label: '🔄 重新查詢報價',
-              text: `https://www.grail.bz/item/${prodId}/`,
+              text: requeryUrl,
             },
-          },
+          }] : []),
           {
             type: 'button',
             style: 'link',
@@ -1610,10 +1617,10 @@ async function handleEvent(event, client) {
   bgTasks.push(
     client.getProfile(userId)
       .then((profile) =>
-        logQueryToSheet(userId, profile.displayName, productId, productName, jpy, weightInfo, imageUrl, suggested)
+        logQueryToSheet(userId, profile.displayName, productId, productName, jpy, weightInfo, imageUrl, suggested, userText)
       )
       .catch(() =>
-        logQueryToSheet(userId, userId, productId, productName, jpy, weightInfo, imageUrl, suggested)
+        logQueryToSheet(userId, userId, productId, productName, jpy, weightInfo, imageUrl, suggested, userText)
       )
       .catch((e) => console.error('[sheets log error]', e.message))
   );
