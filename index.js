@@ -981,6 +981,11 @@ label{display:block;font-size:13px;color:#888;margin-bottom:4px;margin-top:12px}
 input,select,textarea{width:100%;border:1px solid #ddd;border-radius:8px;padding:10px;font-size:14px;outline:none}
 input[type="radio"]{width:auto;border:none;padding:0;margin:0;border-radius:0;box-shadow:none}
 input:focus,select:focus,textarea:focus{border-color:#c9a98a}
+.hist-wrap{position:relative}
+.hist-drop{position:absolute;left:0;right:0;top:calc(100% + 2px);background:#fff;border:1px solid #ddd;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,.12);z-index:999;overflow:hidden}
+.hist-item{padding:10px 12px;font-size:14px;color:#333;cursor:pointer;border-bottom:1px solid #f5f5f5}
+.hist-item:last-child{border-bottom:none}
+.hist-item:active{background:#fff8f0}
 .radio-group{display:flex;flex-direction:row;gap:16px;margin-top:6px;margin-bottom:8px}
 .radio-item{display:flex;align-items:center;gap:6px;font-size:14px;color:#333;font-weight:normal;margin:0;cursor:pointer}
 .submit-btn{width:100%;background:#c9a98a;color:#fff;border:none;border-radius:10px;padding:14px;font-size:16px;font-weight:bold;cursor:pointer;margin-top:16px;letter-spacing:1px}
@@ -1022,17 +1027,17 @@ input:focus,select:focus,textarea:focus{border-color:#c9a98a}
   <div id="buyer-section" class="section" style="display:none">
     <div class="section-title">訂貨人資訊</div>
     <label>姓名 *</label>
-    <input id="f-name" type="text" placeholder="請輸入真實姓名">
+    <div class="hist-wrap"><input id="f-name" type="text" placeholder="請輸入真實姓名" autocomplete="off" onfocus="showHist(this,'name')" onblur="hideHist()"></div>
     <label>手機號碼 *</label>
-    <input id="f-phone" type="tel" placeholder="09xxxxxxxx">
+    <div class="hist-wrap"><input id="f-phone" type="tel" placeholder="09xxxxxxxx" autocomplete="off" onfocus="showHist(this,'phone')" onblur="hideHist()"></div>
     <label>聯繫方式 *</label>
     <div class="radio-group" style="margin-bottom:6px">
       <label class="radio-item"><input type="radio" name="contact-method" value="IG"> IG</label>
       <label class="radio-item"><input type="radio" name="contact-method" value="LINE"> LINE</label>
     </div>
-    <input id="f-contact-account" type="text" placeholder="請輸入帳號">
+    <div class="hist-wrap"><input id="f-contact-account" type="text" placeholder="請輸入帳號" autocomplete="off" onfocus="showHist(this,'contactAccount')" onblur="hideHist()"></div>
     <label>備註（選填）</label>
-    <textarea id="f-note" rows="2" placeholder="特殊需求或備注"></textarea>
+    <div class="hist-wrap"><textarea id="f-note" rows="2" placeholder="特殊需求或備注" autocomplete="off" onfocus="showHist(this,'note')" onblur="hideHist()"></textarea></div>
     <button class="submit-btn" id="submit-btn" onclick="submitOrder()">訂單送出</button>
   </div>
 </div>
@@ -1062,6 +1067,45 @@ let cartItems = [];
 let groupedItems = [];
 const imageCache = {}; // key: productId|color → imageUrl
 let _confirmCb = null;
+// ── 欄位歷史記錄（autocomplete）──
+function getHist(key) {
+  try { return JSON.parse(localStorage.getItem('bijin_h_' + key) || '[]'); } catch(e) { return []; }
+}
+function saveHist(key, val) {
+  if (!val) return;
+  let arr = getHist(key).filter(x => x !== val);
+  arr.unshift(val);
+  arr = arr.slice(0, 3);
+  localStorage.setItem('bijin_h_' + key, JSON.stringify(arr));
+}
+let _hideHistTimer = null;
+function showHist(input, key) {
+  clearTimeout(_hideHistTimer);
+  // remove any existing dropdown
+  const old = input.parentNode.querySelector('.hist-drop');
+  if (old) old.remove();
+  const arr = getHist(key);
+  if (!arr.length) return;
+  const drop = document.createElement('div');
+  drop.className = 'hist-drop';
+  arr.forEach(v => {
+    const item = document.createElement('div');
+    item.className = 'hist-item';
+    item.textContent = v;
+    item.addEventListener('mousedown', e => {
+      e.preventDefault(); // prevent blur before click
+      input.value = v;
+      drop.remove();
+    });
+    drop.appendChild(item);
+  });
+  input.parentNode.appendChild(drop);
+}
+function hideHist() {
+  _hideHistTimer = setTimeout(() => {
+    document.querySelectorAll('.hist-drop').forEach(d => d.remove());
+  }, 150);
+}
 function showAlert(msg) {
   document.getElementById('alert-msg').innerHTML = msg;
   document.getElementById('alert-overlay').style.display = 'flex';
@@ -1136,17 +1180,6 @@ function render() {
   document.getElementById('cart-empty').style.display = 'none';
   document.getElementById('order-section').style.display = 'block';
   document.getElementById('buyer-section').style.display = 'block';
-  // 自動帶入上次填寫的買家資訊
-  try {
-    const saved = JSON.parse(localStorage.getItem('bijin_buyer') || '{}');
-    if (saved.name) document.getElementById('f-name').value = saved.name;
-    if (saved.phone) document.getElementById('f-phone').value = saved.phone;
-    if (saved.contactMethod) {
-      const radio = document.querySelector(\`input[name="contact-method"][value="\${saved.contactMethod}"]\`);
-      if (radio) radio.checked = true;
-    }
-    if (saved.contactAccount) document.getElementById('f-contact-account').value = saved.contactAccount;
-  } catch(e) {}
   let total = 0;
   groupedItems.forEach((group, idx) => {
     const subtotal = (group.suggestedPrice || 0) * group.quantity;
@@ -1275,8 +1308,11 @@ async function submitOrder() {
   const btn = document.getElementById('submit-btn');
   btn.disabled = true; btn.textContent = '送出中...';
   try {
-    // 儲存買家資訊到 localStorage（下次自動帶入）
-    localStorage.setItem('bijin_buyer', JSON.stringify({ name, phone, contactMethod, contactAccount }));
+    // 儲存各欄位歷史記錄到 localStorage
+    saveHist('name', name);
+    saveHist('phone', phone);
+    saveHist('contactAccount', contactAccount);
+    saveHist('note', note);
     const resp = await fetch('/api/order', {
       method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({ userId, cartItems, buyerInfo:{ name, phone, contactMethod, contactAccount, note } })
