@@ -1037,7 +1037,7 @@ input:focus,select:focus,textarea:focus{border-color:#c9a98a}
     </div>
     <div class="hist-wrap"><input id="f-contact-account" type="text" placeholder="請輸入帳號" autocomplete="off" onfocus="showHist(this,'contactAccount')" onblur="hideHist()"></div>
     <label>備註（選填）</label>
-    <div class="hist-wrap"><textarea id="f-note" rows="2" placeholder="特殊需求或備注" autocomplete="off" onfocus="showHist(this,'note')" onblur="hideHist()"></textarea></div>
+    <div class="hist-wrap"><textarea id="f-note" rows="2" placeholder="特殊需求或備註" autocomplete="off" onfocus="showHist(this,'note')" onblur="hideHist()"></textarea></div>
     <button class="submit-btn" id="submit-btn" onclick="submitOrder()">訂單送出</button>
   </div>
 </div>
