@@ -3371,6 +3371,31 @@ header{background:#c9a98a;color:#fff;padding:20px 16px 16px;text-align:center}
     <div id="tier-badge" class="tier-badge"></div>
   </header>
 
+  <!-- 會員福利（可收合） -->
+  <div class="card">
+    <div class="card-title" style="cursor:pointer;display:flex;justify-content:space-between;align-items:center" onclick="toggleBenefits()">
+      <span>會員福利一覽</span><span id="benefits-arrow" style="font-size:12px;color:#bbb">▼ 展開</span>
+    </div>
+    <div id="benefits-panel" style="display:none;margin-top:4px">
+      <table style="width:100%;border-collapse:collapse;font-size:12px">
+        <tr style="background:#f5ede0;color:#7a5c3e">
+          <th style="padding:7px 5px;text-align:left">等級</th>
+          <th style="padding:7px 4px;text-align:center">年消費門檻</th>
+          <th style="padding:7px 4px;text-align:center">點數回饋</th>
+          <th style="padding:7px 5px;text-align:center">生日禮</th>
+        </tr>
+        <tr style="border-bottom:1px solid #faf5ef"><td style="padding:7px 5px;color:#a08060;font-weight:bold">一般</td><td style="padding:7px 4px;text-align:center;color:#888">免門檻</td><td style="padding:7px 4px;text-align:center;color:#888">NT$300/1點</td><td style="padding:7px 5px;text-align:center;color:#888">NT$30×1</td></tr>
+        <tr style="border-bottom:1px solid #faf5ef"><td style="padding:7px 5px;color:#888;font-weight:bold">銀卡</td><td style="padding:7px 4px;text-align:center;color:#888">NT$3,000</td><td style="padding:7px 4px;text-align:center;color:#888">NT$200/1點</td><td style="padding:7px 5px;text-align:center;color:#888">NT$50×1</td></tr>
+        <tr style="border-bottom:1px solid #faf5ef"><td style="padding:7px 5px;color:#a07800;font-weight:bold">金卡</td><td style="padding:7px 4px;text-align:center;color:#888">NT$6,000</td><td style="padding:7px 4px;text-align:center;color:#888">NT$100/1點</td><td style="padding:7px 5px;text-align:center;color:#888">NT$50×2</td></tr>
+        <tr><td style="padding:7px 5px;color:#3949ab;font-weight:bold">白金</td><td style="padding:7px 4px;text-align:center;color:#888">NT$12,000</td><td style="padding:7px 4px;text-align:center;color:#888">NT$50/1點</td><td style="padding:7px 5px;text-align:center;color:#888">NT$50×4</td></tr>
+      </table>
+      <div style="margin-top:10px;padding:10px;background:#fff8f0;border-radius:8px;font-size:12px;color:#888;line-height:1.6">
+        🎟 <strong style="color:#c9a98a">邀請好友</strong>：好友完成首筆訂單，雙方各獲 NT$50 折扣券 × 2 張<br>
+        🪙 <strong style="color:#c9a98a">1點 = NT$1</strong>：結帳時直接折抵
+      </div>
+    </div>
+  </div>
+
   <!-- 消費進度 -->
   <div class="card">
     <div class="card-title">年度消費進度</div>
@@ -3447,6 +3472,18 @@ async function init() {
     memberData = d;
     render(d);
     document.getElementById('app').style.display = 'block';
+  }
+}
+
+function toggleBenefits() {
+  const panel = document.getElementById('benefits-panel');
+  const arrow = document.getElementById('benefits-arrow');
+  if (panel.style.display === 'none') {
+    panel.style.display = 'block';
+    arrow.textContent = '▲ 收合';
+  } else {
+    panel.style.display = 'none';
+    arrow.textContent = '▼ 展開';
   }
 }
 
