@@ -1110,6 +1110,7 @@ input:focus,select:focus,textarea:focus{border-color:#c9a98a}
     <div class="hist-wrap"><input id="f-contact-account" type="text" placeholder="請輸入帳號" autocomplete="off" onfocus="showHist(this,'contactAccount')" onblur="hideHist()"></div>
     <label>備註（選填）</label>
     <div class="hist-wrap"><textarea id="f-note" rows="2" placeholder="特殊需求或備註" autocomplete="off" onfocus="showHist(this,'note')" onblur="hideHist()"></textarea></div>
+    <p style="font-size:11px;color:#aaa;text-align:center;margin:14px 0 4px;line-height:1.6">購物車內報價為查詢當時的台幣建議售價，<br>實際金額依下單時 GRL 官網現價為主。</p>
     <button class="submit-btn" id="submit-btn" onclick="submitOrder()">訂單送出</button>
   </div>
 </div>
