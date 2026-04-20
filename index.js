@@ -1952,10 +1952,17 @@ app.get('/admin/setup-rich-menu', async (req, res) => {
       { headers: { Authorization: `Bearer ${token}`, 'Content-Type': imgRes.headers['content-type'] || 'image/jpeg' } }
     );
 
-    // 3. 設為預設選單
+    // 3. 列出所有現有 Rich Menu，刪除舊的
+    const listRes = await axios.get('https://api.line.me/v2/bot/richmenu/list', { headers });
+    const oldMenus = (listRes.data.richmenus || []).filter(m => m.richMenuId !== richMenuId);
+    for (const old of oldMenus) {
+      await axios.delete(`https://api.line.me/v2/bot/richmenu/${old.richMenuId}`, { headers }).catch(() => {});
+    }
+
+    // 4. 設為預設選單（刪完舊的後再設，確保生效）
     await axios.post(`https://api.line.me/v2/bot/user/all/richmenu/${richMenuId}`, {}, { headers });
 
-    res.json({ status: 'ok', richMenuId, message: 'Rich Menu 已建立並設為預設選單' });
+    res.json({ status: 'ok', richMenuId, deletedOld: oldMenus.length, message: 'Rich Menu 已建立並設為預設選單' });
   } catch (err) {
     console.error('[setup-rich-menu error]', err.response?.data || err.message);
     res.status(500).json({ error: err.message, detail: err.response?.data });
