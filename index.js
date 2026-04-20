@@ -11,6 +11,7 @@ const app = express();
 const ADMIN_USER_ID = 'U9fa329e70b89f4ce19089928a824bd29';
 const SHEET_ID = '148eFUK3xm0ITsVpueqtnwjK-lcKeemoiRbQgcFWbGug';
 const LIFF_ID = '2009823505-mhQivhxd';
+const MEMBER_LIFF_ID = '2009823505-bwMBpOjU';
 const CART_SHEET = '購物車';
 const ORDER_SHEET = '訂單';
 const ADMIN_KEY = process.env.ADMIN_KEY || 'grl-admin-2026';
@@ -906,7 +907,7 @@ async function handlePostback(event, client) {
   } else if (action === 'member') {
     await client.replyMessage(replyToken, {
       type: 'text',
-      text: `👤 會員中心\n\n請點選連結查看您的點數、優惠券與邀請碼：\nhttps://liff.line.me/${LIFF_ID}?path=/member`,
+      text: `👤 會員中心\n\n請點選連結查看您的點數、優惠券與邀請碼：\nhttps://liff.line.me/${MEMBER_LIFF_ID}`,
     });
 
   } else if (action === 'out_of_stock') {
@@ -2928,7 +2929,7 @@ header{background:#c9a98a;color:#fff;padding:20px 16px 16px;text-align:center}
 let userId = '', memberData = null;
 
 async function init() {
-  await liff.init({ liffId: '${LIFF_ID}' });
+  await liff.init({ liffId: '${MEMBER_LIFF_ID}' });
   if (!liff.isLoggedIn()) { liff.login(); return; }
   const profile = await liff.getProfile();
   userId = profile.userId;
