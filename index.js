@@ -853,7 +853,7 @@ async function setupRichMenu(imageUrl) {
     areas: [
       { bounds: { x: 0,    y: 0,   width: 833, height: 843 }, action: { type: 'postback', label: '查詢紀錄', data: 'action=query_history', displayText: '查詢紀錄' } },
       { bounds: { x: 833,  y: 0,   width: 833, height: 843 }, action: { type: 'uri',      label: '開始購物', uri: 'https://www.grail.bz' } },
-      { bounds: { x: 1666, y: 0,   width: 834, height: 843 }, action: { type: 'postback', label: '購物車',   data: 'action=cart',          displayText: '購物車' } },
+      { bounds: { x: 1666, y: 0,   width: 834, height: 843 }, action: { type: 'uri',      label: '購物車',   uri: `https://liff.line.me/${LIFF_ID}` } },
       { bounds: { x: 0,    y: 843, width: 833, height: 843 }, action: { type: 'postback', label: '使用教學', data: 'action=tutorial',       displayText: '使用教學' } },
       { bounds: { x: 833,  y: 843, width: 833, height: 843 }, action: { type: 'uri',      label: 'IG連結',   uri: 'https://www.instagram.com/bijin.jp.2024?igsh=MXZxY2wzc2tsdWxzeQ%3D%3D&utm_source=qr' } },
       { bounds: { x: 1666, y: 843, width: 834, height: 843 }, action: { type: 'uri',      label: '會員中心', uri: `https://liff.line.me/${MEMBER_LIFF_ID}` } },
