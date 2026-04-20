@@ -513,7 +513,7 @@ async function ensureOrderSheet(sheets) {
       spreadsheetId: SHEET_ID,
       range: `${ORDER_SHEET}!A1`,
       valueInputOption: 'RAW',
-      resource: { values: [['訂單ID','下單時間','userId','商品明細','總金額(NT$)','買家姓名','手機','聯繫方式','聯繫帳號','備註','狀態']] },
+      resource: { values: [['訂單ID','下單時間','userId','商品明細','總金額(NT$)','買家姓名','手機','聯繫方式','聯繫帳號','備註','狀態','使用點數','優惠券','折扣金額(NT$)','實付金額(NT$)']] },
     });
   }
 }
@@ -589,7 +589,7 @@ async function markCartItemsOrdered(userId, rowIndexes) {
   ));
 }
 
-async function submitOrder(userId, cartItems, buyerInfo) {
+async function submitOrder(userId, cartItems, buyerInfo, discountInfo = {}) {
   const sheets = getSheetsClient();
   await ensureOrderSheet(sheets);
   // 21碼英數字訂單號：9碼時間戳(base36) + 12碼隨機英數
@@ -610,19 +610,23 @@ async function submitOrder(userId, cartItems, buyerInfo) {
     .map(i => `${(i.productId||'').toUpperCase()} ${translateColorWithJp(i.color)} ${i.size} NT$${i.suggestedPrice}${i.qty > 1 ? ` ×${i.qty}` : ''}`)
     .join('\n') + `\n共 ${totalQty} 件`;
   const totalTwd = cartItems.reduce((sum, i) => sum + (i.suggestedPrice || 0), 0);
+  const { pointsUsed = 0, couponCode = '', couponAmount = 0 } = discountInfo;
+  const discountTotal = (pointsUsed || 0) + (couponAmount || 0);
+  const finalAmount = Math.max(totalTwd - discountTotal, 0);
   await sheets.spreadsheets.values.append({
     spreadsheetId: SHEET_ID,
-    range: `${ORDER_SHEET}!A:K`,
+    range: `${ORDER_SHEET}!A:O`,
     valueInputOption: 'RAW',
     resource: { values: [[
       orderId, orderTime, userId,
       itemsSummary, totalTwd,
       buyerInfo.name, buyerInfo.phone, buyerInfo.contactMethod || '',
       buyerInfo.contactAccount || '', buyerInfo.note || '', '待確認',
+      pointsUsed || 0, couponCode || '', discountTotal, finalAmount,
     ]] },
   });
   await markCartItemsOrdered(userId, cartItems.map(i => i.rowIndex));
-  return { orderId, orderTime, totalTwd };
+  return { orderId, orderTime, totalTwd, discountTotal, finalAmount, pointsUsed: pointsUsed || 0, couponCode: couponCode || '', couponAmount: couponAmount || 0 };
 }
 
 // ── 查詢用戶查詢紀錄 ──────────────────────────────────────────────────────────
@@ -1045,6 +1049,19 @@ input:focus,select:focus,textarea:focus{border-color:#c9a98a}
 #alert-box{background:#fff;border-radius:14px;padding:24px 20px;margin:24px;text-align:center;max-width:280px;width:100%}
 #alert-msg{font-size:15px;color:#333;margin-bottom:20px;line-height:1.5}
 .alert-btn-ok{width:100%;padding:12px;border:none;border-radius:8px;background:#c9a98a;color:#fff;font-size:15px;font-weight:bold;cursor:pointer}
+.summary-row{display:flex;justify-content:space-between;font-size:13px;color:#888;padding:3px 0}
+.summary-save{color:#e07070}
+.final-row{display:flex;justify-content:space-between;align-items:center;padding-top:8px;border-top:1px solid #f0e8de;margin-top:6px}
+.final-label{font-size:15px;font-weight:bold;color:#333}
+.final-price{font-size:20px;font-weight:bold;color:#c9a98a}
+.disc-box{background:#fff9f5;border:1px solid #f0ddd0;border-radius:10px;padding:12px;margin-top:10px}
+.disc-label{font-size:13px;font-weight:bold;color:#9a6a50;margin-bottom:8px}
+.pts-row{display:flex;align-items:center;gap:6px;font-size:13px;color:#666;flex-wrap:wrap}
+.pts-row input[type=number]{width:72px;padding:6px 8px;text-align:center;font-size:14px;border:1px solid #ddd;border-radius:6px;-moz-appearance:textfield}
+.pts-row input[type=number]::-webkit-inner-spin-button,.pts-row input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none}
+.cpn-item{display:flex;align-items:center;gap:8px;padding:9px 10px;border:1px solid #eee;border-radius:8px;cursor:pointer;margin-top:6px;font-size:13px}
+.cpn-item.selected{border-color:#c9a98a;background:#fff5ee}
+.cpn-tag{background:#c9a98a;color:#fff;font-size:11px;font-weight:bold;padding:2px 7px;border-radius:4px;white-space:nowrap}
 </style>
 </head>
 <body>
@@ -1058,8 +1075,23 @@ input:focus,select:focus,textarea:focus{border-color:#c9a98a}
   </div>
   <div id="order-section" class="section" style="display:none">
     <div class="section-title">訂單資訊</div>
-    <div class="total-row"><span>合計</span><span class="total-amount" id="total-amount">NT$0</span></div>
-    <div class="note-box">送出後，我們將盡快提供賣貨便下單連結</div>
+    <div class="summary-row"><span>商品小計</span><span id="subtotal-amount">NT$0</span></div>
+    <div id="pts-disc-row" class="summary-row" style="display:none"><span>點數折抵</span><span class="summary-save" id="pts-disc-val">-NT$0</span></div>
+    <div id="cpn-disc-row" class="summary-row" style="display:none"><span>優惠券折抵</span><span class="summary-save" id="cpn-disc-val">-NT$0</span></div>
+    <div class="final-row"><span class="final-label">實付金額</span><span class="final-price" id="total-amount">NT$0</span></div>
+    <div class="note-box" style="margin-top:8px">送出後，我們將盡快提供賣貨便下單連結</div>
+
+    <div id="discount-section" style="display:none">
+      <div class="disc-box">
+        <div class="disc-label">🪙 點數折抵</div>
+        <div style="font-size:12px;color:#aaa;margin-bottom:8px">可用 <strong id="avail-pts" style="color:#c9a98a">0</strong> 點（1點折抵 NT$1）</div>
+        <div class="pts-row">使用 <input type="number" id="pts-input" value="0" min="0" max="0" step="1" oninput="onPtsChange()"> 點</div>
+      </div>
+      <div class="disc-box" style="margin-top:8px">
+        <div class="disc-label">🎟 優惠券</div>
+        <div id="cpn-list"></div>
+      </div>
+    </div>
   </div>
   <div id="buyer-section" class="section" style="display:none">
     <div class="section-title">訂貨人資訊</div>
@@ -1104,6 +1136,10 @@ let cartItems = [];
 let groupedItems = [];
 const imageCache = {}; // key: productId|color → imageUrl
 let _confirmCb = null;
+let memberPoints = 0;
+let activeCoupons = [];
+let selectedCouponCode = '';
+let subtotal = 0;
 // ── 欄位歷史記錄（autocomplete）──
 function getHist(key) {
   try { return JSON.parse(localStorage.getItem('bijin_h_' + key) || '[]'); } catch(e) { return []; }
@@ -1174,7 +1210,16 @@ async function init() {
     if (!liff.isLoggedIn()) { liff.login(); return; }
     const profile = await liff.getProfile();
     userId = profile.userId;
-    await loadCart();
+    const [cartData, memberData] = await Promise.all([
+      fetch('/api/cart?userId=' + userId).then(r => r.json()).catch(() => ({ items: [] })),
+      fetch('/api/member?userId=' + userId).then(r => r.json()).catch(() => ({ ok: false })),
+    ]);
+    cartItems = cartData.items || [];
+    if (memberData.ok) {
+      memberPoints = memberData.member.points || 0;
+      activeCoupons = memberData.coupons || [];
+    }
+    render();
   } catch(e) {
     document.getElementById('loading').textContent = '載入失敗，請重新開啟';
   }
@@ -1239,7 +1284,14 @@ function render() {
       </div>
     </div>\`;
   });
-  document.getElementById('total-amount').textContent = 'NT$' + total;
+  subtotal = total;
+  const ptsInput = document.getElementById('pts-input');
+  if (ptsInput) {
+    const newMax = Math.min(memberPoints, subtotal);
+    ptsInput.max = newMax;
+    if (parseInt(ptsInput.value) > newMax) ptsInput.value = newMax;
+  }
+  updateTotals();
   loadItemImages();
 }
 
@@ -1333,6 +1385,63 @@ async function loadItemImages() {
   });
 }
 
+function updateTotals() {
+  const ptsUsed = parseInt(document.getElementById('pts-input')?.value) || 0;
+  const coupon = activeCoupons.find(c => c.couponCode === selectedCouponCode);
+  const couponAmt = coupon ? (coupon.amount || 0) : 0;
+  const finalAmt = Math.max(subtotal - ptsUsed - couponAmt, 0);
+
+  document.getElementById('subtotal-amount').textContent = 'NT$' + subtotal;
+  if (ptsUsed > 0) {
+    document.getElementById('pts-disc-row').style.display = 'flex';
+    document.getElementById('pts-disc-val').textContent = '-NT$' + ptsUsed;
+  } else {
+    document.getElementById('pts-disc-row').style.display = 'none';
+  }
+  if (couponAmt > 0) {
+    document.getElementById('cpn-disc-row').style.display = 'flex';
+    document.getElementById('cpn-disc-val').textContent = '-NT$' + couponAmt;
+  } else {
+    document.getElementById('cpn-disc-row').style.display = 'none';
+  }
+  document.getElementById('total-amount').textContent = 'NT$' + finalAmt;
+
+  // show/hide discount section
+  const discSection = document.getElementById('discount-section');
+  if (discSection) {
+    if (subtotal > 0 && (memberPoints > 0 || activeCoupons.length > 0)) {
+      discSection.style.display = 'block';
+      document.getElementById('avail-pts').textContent = memberPoints;
+      const ptsInput = document.getElementById('pts-input');
+      ptsInput.max = Math.min(memberPoints, subtotal);
+      // render coupon list
+      const cpnList = document.getElementById('cpn-list');
+      if (activeCoupons.length === 0) {
+        cpnList.innerHTML = '<div style="font-size:13px;color:#bbb;padding:4px 0">目前沒有可用優惠券</div>';
+      } else {
+        cpnList.innerHTML = '';
+        activeCoupons.forEach(c => {
+          const el = document.createElement('div');
+          el.className = 'cpn-item' + (selectedCouponCode === c.couponCode ? ' selected' : '');
+          el.innerHTML = \`<span class="cpn-tag">折扣</span><span style="flex:1;color:#333">NT\$\${c.amount} 折扣券</span><span style="font-size:11px;color:#aaa">到期：\${c.expiryDate}</span>\`;
+          el.onclick = () => { selectedCouponCode = (selectedCouponCode === c.couponCode ? '' : c.couponCode); updateTotals(); };
+          cpnList.appendChild(el);
+        });
+      }
+    } else {
+      discSection.style.display = 'none';
+    }
+  }
+}
+
+function onPtsChange() {
+  const input = document.getElementById('pts-input');
+  let val = parseInt(input.value) || 0;
+  val = Math.max(0, Math.min(val, memberPoints, subtotal));
+  input.value = val;
+  updateTotals();
+}
+
 async function submitOrder() {
   const name = document.getElementById('f-name').value.trim();
   const phone = document.getElementById('f-phone').value.trim();
@@ -1350,9 +1459,12 @@ async function submitOrder() {
     saveHist('phone', phone);
     saveHist('contactAccount', contactAccount);
     saveHist('note', note);
+    const ptsUsed = parseInt(document.getElementById('pts-input')?.value) || 0;
+    const coupon = activeCoupons.find(c => c.couponCode === selectedCouponCode);
+    const discountInfo = { pointsUsed: ptsUsed, couponCode: coupon ? coupon.couponCode : '', couponAmount: coupon ? (coupon.amount || 0) : 0 };
     const resp = await fetch('/api/order', {
       method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ userId, cartItems, buyerInfo:{ name, phone, contactMethod, contactAccount, note } })
+      body: JSON.stringify({ userId, cartItems, buyerInfo:{ name, phone, contactMethod, contactAccount, note }, discountInfo })
     });
     const data = await resp.json();
     if (data.orderId) {
@@ -1909,23 +2021,77 @@ app.post('/api/cart/add', express.json(), async (req, res) => {
   }
 });
 
+async function deductMemberPoints(sheets, userId, pointsToDeduct) {
+  if (!pointsToDeduct || pointsToDeduct <= 0) return;
+  const member = await getOrCreateMember(sheets, userId, '');
+  const newPoints = Math.max(0, (member.points || 0) - pointsToDeduct);
+  const today = todayStr();
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: SHEET_ID,
+    range: `${MEMBER_SHEET}!K${member.rowIndex}:L${member.rowIndex}`,
+    valueInputOption: 'RAW',
+    resource: { values: [[newPoints, today]] },
+  });
+}
+
+async function markCouponUsed(sheets, couponCode, orderId) {
+  if (!couponCode) return;
+  const resp = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${COUPON_SHEET}!A:H` });
+  const rows = resp.data.values || [];
+  const rowIdx = rows.findIndex((r, i) => i > 0 && r[0] === couponCode);
+  if (rowIdx < 1) return;
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: SHEET_ID,
+    range: `${COUPON_SHEET}!G${rowIdx + 1}:H${rowIdx + 1}`,
+    valueInputOption: 'RAW',
+    resource: { values: [['used', orderId]] },
+  });
+}
+
 app.post('/api/order', express.json(), async (req, res) => {
-  const { userId, cartItems, buyerInfo } = req.body;
+  const { userId, cartItems, buyerInfo, discountInfo = {} } = req.body;
   if (!userId || !cartItems || !buyerInfo) return res.status(400).json({ error: 'missing fields' });
   try {
-    const result = await submitOrder(userId, cartItems, buyerInfo);
-    // 推播通知管理員
+    const sheets = getSheetsClient();
+    const { pointsUsed = 0, couponCode = '', couponAmount = 0 } = discountInfo;
+
+    // 驗證點數
+    if (pointsUsed > 0) {
+      const member = await getOrCreateMember(sheets, userId, '');
+      if (pointsUsed > (member.points || 0)) return res.status(400).json({ error: '點數不足' });
+    }
+    // 驗證優惠券
+    if (couponCode) {
+      const coupons = await getActiveCoupons(sheets, userId);
+      if (!coupons.find(c => c.couponCode === couponCode)) return res.status(400).json({ error: '優惠券無效或已使用' });
+    }
+
+    const result = await submitOrder(userId, cartItems, buyerInfo, { pointsUsed, couponCode, couponAmount });
+
+    // 套用折扣
+    if (pointsUsed > 0) await deductMemberPoints(sheets, userId, pointsUsed).catch(e => console.error('[deductPoints error]', e.message));
+    if (couponCode) await markCouponUsed(sheets, couponCode, result.orderId).catch(e => console.error('[markCoupon error]', e.message));
+
     const client = new line.Client({ channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN });
     const itemsText = cartItems.map(i => `・${i.productId} ${translateColorWithJp(i.color)} ${i.size} NT$${i.suggestedPrice}`).join('\n');
-    // 並行推播：管理員通知 + 買家確認訊息
+
+    // 折扣文字（賣家用）
+    let adminDiscText = '';
+    if (result.discountTotal > 0) {
+      adminDiscText += `\n━━━━━━━━━━`;
+      if (pointsUsed > 0) adminDiscText += `\n💎 點數折抵：-NT$${pointsUsed}（${pointsUsed}點）`;
+      if (couponCode) adminDiscText += `\n🎟 優惠券：${couponCode}（-NT$${couponAmount}）`;
+      adminDiscText += `\n✅ 實付金額：NT$${result.finalAmount}`;
+    }
+
     await Promise.all([
       client.pushMessage(ADMIN_USER_ID, {
         type: 'text',
-        text: `🛍 新訂單！\n訂單ID: ${result.orderId}\n時間: ${result.orderTime}\n━━━━━━━━━━\n${itemsText}\n━━━━━━━━━━\n合計: NT$${result.totalTwd}\n\n買家: ${buyerInfo.name}\n手機: ${buyerInfo.phone}\n聯繫方式: ${buyerInfo.contactMethod} @${buyerInfo.contactAccount}${buyerInfo.note ? '\n備註: ' + buyerInfo.note : ''}`,
+        text: `🛍 新訂單！\n訂單ID: ${result.orderId}\n時間: ${result.orderTime}\n━━━━━━━━━━\n${itemsText}\n━━━━━━━━━━\n商品小計: NT$${result.totalTwd}${adminDiscText || ('\n合計: NT$' + result.totalTwd)}\n\n買家: ${buyerInfo.name}\n手機: ${buyerInfo.phone}\n聯繫方式: ${buyerInfo.contactMethod} @${buyerInfo.contactAccount}${buyerInfo.note ? '\n備註: ' + buyerInfo.note : ''}`,
       }).catch(e => console.error('[admin notify error]', e.message)),
       client.pushMessage(userId, {
         type: 'text',
-        text: `🎉 訂單已收到！\n\n訂單編號：${result.orderId}\n下單時間：${result.orderTime}\n━━━━━━━━━━\n${itemsText}\n━━━━━━━━━━\n合計：NT$${result.totalTwd}\n🎁 優惠：免國內運費（已折抵）\n\n我們確認後會盡快提供賣貨便下單連結或與您聯繫，請您耐心等候 🌸`,
+        text: `🎉 訂單已收到！\n\n訂單編號：${result.orderId}\n下單時間：${result.orderTime}\n━━━━━━━━━━\n${itemsText}\n━━━━━━━━━━\n商品小計：NT$${result.totalTwd}${result.discountTotal > 0 ? `\n折扣：-NT$${result.discountTotal}\n實付金額：NT$${result.finalAmount}` : `\n合計：NT$${result.totalTwd}`}\n\n我們確認後會盡快提供賣貨便下單連結，請耐心等候 🌸`,
       }).catch(e => console.error('[buyer notify error]', e.message)),
     ]);
     res.json({ status: 'ok', orderId: result.orderId });
@@ -2067,22 +2233,26 @@ app.get('/api/admin/orders', async (req, res) => {
     const sheets = getSheetsClient();
     const resp = await sheets.spreadsheets.values.get({
       spreadsheetId: SHEET_ID,
-      range: `${ORDER_SHEET}!A:K`,
+      range: `${ORDER_SHEET}!A:O`,
     });
     const rows = (resp.data.values || []).slice(1);
     const orders = rows.map((row, i) => ({
-      rowIndex: i + 2,
-      orderId:   row[0] || '',
-      orderTime: row[1] || '',
-      userId:    row[2] || '',
-      items:     row[3] || '',
-      total:     row[4] || '',
-      buyerName: row[5] || '',
-      phone:     row[6] || '',
-      contact:   row[7] || '',
-      contactId: row[8] || '',
-      note:      row[9] || '',
-      status:    row[10] || '待確認',
+      rowIndex:      i + 2,
+      orderId:       row[0] || '',
+      orderTime:     row[1] || '',
+      userId:        row[2] || '',
+      items:         row[3] || '',
+      total:         row[4] || '',
+      buyerName:     row[5] || '',
+      phone:         row[6] || '',
+      contact:       row[7] || '',
+      contactId:     row[8] || '',
+      note:          row[9] || '',
+      status:        row[10] || '待確認',
+      pointsUsed:    parseInt(row[11]) || 0,
+      couponCode:    row[12] || '',
+      discountTotal: parseInt(row[13]) || 0,
+      finalAmount:   parseInt(row[14]) || parseInt(row[4]) || 0,
     })).reverse();
     res.json({ orders });
   } catch (err) {
@@ -2290,7 +2460,8 @@ function createCard(o) {
   <div class="order-body">
     <div class="buyer-name">\${o.buyerName || '（未填姓名）'}</div>
     <div class="order-items">\${o.items.split('\\n').map(l=>'<div>'+l+'</div>').join('')}</div>
-    <div class="order-total">NT$\${o.total}</div>
+    \${o.discountTotal > 0 ? \`<div style="font-size:12px;color:#aaa;margin-top:4px">小計 NT$\${o.total}\${o.pointsUsed > 0 ? ' · 點數 -NT$' + o.pointsUsed : ''}\${o.couponCode ? ' · 券 -NT$' + (o.discountTotal - o.pointsUsed) : ''}</div>\` : ''}
+    <div class="order-total">\${o.discountTotal > 0 ? '實付 ' : ''}NT$\${o.discountTotal > 0 ? o.finalAmount : o.total}</div>
     \${contact ? '<div class="order-contact">' + contact + '</div>' : ''}
     \${o.note ? '<div class="order-contact">備註：' + o.note + '</div>' : ''}
   </div>
