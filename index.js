@@ -1969,6 +1969,17 @@ app.get('/admin/setup-rich-menu', async (req, res) => {
   }
 });
 
+// ── 除錯：查看目前 Rich Menu 定義 ────────────────────────────────────────────
+app.get('/admin/check-rich-menu', async (req, res) => {
+  const token = process.env.LINE_CHANNEL_ACCESS_TOKEN;
+  const headers = { Authorization: `Bearer ${token}` };
+  try {
+    const list = await axios.get('https://api.line.me/v2/bot/richmenu/list', { headers });
+    const defaultRes = await axios.get('https://api.line.me/v2/bot/user/all/richmenu', { headers }).catch(() => ({ data: {} }));
+    res.json({ menus: list.data.richmenus, defaultId: defaultRes.data.richMenuId });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // ── 管理員 API：取得所有訂單 ──────────────────────────────────────────────────
 app.get('/api/admin/orders', async (req, res) => {
   if (req.query.key !== ADMIN_KEY) return res.status(401).json({ error: 'Unauthorized' });
