@@ -1960,7 +1960,7 @@ function buildGuideHtml() {
       note: { type: 'alert', text: '為確保交易安全，請務必透過我們官方 LINE 傳送的連結進行結帳，勿自行前往。' } },
     { num: '05', title: '7-11 到店取件', icon: '📦',
       grad: 'linear-gradient(135deg,#ddd4e8 0%,#c8bcd8 50%,#b4a8c8 100%)',
-      desc: '商品跨海抵達台灣後，我們會第一時間通知您。前往您指定的 7-11 門市，開啟您的開箱驚喜。',
+      desc: '商品跨海抵達台灣後，我們會第一時間通知您。並請期待當商品送往您指定的 7-11 門市，開啟您的開箱驚喜。',
       note: { type: 'check', text: '期待與您的商品相見 🌸' } },
   ];
 
