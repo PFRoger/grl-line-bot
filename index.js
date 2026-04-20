@@ -3213,7 +3213,7 @@ app.post('/api/member/register', express.json(), async (req, res) => {
       const inviterRow = (inviterResp.data.values || []).find((r, i) => i > 0 && r[4] === referredByCode);
       const inviterUserId = inviterRow ? inviterRow[0] : '';
       if (inviterUserId) {
-        const deadline = new Date(); deadline.setMonth(deadline.getMonth() + 3);
+        const deadline = new Date(); deadline.setMonth(deadline.getMonth() + 1);
         const deadlineStr = deadline.toISOString().split('T')[0];
         await sheets.spreadsheets.values.append({
           spreadsheetId: SHEET_ID, range: `${REFERRAL_SHEET}!A1`, valueInputOption: 'RAW',
