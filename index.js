@@ -483,7 +483,7 @@ async function logQueryToSheet(userId, displayName, productId, productName, jpy,
 // ── 購物車 Sheet 操作 ─────────────────────────────────────────────────────────
 // 欄位：A=userId B=productId C=productName D=color(JP) E=size
 //        F=jpy G=suggestedPrice H=productUrl I=addedAt J=status K=imageUrl
-const CART_HEADERS = ['userId','productId','productName','color','size','jpy','suggestedPrice','productUrl','addedAt','status','imageUrl'];
+const CART_HEADERS = ['userId','displayName','productId','productName','color','size','jpy','suggestedPrice','productUrl','addedAt','status','imageUrl'];
 
 async function ensureCartSheet(sheets) {
   try {
@@ -514,20 +514,20 @@ async function ensureOrderSheet(sheets) {
       spreadsheetId: SHEET_ID,
       range: `${ORDER_SHEET}!A1`,
       valueInputOption: 'RAW',
-      resource: { values: [['訂單ID','下單時間','userId','商品明細','總金額(NT$)','買家姓名','手機','聯繫方式','聯繫帳號','備註','狀態','使用點數','優惠券','折扣金額(NT$)','實付金額(NT$)']] },
+      resource: { values: [['訂單ID','下單時間','userId','LINE顯示名稱','商品明細','總金額(NT$)','買家姓名','手機','聯繫方式','聯繫帳號','備註','狀態','使用點數','優惠券','折扣金額(NT$)','實付金額(NT$)']] },
     });
   }
 }
 
-async function addToCartSheet(userId, productId, productName, colorJp, size, jpy, suggestedPrice, productUrl, imageUrl = '') {
+async function addToCartSheet(userId, displayName, productId, productName, colorJp, size, jpy, suggestedPrice, productUrl, imageUrl = '') {
   const sheets = getSheetsClient();
   await ensureCartSheet(sheets);
   const addedAt = new Date().toISOString();
   await sheets.spreadsheets.values.append({
     spreadsheetId: SHEET_ID,
-    range: `${CART_SHEET}!A:K`,
+    range: `${CART_SHEET}!A:L`,
     valueInputOption: 'RAW',
-    resource: { values: [[userId, productId, productName, colorJp, size, jpy, suggestedPrice, productUrl, addedAt, 'active', imageUrl]] },
+    resource: { values: [[userId, displayName || '', productId, productName, colorJp, size, jpy, suggestedPrice, productUrl, addedAt, 'active', imageUrl]] },
   });
 }
 
@@ -535,7 +535,7 @@ async function getCartItems(userId) {
   const sheets = getSheetsClient();
   let resp;
   try {
-    resp = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${CART_SHEET}!A:K` });
+    resp = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${CART_SHEET}!A:L` });
   } catch {
     return []; // 工作表尚未建立，視為空購物車
   }
@@ -546,22 +546,22 @@ async function getCartItems(userId) {
   rows.forEach((row, idx) => {
     if (idx === 0) return; // header
     if (row[0] !== userId) return;
-    if (row[9] !== 'active') return;
-    const addedAt = new Date(row[8]).getTime();
+    if (row[10] !== 'active') return;
+    const addedAt = new Date(row[9]).getTime();
     if (now - addedAt > EXPIRE_MS) return; // expired
-    const colorJp = row[3] || '';
+    const colorJp = row[4] || '';
     items.push({
       rowIndex: idx + 1, // 1-based sheet row
-      productId: row[1] || '',
-      productName: row[2] || '',
+      productId: row[2] || '',
+      productName: row[3] || '',
       color: colorJp,
       colorDisplay: translateColorWithJp(colorJp),
-      size: row[4] || '',
-      jpy: parseInt(row[5]) || 0,
-      suggestedPrice: parseInt(row[6]) || 0,
-      productUrl: row[7] || '',
-      addedAt: row[8] || '',
-      imageUrl: row[10] || '',
+      size: row[5] || '',
+      jpy: parseInt(row[6]) || 0,
+      suggestedPrice: parseInt(row[7]) || 0,
+      productUrl: row[8] || '',
+      addedAt: row[9] || '',
+      imageUrl: row[11] || '',
     });
   });
   return items;
@@ -569,10 +569,10 @@ async function getCartItems(userId) {
 
 async function clearCartItem(rowIndex) {
   const sheets = getSheetsClient();
-  // Mark as deleted by updating status column (J = index 9, col 10)
+  // Mark as deleted by updating status column (K = index 10, col 11)
   await sheets.spreadsheets.values.update({
     spreadsheetId: SHEET_ID,
-    range: `${CART_SHEET}!J${rowIndex}`,
+    range: `${CART_SHEET}!K${rowIndex}`,
     valueInputOption: 'RAW',
     resource: { values: [['deleted']] },
   });
@@ -583,14 +583,14 @@ async function markCartItemsOrdered(userId, rowIndexes) {
   await Promise.all(rowIndexes.map((idx) =>
     sheets.spreadsheets.values.update({
       spreadsheetId: SHEET_ID,
-      range: `${CART_SHEET}!J${idx}`,
+      range: `${CART_SHEET}!K${idx}`,
       valueInputOption: 'RAW',
       resource: { values: [['ordered']] },
     })
   ));
 }
 
-async function submitOrder(userId, cartItems, buyerInfo, discountInfo = {}) {
+async function submitOrder(userId, displayName, cartItems, buyerInfo, discountInfo = {}) {
   const sheets = getSheetsClient();
   await ensureOrderSheet(sheets);
   // 21碼英數字訂單號：9碼時間戳(base36) + 12碼隨機英數
@@ -616,10 +616,10 @@ async function submitOrder(userId, cartItems, buyerInfo, discountInfo = {}) {
   const finalAmount = Math.max(totalTwd - discountTotal, 0);
   await sheets.spreadsheets.values.append({
     spreadsheetId: SHEET_ID,
-    range: `${ORDER_SHEET}!A:O`,
+    range: `${ORDER_SHEET}!A:P`,
     valueInputOption: 'RAW',
     resource: { values: [[
-      orderId, orderTime, userId,
+      orderId, orderTime, userId, displayName || '',
       itemsSummary, totalTwd,
       buyerInfo.name, buyerInfo.phone, buyerInfo.contactMethod || '',
       buyerInfo.contactAccount || '', buyerInfo.note || '', '待確認',
@@ -976,7 +976,9 @@ async function handlePostback(event, client) {
       if (found) productName = found[4] || productId;
     } catch (e) { console.warn('[lookup name error]', e.message); }
 
-    await addToCartSheet(userId, productId, productName, colorJp, size, jpy, suggested, productUrl, imgUrl);
+    let lineDisplayName = '';
+    try { const p = await client.getProfile(userId); lineDisplayName = p.displayName || ''; } catch(e) {}
+    await addToCartSheet(userId, lineDisplayName, productId, productName, colorJp, size, jpy, suggested, productUrl, imgUrl);
     const colorDisplay = translateColorWithJp(colorJp);
     await client.replyMessage(replyToken, {
       type: 'text',
@@ -1337,7 +1339,7 @@ async function changeQty(idx, delta) {
       imageUrl: group.imageUrl, addedAt: new Date().toISOString() });
     render();
     fetch('/api/cart/add', { method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ userId, productId: group.productId, productName: group.productName,
+      body: JSON.stringify({ userId, displayName, productId: group.productId, productName: group.productName,
         color: group.color, size: group.size, jpy: group.jpy,
         suggestedPrice: group.suggestedPrice, productUrl: group.productUrl, imageUrl: group.imageUrl }) })
       .catch(() => {});
@@ -1465,7 +1467,7 @@ async function submitOrder() {
     const discountInfo = { pointsUsed: ptsUsed, couponCode: coupon ? coupon.couponCode : '', couponAmount: coupon ? (coupon.amount || 0) : 0 };
     const resp = await fetch('/api/order', {
       method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ userId, cartItems, buyerInfo:{ name, phone, contactMethod, contactAccount, note }, discountInfo })
+      body: JSON.stringify({ userId, displayName, cartItems, buyerInfo:{ name, phone, contactMethod, contactAccount, note }, discountInfo })
     });
     const data = await resp.json();
     if (data.orderId) {
@@ -2128,10 +2130,10 @@ app.delete('/api/cart/item', express.json(), async (req, res) => {
 });
 
 app.post('/api/cart/add', express.json(), async (req, res) => {
-  const { userId, productId, productName, color, size, jpy, suggestedPrice, productUrl, imageUrl } = req.body;
+  const { userId, displayName, productId, productName, color, size, jpy, suggestedPrice, productUrl, imageUrl } = req.body;
   if (!userId || !productId || !color || !size) return res.status(400).json({ error: 'missing fields' });
   try {
-    await addToCartSheet(userId, productId, productName || productId, color, size, jpy || 0, suggestedPrice || 0, productUrl || '', imageUrl || '');
+    await addToCartSheet(userId, displayName || '', productId, productName || productId, color, size, jpy || 0, suggestedPrice || 0, productUrl || '', imageUrl || '');
     res.json({ status: 'ok' });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -2154,20 +2156,20 @@ async function deductMemberPoints(sheets, userId, pointsToDeduct) {
 
 async function markCouponUsed(sheets, couponCode, orderId) {
   if (!couponCode) return;
-  const resp = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${COUPON_SHEET}!A:H` });
+  const resp = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${COUPON_SHEET}!A:I` });
   const rows = resp.data.values || [];
   const rowIdx = rows.findIndex((r, i) => i > 0 && r[0] === couponCode);
   if (rowIdx < 1) return;
   await sheets.spreadsheets.values.update({
     spreadsheetId: SHEET_ID,
-    range: `${COUPON_SHEET}!G${rowIdx + 1}:H${rowIdx + 1}`,
+    range: `${COUPON_SHEET}!H${rowIdx + 1}:I${rowIdx + 1}`,
     valueInputOption: 'RAW',
     resource: { values: [['used', orderId]] },
   });
 }
 
 app.post('/api/order', express.json(), async (req, res) => {
-  const { userId, cartItems, buyerInfo, discountInfo = {} } = req.body;
+  const { userId, displayName, cartItems, buyerInfo, discountInfo = {} } = req.body;
   if (!userId || !cartItems || !buyerInfo) return res.status(400).json({ error: 'missing fields' });
   try {
     const sheets = getSheetsClient();
@@ -2184,7 +2186,7 @@ app.post('/api/order', express.json(), async (req, res) => {
       if (!coupons.find(c => c.couponCode === couponCode)) return res.status(400).json({ error: '優惠券無效或已使用' });
     }
 
-    const result = await submitOrder(userId, cartItems, buyerInfo, { pointsUsed, couponCode, couponAmount });
+    const result = await submitOrder(userId, displayName || '', cartItems, buyerInfo, { pointsUsed, couponCode, couponAmount });
 
     // 套用折扣
     if (pointsUsed > 0) await deductMemberPoints(sheets, userId, pointsUsed).catch(e => console.error('[deductPoints error]', e.message));
@@ -2351,26 +2353,27 @@ app.get('/api/admin/orders', async (req, res) => {
     const sheets = getSheetsClient();
     const resp = await sheets.spreadsheets.values.get({
       spreadsheetId: SHEET_ID,
-      range: `${ORDER_SHEET}!A:O`,
+      range: `${ORDER_SHEET}!A:P`,
     });
     const rows = (resp.data.values || []).slice(1);
     const orders = rows.map((row, i) => ({
-      rowIndex:      i + 2,
-      orderId:       row[0] || '',
-      orderTime:     row[1] || '',
-      userId:        row[2] || '',
-      items:         row[3] || '',
-      total:         row[4] || '',
-      buyerName:     row[5] || '',
-      phone:         row[6] || '',
-      contact:       row[7] || '',
-      contactId:     row[8] || '',
-      note:          row[9] || '',
-      status:        row[10] || '待確認',
-      pointsUsed:    parseInt(row[11]) || 0,
-      couponCode:    row[12] || '',
-      discountTotal: parseInt(row[13]) || 0,
-      finalAmount:   parseInt(row[14]) || parseInt(row[4]) || 0,
+      rowIndex:        i + 2,
+      orderId:         row[0] || '',
+      orderTime:       row[1] || '',
+      userId:          row[2] || '',
+      lineDisplayName: row[3] || '',
+      items:           row[4] || '',
+      total:           row[5] || '',
+      buyerName:       row[6] || '',
+      phone:           row[7] || '',
+      contact:         row[8] || '',
+      contactId:       row[9] || '',
+      note:            row[10] || '',
+      status:          row[11] || '待確認',
+      pointsUsed:      parseInt(row[12]) || 0,
+      couponCode:      row[13] || '',
+      discountTotal:   parseInt(row[14]) || 0,
+      finalAmount:     parseInt(row[15]) || parseInt(row[5]) || 0,
     })).reverse();
     res.json({ orders });
   } catch (err) {
@@ -2387,17 +2390,17 @@ app.post('/api/admin/order-status', express.json(), async (req, res) => {
     const sheets = getSheetsClient();
     await sheets.spreadsheets.values.update({
       spreadsheetId: SHEET_ID,
-      range: `${ORDER_SHEET}!K${rowIndex}`,
+      range: `${ORDER_SHEET}!L${rowIndex}`,
       valueInputOption: 'RAW',
       resource: { values: [[status]] },
     });
     // 訂單轉已完成時，觸發點數與邀請獎勵
     if (status === '已完成') {
-      const orderResp = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${ORDER_SHEET}!A${rowIndex}:K${rowIndex}` });
+      const orderResp = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${ORDER_SHEET}!A${rowIndex}:L${rowIndex}` });
       const orderRow = (orderResp.data.values || [])[0] || [];
       const buyerUserId = orderRow[2] || '';
-      const displayName = orderRow[5] || '';
-      const totalTwd = parseFloat(orderRow[4]) || 0;
+      const displayName = orderRow[3] || '';
+      const totalTwd = parseFloat(orderRow[5]) || 0;
       if (buyerUserId) {
         processOrderCompletion(sheets, buyerUserId, displayName, orderRow[0], totalTwd)
           .catch(e => console.error('[processOrderCompletion error]', e.message));
@@ -2576,7 +2579,7 @@ function createCard(o) {
     <div class="order-time">\${o.orderTime}</div>
   </div>
   <div class="order-body">
-    <div class="buyer-name">\${o.buyerName || '（未填姓名）'}</div>
+    <div class="buyer-name">\${o.buyerName || '（未填姓名）'}\${o.lineDisplayName ? ' <span style="font-size:12px;color:#aaa;font-weight:normal">LINE：' + o.lineDisplayName + '</span>' : ''}</div>
     <div class="order-items">\${o.items.split('\\n').map(l=>'<div>'+l+'</div>').join('')}</div>
     \${o.discountTotal > 0 ? \`<div style="font-size:12px;color:#aaa;margin-top:4px">小計 NT$\${o.total}\${o.pointsUsed > 0 ? ' · 點數 -NT$' + o.pointsUsed : ''}\${o.couponCode ? ' · 券 -NT$' + (o.discountTotal - o.pointsUsed) : ''}</div>\` : ''}
     <div class="order-total">\${o.discountTotal > 0 ? '實付 ' : ''}NT$\${o.discountTotal > 0 ? o.finalAmount : o.total}</div>
@@ -2719,16 +2722,16 @@ app.get('/admin/notify-buyer', async (req, res) => {
   try {
     // 從訂單 sheet 找 orderId
     const sheets = getSheetsClient();
-    const resp = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${ORDER_SHEET}!A:K` });
+    const resp = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${ORDER_SHEET}!A:L` });
     const rows = resp.data.values || [];
     const orderRow = rows.find((r) => r[0] === orderId);
     if (!orderRow) return res.status(404).json({ error: `找不到訂單 ${orderId}` });
 
     const orderRowIndex = rows.indexOf(orderRow) + 1; // 1-indexed (includes header)
     const buyerUserId  = orderRow[2] || '';
-    const buyerName    = orderRow[5] || '';
-    const itemsSummary = orderRow[3] || '';
-    const totalTwd     = orderRow[4] || '';
+    const buyerName    = orderRow[6] || '';
+    const itemsSummary = orderRow[4] || '';
+    const totalTwd     = orderRow[5] || '';
 
     if (!buyerUserId) return res.status(400).json({ error: '訂單缺少 userId' });
 
@@ -2799,14 +2802,14 @@ app.post('/api/admin/notify-progress', express.json(), async (req, res) => {
 
   try {
     const sheets = getSheetsClient();
-    const resp = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${ORDER_SHEET}!A:K` });
+    const resp = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${ORDER_SHEET}!A:L` });
     const rows = resp.data.values || [];
     const orderRow = rows.find(r => r[0] === orderId);
     if (!orderRow) return res.status(404).json({ error: `找不到訂單 ${orderId}` });
 
     const buyerUserId = orderRow[2] || '';
-    const buyerName   = orderRow[5] || '';
-    const itemsSummary = orderRow[3] || '';
+    const buyerName   = orderRow[6] || '';
+    const itemsSummary = orderRow[4] || '';
     if (!buyerUserId) return res.status(400).json({ error: '訂單缺少 userId' });
 
     // 組合進度文字
@@ -2831,7 +2834,7 @@ app.post('/api/admin/notify-progress', express.json(), async (req, res) => {
     // 更新訂單狀態
     await sheets.spreadsheets.values.update({
       spreadsheetId: SHEET_ID,
-      range: `${ORDER_SHEET}!K${rowIndex}`,
+      range: `${ORDER_SHEET}!L${rowIndex}`,
       valueInputOption: 'RAW',
       resource: { values: [[status]] },
     });
@@ -2898,7 +2901,7 @@ async function ensureMemberSheet(sheets) {
   }
 }
 async function ensurePointsSheet(sheets) {
-  const headers = ['pointId','date','userId','orderId','points','expiryDate','status'];
+  const headers = ['pointId','date','userId','displayName','orderId','points','expiryDate','status'];
   try { await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${POINTS_SHEET}!A1` }); }
   catch {
     await sheets.spreadsheets.batchUpdate({ spreadsheetId: SHEET_ID, resource: { requests: [{ addSheet: { properties: { title: POINTS_SHEET } } }] } });
@@ -2906,7 +2909,7 @@ async function ensurePointsSheet(sheets) {
   }
 }
 async function ensureCouponSheet(sheets) {
-  const headers = ['couponCode','userId','type','amount','issueDate','expiryDate','status','usedOrderId'];
+  const headers = ['couponCode','userId','displayName','type','amount','issueDate','expiryDate','status','usedOrderId'];
   try { await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${COUPON_SHEET}!A1` }); }
   catch {
     await sheets.spreadsheets.batchUpdate({ spreadsheetId: SHEET_ID, resource: { requests: [{ addSheet: { properties: { title: COUPON_SHEET } } }] } });
@@ -2995,13 +2998,13 @@ async function updateMemberFields(sheets, rowIndex, fields) {
 }
 
 // ── 發行優惠券 ────────────────────────────────────────────────────────────────
-async function issueCoupons(sheets, userId, type, amount, qty, expiryDate) {
+async function issueCoupons(sheets, userId, displayName, type, amount, qty, expiryDate) {
   await ensureCouponSheet(sheets);
   const today = todayStr();
   const rows = [];
   for (let i = 0; i < qty; i++) {
     const code = generateCouponCode();
-    rows.push([code, userId, type, amount, today, expiryDate, 'unused', '']);
+    rows.push([code, userId, displayName || '', type, amount, today, expiryDate, 'unused', '']);
   }
   await sheets.spreadsheets.values.append({
     spreadsheetId: SHEET_ID, range: `${COUPON_SHEET}!A1`,
@@ -3036,7 +3039,7 @@ async function processOrderCompletion(sheets, userId, displayName, orderId, orde
     await sheets.spreadsheets.values.append({
       spreadsheetId: SHEET_ID, range: `${POINTS_SHEET}!A1`,
       valueInputOption: 'RAW',
-      resource: { values: [[pointId, today, userId, orderId, pts, expiry, 'active']] },
+      resource: { values: [[pointId, today, userId, displayName || '', orderId, pts, expiry, 'active']] },
     });
   }
 
@@ -3081,8 +3084,10 @@ async function processReferralReward(sheets, inviteeUserId, orderId) {
     }
     // 發獎勵：雙方各 NT$50 × 2 張，效期 6 個月
     const expiry = new Date(Date.now() + 180 * 86400000).toISOString().slice(0, 10);
-    await issueCoupons(sheets, inviteeUserId, '邀請獎勵', 50, 2, expiry);
-    await issueCoupons(sheets, inviterUserId, '邀請獎勵', 50, 2, expiry);
+    const inviteeMember = await getMember(sheets, inviteeUserId);
+    const inviterMember = await getMember(sheets, inviterUserId);
+    await issueCoupons(sheets, inviteeUserId, inviteeMember ? inviteeMember.displayName : '', '邀請獎勵', 50, 2, expiry);
+    await issueCoupons(sheets, inviterUserId, inviterMember ? inviterMember.displayName : '', '邀請獎勵', 50, 2, expiry);
 
     // 更新邀請紀錄
     await sheets.spreadsheets.values.update({
@@ -3140,22 +3145,22 @@ async function bindReferralCode(sheets, inviteeUserId, inviteCode) {
 // ── 取得可用優惠券（未使用且未過期）─────────────────────────────────────────
 async function getActiveCoupons(sheets, userId) {
   await ensureCouponSheet(sheets);
-  const resp = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${COUPON_SHEET}!A:H` });
+  const resp = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${COUPON_SHEET}!A:I` });
   const rows = resp.data.values || [];
   const today = todayStr();
   return rows.slice(1)
-    .map((r, i) => ({ rowIndex: i + 2, code: r[0], userId: r[1], type: r[2], amount: parseInt(r[3]) || 0, issueDate: r[4], expiryDate: r[5], status: r[6], usedOrderId: r[7] }))
+    .map((r, i) => ({ rowIndex: i + 2, couponCode: r[0], userId: r[1], displayName: r[2], type: r[3], amount: parseInt(r[4]) || 0, issueDate: r[5], expiryDate: r[6], status: r[7], usedOrderId: r[8] }))
     .filter(c => c.userId === userId && c.status === 'unused' && c.expiryDate >= today);
 }
 
 // ── 取得會員點數明細（有效點數）──────────────────────────────────────────────
 async function getActivePoints(sheets, userId) {
   await ensurePointsSheet(sheets);
-  const resp = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${POINTS_SHEET}!A:G` });
+  const resp = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${POINTS_SHEET}!A:H` });
   const rows = resp.data.values || [];
   const today = todayStr();
   return rows.slice(1)
-    .map((r, i) => ({ rowIndex: i + 2, pointId: r[0], date: r[1], userId: r[2], orderId: r[3], points: parseInt(r[4]) || 0, expiryDate: r[5], status: r[6] }))
+    .map((r, i) => ({ rowIndex: i + 2, pointId: r[0], date: r[1], userId: r[2], displayName: r[3], orderId: r[4], points: parseInt(r[5]) || 0, expiryDate: r[6], status: r[7] }))
     .filter(p => p.userId === userId && p.status === 'active' && p.expiryDate >= today);
 }
 
@@ -3569,7 +3574,7 @@ function render(d) {
         <div>
           <div class="coupon-amount">NT$\${c.amount}</div>
           <div class="coupon-info">\${c.type}｜到期：\${c.expiryDate}</div>
-          <div class="coupon-code">\${c.code}</div>
+          <div class="coupon-code">\${c.couponCode}</div>
         </div>
       </div>\`).join('');
   } else {
@@ -3633,11 +3638,11 @@ app.post('/api/admin/complete-order-points', express.json(), async (req, res) =>
   if (key !== ADMIN_KEY) return res.status(401).json({ error: 'Unauthorized' });
   try {
     const sheets = getSheetsClient();
-    const resp = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${ORDER_SHEET}!A:K` });
+    const resp = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${ORDER_SHEET}!A:L` });
     const rows = resp.data.values || [];
     const row = rows.find(r => r[0] === orderId);
     if (!row) return res.status(404).json({ error: '找不到訂單' });
-    const userId = row[2], displayName = row[5], totalTwd = parseFloat(row[4]) || 0;
+    const userId = row[2], displayName = row[3], totalTwd = parseFloat(row[5]) || 0;
     const result = await processOrderCompletion(sheets, userId, displayName, orderId, totalTwd);
     res.json({ ok: true, ...result });
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -3667,11 +3672,11 @@ app.post('/api/cron/birthday', async (req, res) => {
 
     // 取今年已發過生日禮的 userId
     await ensureCouponSheet(sheets);
-    const cResp = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${COUPON_SHEET}!A:H` });
+    const cResp = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${COUPON_SHEET}!A:I` });
     const cRows = cResp.data.values || [];
     const alreadyGifted = new Set(
       cRows.slice(1)
-        .filter(r => r[2] === '生日禮' && (r[4] || '').startsWith(thisYearStr))
+        .filter(r => r[3] === '生日禮' && (r[5] || '').startsWith(thisYearStr))
         .map(r => r[1])
     );
 
@@ -3684,6 +3689,7 @@ app.post('/api/cron/birthday', async (req, res) => {
       const birthday  = r[3] || ''; // MM-DD
       const tier      = r[9] || '一般';
 
+      const lineDisplayName = r[1] || '';
       if (!userId || !birthday) continue;
       const bMonth = birthday.split('-')[0]; // 'MM'
       if (bMonth !== thisMonth) continue;
@@ -3694,7 +3700,7 @@ app.post('/api/cron/birthday', async (req, res) => {
       const expiry = `${thisYear}-${thisMonth}-${new Date(thisYear, parseInt(thisMonth), 0).getDate().toString().padStart(2,'0')}`; // 當月最後一天
       const codes = [];
       for (const g of gifts) {
-        const issued = await issueCoupons(sheets, userId, '生日禮', g.amount, g.qty, expiry);
+        const issued = await issueCoupons(sheets, userId, lineDisplayName, '生日禮', g.amount, g.qty, expiry);
         codes.push(...issued);
       }
 
