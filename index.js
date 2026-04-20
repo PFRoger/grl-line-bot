@@ -2473,9 +2473,9 @@ const TIER_THRESHOLDS = [
 const POINTS_DIVISOR = { '一般': 300, '銀卡': 200, '金卡': 100, '白金': 50 }; // 白金=100元2點→50元1點
 const BIRTHDAY_GIFTS = {
   '一般': [{ amount: 30, qty: 1 }],
-  '銀卡': [{ amount: 30, qty: 1 }],
-  '金卡': [{ amount: 50, qty: 1 }],
-  '白金': [{ amount: 50, qty: 3 }],
+  '銀卡': [{ amount: 50, qty: 1 }],
+  '金卡': [{ amount: 50, qty: 2 }],
+  '白金': [{ amount: 50, qty: 4 }],
 };
 
 function calcTier(yearlySpend) {
