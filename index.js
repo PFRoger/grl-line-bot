@@ -7,6 +7,7 @@ const cheerio = require('cheerio');
 const { google } = require('googleapis');
 
 const app = express();
+app.use('/public', express.static(require('path').join(__dirname, 'public')));
 
 const ADMIN_USER_ID = 'U9fa329e70b89f4ce19089928a824bd29';
 const SHEET_ID = '148eFUK3xm0ITsVpueqtnwjK-lcKeemoiRbQgcFWbGug';
@@ -1977,9 +1978,8 @@ function buildGuideHtml() {
     return `
 <div class="step-row${isReversed ? ' rev' : ''}">
   <div class="step-img-wrap">
-    <div class="step-art" style="background:${s.grad}">
-      <div class="art-num">${s.num}</div>
-      <div class="art-icon">${s.icon}</div>
+    <div class="step-art">
+      <img src="/public/guide/step${i + 1}.jpg" alt="${s.title}" style="width:100%;height:100%;object-fit:cover">
       <div class="art-overlay"></div>
     </div>
   </div>
@@ -2009,10 +2009,8 @@ function buildGuideHtml() {
 body{font-family:'Noto Sans TC',sans-serif;background:#faf9f6;color:#4a423e;padding-bottom:60px}
 .step-row{display:flex;flex-direction:column;gap:32px;margin-bottom:64px;align-items:center}
 .step-img-wrap{width:100%;flex-shrink:0}
-.step-art{position:relative;width:100%;aspect-ratio:4/3;border-radius:6px;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.12);display:flex;align-items:center;justify-content:center}
-.art-num{position:absolute;top:20px;left:24px;font-family:'Noto Serif TC',serif;font-size:72px;font-weight:700;color:rgba(255,255,255,.18);line-height:1;letter-spacing:-2px}
-.art-icon{font-size:72px;position:relative;z-index:2;filter:drop-shadow(0 4px 12px rgba(0,0,0,.15))}
-.art-overlay{position:absolute;inset:0;background:linear-gradient(to bottom right,rgba(255,255,255,.08),rgba(0,0,0,.04));pointer-events:none}
+.step-art{position:relative;width:100%;aspect-ratio:4/3;border-radius:6px;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.12)}
+.art-overlay{position:absolute;inset:0;background:linear-gradient(to bottom right,rgba(255,255,255,.04),rgba(0,0,0,.06));pointer-events:none}
 .step-content{width:100%;padding:0 4px}
 .step-header{display:flex;align-items:center;gap:12px;margin-bottom:20px}
 .step-num-sm{font-family:'Noto Serif TC',serif;font-size:52px;color:#e5e1da;line-height:1}
