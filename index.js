@@ -862,24 +862,6 @@ async function setupRichMenu(imageUrl) {
 
   const createRes = await axios.post('https://api.line.me/v2/bot/richmenu', def, { headers });
   const richMenuId = createRes.data.richMenuId;
-
-  // 2. 上傳圖片（若有提供 URL）
-  if (imageUrl) {
-    const imgRes = await axios.get(imageUrl, { responseType: 'arraybuffer', timeout: 15000 });
-    await axios.post(
-      `https://api-data.line.me/v2/bot/richmenu/${richMenuId}/content`,
-      imgRes.data,
-      { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'image/jpeg' } }
-    );
-  }
-
-  // 3. 設為所有用戶預設選單
-  await axios.post(
-    `https://api.line.me/v2/bot/user/all/richmenu/${richMenuId}`,
-    {},
-    { headers }
-  );
-
   return richMenuId;
 }
 
@@ -1949,15 +1931,34 @@ app.get('/admin/insert-weight-column', async (req, res) => {
 });
 
 // ── 一次性：建立並啟用 Rich Menu ──────────────────────────────────────────────
-// 呼叫方式：GET /admin/setup-rich-menu?imageUrl=https://...
+// 呼叫方式：GET /admin/setup-rich-menu?copyFrom=richmenu-xxxxxx
 app.get('/admin/setup-rich-menu', async (req, res) => {
-  const { imageUrl } = req.query;
+  const { imageUrl, copyFrom } = req.query;
+  const token = process.env.LINE_CHANNEL_ACCESS_TOKEN;
+  const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
   try {
-    const richMenuId = await setupRichMenu(imageUrl || '');
+    // 1. 建立新 Rich Menu
+    const richMenuId = await setupRichMenu('');
+
+    // 2. 複製現有 Rich Menu 圖片（若有提供 copyFrom）
+    const sourceId = copyFrom || 'richmenu-5f78e8bccf8aebb4f3201064da3f01ec';
+    const imgRes = await axios.get(
+      `https://api-data.line.me/v2/bot/richmenu/${sourceId}/content`,
+      { headers: { Authorization: `Bearer ${token}` }, responseType: 'arraybuffer', timeout: 15000 }
+    );
+    await axios.post(
+      `https://api-data.line.me/v2/bot/richmenu/${richMenuId}/content`,
+      imgRes.data,
+      { headers: { Authorization: `Bearer ${token}`, 'Content-Type': imgRes.headers['content-type'] || 'image/jpeg' } }
+    );
+
+    // 3. 設為預設選單
+    await axios.post(`https://api.line.me/v2/bot/user/all/richmenu/${richMenuId}`, {}, { headers });
+
     res.json({ status: 'ok', richMenuId, message: 'Rich Menu 已建立並設為預設選單' });
   } catch (err) {
-    console.error('[setup-rich-menu error]', err.message);
-    res.status(500).json({ error: err.message });
+    console.error('[setup-rich-menu error]', err.response?.data || err.message);
+    res.status(500).json({ error: err.message, detail: err.response?.data });
   }
 });
 
