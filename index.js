@@ -1457,6 +1457,8 @@ function buildAddToCartFlex(stockLines, productId, jpy, suggested, productUrl, i
         spacing: 'none',
         backgroundColor: '#f5ede0',
         contents: [
+          // 貨號
+          { type: 'text', text: productId.toUpperCase(), size: 'xxs', color: '#b8a090', letterSpacing: '1px' },
           // 商品名稱（有才顯示）
           ...(productName ? [{
             type: 'text',
@@ -1464,6 +1466,7 @@ function buildAddToCartFlex(stockLines, productId, jpy, suggested, productUrl, i
             size: 'xs',
             color: '#a08060',
             wrap: true,
+            margin: 'xs',
           }] : []),
           // 顏色
           { type: 'text', text: colorLabel, weight: 'bold', size: 'md', color: '#3d2c1e', wrap: true, margin: 'xs' },
