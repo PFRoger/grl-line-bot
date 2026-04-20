@@ -911,7 +911,7 @@ async function setupRichMenu(imageUrl) {
       { bounds: { x: 0,    y: 0,   width: 833, height: 843 }, action: { type: 'postback', label: '查詢紀錄', data: 'action=query_history', displayText: '查詢紀錄' } },
       { bounds: { x: 833,  y: 0,   width: 833, height: 843 }, action: { type: 'uri',      label: '開始購物', uri: 'https://www.grail.bz' } },
       { bounds: { x: 1666, y: 0,   width: 834, height: 843 }, action: { type: 'uri',      label: '購物車',   uri: `https://liff.line.me/${LIFF_ID}` } },
-      { bounds: { x: 0,    y: 843, width: 833, height: 843 }, action: { type: 'postback', label: '使用教學', data: 'action=tutorial',       displayText: '使用教學' } },
+      { bounds: { x: 0,    y: 843, width: 833, height: 843 }, action: { type: 'uri',      label: '購物指南', uri: 'https://pfroger-linebot-2.vercel.app/guide' } },
       { bounds: { x: 833,  y: 843, width: 833, height: 843 }, action: { type: 'uri',      label: 'IG連結',   uri: 'https://www.instagram.com/bijin.jp.2024?igsh=MXZxY2wzc2tsdWxzeQ%3D%3D&utm_source=qr' } },
       { bounds: { x: 1666, y: 843, width: 834, height: 843 }, action: { type: 'uri',      label: '會員中心', uri: `https://liff.line.me/${MEMBER_LIFF_ID}` } },
     ],
@@ -1932,6 +1932,125 @@ app.post('/webhook', express.raw({ type: '*/*' }), async (req, res) => {
 app.get('/', (_req, res) => {
   res.json({ status: 'GRL LINE Bot is running' });
 });
+
+// ── 購物指南頁面 ─────────────────────────────────────────────────────────────
+app.get('/guide', (_req, res) => {
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.send(buildGuideHtml());
+});
+
+
+function buildGuideHtml() {
+  const steps = [
+    { num: '01', title: '查詢商品報價', icon: '🔍',
+      grad: 'linear-gradient(135deg,#f0ddd5 0%,#e4c8bc 50%,#d4b0a8 100%)',
+      desc: '瀏覽 GRL 官網尋找您的心頭好，將網址貼給機器人。我們將即時為您計算包含代購費與國際運費的台幣總額。',
+      note: null },
+    { num: '02', title: '選色加入購物車', icon: '🛒',
+      grad: 'linear-gradient(135deg,#e8d5c4 0%,#d8c0aa 50%,#c8a890 100%)',
+      desc: '在報價卡片上優雅地挑選顏色與尺寸。您可以連續貼上多個網址，一次滿足所有購物願望。',
+      note: { type: 'quote', text: '溫馨提示：您的購物車具有 48 小時的短暫記憶，請及時完成結帳。' } },
+    { num: '03', title: '填資料・送出訂單', icon: '📋',
+      grad: 'linear-gradient(135deg,#d8e0d4 0%,#c4d0be 50%,#b0c0a8 100%)',
+      desc: '確認購物清單後，填寫基本聯絡資料。我們會細心核對每一筆訂單，確保您的商品正確無誤。',
+      note: null },
+    { num: '04', title: '收賣貨便連結', icon: '📩',
+      grad: 'linear-gradient(135deg,#d4d8e8 0%,#bec4d8 50%,#a8b0c8 100%)',
+      desc: '核對完成後，專屬的賣貨便連結將透過 LINE 傳送給您。這是一份正式的保障，讓您的交易更安心。',
+      note: { type: 'alert', text: '為確保交易安全，請務必透過我們官方 LINE 傳送的連結進行結帳，勿自行前往。' } },
+    { num: '05', title: '7-11 到店取件', icon: '📦',
+      grad: 'linear-gradient(135deg,#ddd4e8 0%,#c8bcd8 50%,#b4a8c8 100%)',
+      desc: '商品跨海抵達台灣後，我們會第一時間通知您。前往您指定的 7-11 門市，開啟您的開箱驚喜。',
+      note: { type: 'check', text: '期待與您的商品相見 🌸' } },
+  ];
+
+  const stepCards = steps.map((s, i) => {
+    const isReversed = i % 2 !== 0;
+    const noteHtml = s.note
+      ? s.note.type === 'quote'
+        ? `<div style="margin-top:20px;padding:14px 16px;background:#fcf7f3;border-left:3px solid #cba29b;font-size:13px;font-style:italic;color:#8c8279;line-height:1.7">${s.note.text}</div>`
+        : s.note.type === 'alert'
+        ? `<div style="margin-top:20px;display:flex;gap:10px;padding:14px;background:#f6f5f2;border-radius:8px;font-size:13px;color:#8c8279;line-height:1.6"><span style="flex-shrink:0;margin-top:2px">⚠️</span><span>${s.note.text}</span></div>`
+        : `<div style="margin-top:20px;display:flex;align-items:center;gap:8px;color:#cba29b;font-size:14px;font-weight:500"><span>✅</span><span>${s.note.text}</span></div>`
+      : '';
+
+    return `
+<div class="step-row${isReversed ? ' rev' : ''}">
+  <div class="step-img-wrap">
+    <div class="step-art" style="background:${s.grad}">
+      <div class="art-num">${s.num}</div>
+      <div class="art-icon">${s.icon}</div>
+      <div class="art-overlay"></div>
+    </div>
+  </div>
+  <div class="step-content">
+    <div class="step-header">
+      <span class="step-num-sm">${s.num}</span>
+      <div class="step-line"></div>
+      <span class="step-icon-sm">${s.icon}</span>
+    </div>
+    <h2 class="step-title">${s.title}</h2>
+    <p class="step-desc">${s.desc}</p>
+    ${noteHtml}
+  </div>
+</div>`;
+  }).join('');
+
+  return `<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<title>GRL 代購流程指南 | Bijin</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@300;400;700&family=Noto+Sans+TC:wght@300;400;500&display=swap">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Noto Sans TC',sans-serif;background:#faf9f6;color:#4a423e;padding-bottom:60px}
+.step-row{display:flex;flex-direction:column;gap:32px;margin-bottom:64px;align-items:center}
+.step-img-wrap{width:100%;flex-shrink:0}
+.step-art{position:relative;width:100%;aspect-ratio:4/3;border-radius:6px;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.12);display:flex;align-items:center;justify-content:center}
+.art-num{position:absolute;top:20px;left:24px;font-family:'Noto Serif TC',serif;font-size:72px;font-weight:700;color:rgba(255,255,255,.18);line-height:1;letter-spacing:-2px}
+.art-icon{font-size:72px;position:relative;z-index:2;filter:drop-shadow(0 4px 12px rgba(0,0,0,.15))}
+.art-overlay{position:absolute;inset:0;background:linear-gradient(to bottom right,rgba(255,255,255,.08),rgba(0,0,0,.04));pointer-events:none}
+.step-content{width:100%;padding:0 4px}
+.step-header{display:flex;align-items:center;gap:12px;margin-bottom:20px}
+.step-num-sm{font-family:'Noto Serif TC',serif;font-size:52px;color:#e5e1da;line-height:1}
+.step-line{height:1px;flex:1;background:#e5e1da}
+.step-icon-sm{font-size:22px}
+.step-title{font-size:22px;font-weight:700;color:#2d2723;margin-bottom:12px;letter-spacing:-.5px}
+.step-desc{color:#6b625a;line-height:1.9;font-size:14px;font-weight:300}
+@media(min-width:768px){
+  .step-row{flex-direction:row;gap:64px}
+  .step-row.rev{flex-direction:row-reverse}
+  .step-img-wrap{width:60%}
+  .step-content{width:40%;flex-shrink:0}
+}
+</style>
+</head>
+<body>
+<div style="max-width:900px;margin:0 auto;padding:40px 20px">
+
+  <header style="text-align:center;margin-bottom:72px">
+    <div style="display:inline-flex;align-items:center;gap:8px;margin-bottom:20px;padding:6px 16px;border:1px solid #e5e1da;border-radius:999px;font-size:11px;letter-spacing:2px;color:#8c8279;text-transform:uppercase">
+      ✦ Premium Shopping Experience
+    </div>
+    <h1 style="font-family:'Noto Serif TC',serif;font-size:clamp(28px,6vw,40px);font-weight:700;color:#2d2723;margin-bottom:16px;line-height:1.2">GRL 代購流程指南</h1>
+    <p style="color:#8c8279;font-size:14px;max-width:480px;margin:0 auto;font-weight:300;line-height:1.9">
+      我們致力於為您帶來最優質的日系穿搭體驗。<br>跟著以下五個簡潔步驟，輕鬆完成您的跨國購物。
+    </p>
+  </header>
+
+  ${stepCards}
+
+  <footer style="text-align:center;border-top:1px solid #e5e1da;padding-top:40px;margin-top:20px">
+    <p style="font-size:11px;letter-spacing:2px;color:#8c8279;text-transform:uppercase;margin-bottom:12px">Bijin 日本正品代購</p>
+    <p style="font-family:'Noto Serif TC',serif;font-style:italic;color:#cba29b;font-size:17px">讓優雅，成為您的日常。</p>
+  </footer>
+</div>
+</body>
+</html>`;
+}
 
 // ── LIFF 購物車頁面 ───────────────────────────────────────────────────────────
 app.get('/cart', (_req, res) => {
