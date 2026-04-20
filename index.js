@@ -1216,7 +1216,7 @@ async function init() {
       fetch('/api/member?userId=' + userId).then(r => r.json()).catch(() => ({ ok: false })),
     ]);
     cartItems = cartData.items || [];
-    if (memberData.ok) {
+    if (memberData.ok && memberData.registered) {
       memberPoints = memberData.member.points || 0;
       activeCoupons = memberData.coupons || [];
     }
@@ -2140,7 +2140,8 @@ app.post('/api/cart/add', express.json(), async (req, res) => {
 
 async function deductMemberPoints(sheets, userId, pointsToDeduct) {
   if (!pointsToDeduct || pointsToDeduct <= 0) return;
-  const member = await getOrCreateMember(sheets, userId, '');
+  const member = await getMember(sheets, userId);
+  if (!member) return;
   const newPoints = Math.max(0, (member.points || 0) - pointsToDeduct);
   const today = todayStr();
   await sheets.spreadsheets.values.update({
@@ -2174,8 +2175,8 @@ app.post('/api/order', express.json(), async (req, res) => {
 
     // 驗證點數
     if (pointsUsed > 0) {
-      const member = await getOrCreateMember(sheets, userId, '');
-      if (pointsUsed > (member.points || 0)) return res.status(400).json({ error: '點數不足' });
+      const member = await getMember(sheets, userId);
+      if (!member || pointsUsed > (member.points || 0)) return res.status(400).json({ error: '點數不足' });
     }
     // 驗證優惠券
     if (couponCode) {
@@ -2889,7 +2890,7 @@ function todayStr() { return new Date().toISOString().slice(0, 10); }
 
 // ── Sheet 初始化 ──────────────────────────────────────────────────────────────
 async function ensureMemberSheet(sheets) {
-  const headers = ['userId','displayName','joinDate','birthday','referralCode','referredByCode','referralCodeSetDate','currentYear','yearlySpend','tier','points','lastUpdated'];
+  const headers = ['userId','displayName','joinDate','birthday','referralCode','referredByCode','referralCodeSetDate','currentYear','yearlySpend','tier','points','lastUpdated','name','phone'];
   try { await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${MEMBER_SHEET}!A1` }); }
   catch {
     await sheets.spreadsheets.batchUpdate({ spreadsheetId: SHEET_ID, resource: { requests: [{ addSheet: { properties: { title: MEMBER_SHEET } } }] } });
@@ -2923,33 +2924,34 @@ async function ensureReferralSheet(sheets) {
 
 // ── 取得會員資料（找不到回傳 null）────────────────────────────────────────────
 async function getMember(sheets, userId) {
-  const resp = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${MEMBER_SHEET}!A:L` });
+  const resp = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${MEMBER_SHEET}!A:N` });
   const rows = resp.data.values || [];
   const idx = rows.findIndex((r, i) => i > 0 && r[0] === userId);
   if (idx === -1) return null;
   const r = rows[idx];
   return {
-    rowIndex: idx + 1, // 1-indexed
+    rowIndex: idx + 1,
     userId: r[0], displayName: r[1], joinDate: r[2], birthday: r[3],
     referralCode: r[4], referredByCode: r[5], referralCodeSetDate: r[6],
     currentYear: parseInt(r[7]) || new Date().getFullYear(),
     yearlySpend: parseFloat(r[8]) || 0,
     tier: r[9] || '一般', points: parseInt(r[10]) || 0, lastUpdated: r[11],
+    name: r[12] || '', phone: r[13] || '',
   };
 }
 
 // ── 建立新會員 ────────────────────────────────────────────────────────────────
-async function createMember(sheets, userId, displayName) {
+async function createMember(sheets, userId, displayName, { name = '', phone = '', birthday = '', referredByCode = '' } = {}) {
   await ensureMemberSheet(sheets);
   const refCode = generateReferralCode();
   const today = todayStr();
   const year = new Date().getFullYear();
-  const row = [userId, displayName, today, '', refCode, '', '', year, 0, '一般', 0, today];
+  const row = [userId, displayName, today, birthday, refCode, referredByCode, referredByCode ? today : '', year, 0, '一般', 0, today, name, phone];
   await sheets.spreadsheets.values.append({
     spreadsheetId: SHEET_ID, range: `${MEMBER_SHEET}!A1`,
     valueInputOption: 'RAW', resource: { values: [row] },
   });
-  return { userId, displayName, joinDate: today, birthday: '', referralCode: refCode, referredByCode: '', referralCodeSetDate: '', currentYear: year, yearlySpend: 0, tier: '一般', points: 0 };
+  return { userId, displayName, joinDate: today, birthday, referralCode: refCode, referredByCode, referralCodeSetDate: referredByCode ? today : '', currentYear: year, yearlySpend: 0, tier: '一般', points: 0, name, phone };
 }
 
 // ── 取得或建立會員 ─────────────────────────────────────────────────────────────
@@ -3010,7 +3012,8 @@ async function issueCoupons(sheets, userId, type, amount, qty, expiryDate) {
 
 // ── 訂單完成：計算點數 + 更新年度消費 + 等級 ───────────────────────────────────
 async function processOrderCompletion(sheets, userId, displayName, orderId, orderAmountTwd) {
-  const member = await getOrCreateMember(sheets, userId, displayName);
+  const member = await getMember(sheets, userId);
+  if (!member) return; // 未註冊會員，不計點數
   const pts = calcPoints(member.tier, orderAmountTwd);
   const today = todayStr();
   const expiry = calcPointsExpiry(today);
@@ -3156,17 +3159,63 @@ async function getActivePoints(sheets, userId) {
     .filter(p => p.userId === userId && p.status === 'active' && p.expiryDate >= today);
 }
 
-// ── API：取得會員資料（LIFF 用）──────────────────────────────────────────────
+// ── API：取得會員資料（LIFF 用，不自動建立）─────────────────────────────────
 app.get('/api/member', async (req, res) => {
   const { userId } = req.query;
   if (!userId) return res.status(400).json({ error: 'userId required' });
   try {
     const sheets = getSheetsClient();
-    const member = await getOrCreateMember(sheets, userId, '');
+    const member = await getMember(sheets, userId);
+    if (!member) return res.json({ ok: true, registered: false });
     const coupons = await getActiveCoupons(sheets, userId);
     const pointsRows = await getActivePoints(sheets, userId);
     const totalPoints = pointsRows.reduce((s, p) => s + p.points, 0);
-    res.json({ ok: true, member: { ...member, points: totalPoints }, coupons, pointsRows });
+    res.json({ ok: true, registered: true, member: { ...member, points: totalPoints }, coupons, pointsRows });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── API：會員註冊 ────────────────────────────────────────────────────────────
+app.post('/api/member/register', express.json(), async (req, res) => {
+  const { userId, displayName, name, phone, birthday, inviteCode } = req.body;
+  if (!userId || !name || !phone || !birthday) return res.status(400).json({ error: '請填寫所有必填欄位' });
+  if (!/^09\d{8}$/.test(phone)) return res.status(400).json({ error: '手機號碼格式不正確' });
+  if (!/^\d{2}-\d{2}$/.test(birthday)) return res.status(400).json({ error: '生日格式應為 MM-DD' });
+  try {
+    const sheets = getSheetsClient();
+    // 已是會員
+    const existing = await getMember(sheets, userId);
+    if (existing) return res.status(400).json({ error: '您已是會員' });
+    // 手機防重複（掃描 N 欄）
+    const resp = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${MEMBER_SHEET}!N:N` }).catch(() => ({ data: { values: [] } }));
+    const phones = (resp.data.values || []).flat();
+    if (phones.includes(phone)) return res.status(400).json({ error: '此手機號碼已被註冊' });
+    // 驗證邀請碼（若有填）
+    let referredByCode = '';
+    if (inviteCode) {
+      const allMembers = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${MEMBER_SHEET}!A:E` });
+      const rows = allMembers.data.values || [];
+      const inviter = rows.find((r, i) => i > 0 && r[4] === inviteCode.toUpperCase());
+      if (!inviter) return res.status(400).json({ error: '邀請碼無效' });
+      if (inviter[0] === userId) return res.status(400).json({ error: '不能使用自己的邀請碼' });
+      referredByCode = inviteCode.toUpperCase();
+    }
+    const member = await createMember(sheets, userId, displayName || '', { name, phone, birthday, referredByCode });
+    // 邀請紀錄
+    if (referredByCode) {
+      await ensureReferralSheet(sheets);
+      const inviterResp = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${MEMBER_SHEET}!A:E` });
+      const inviterRow = (inviterResp.data.values || []).find((r, i) => i > 0 && r[4] === referredByCode);
+      const inviterUserId = inviterRow ? inviterRow[0] : '';
+      if (inviterUserId) {
+        const deadline = new Date(); deadline.setMonth(deadline.getMonth() + 3);
+        const deadlineStr = deadline.toISOString().split('T')[0];
+        await sheets.spreadsheets.values.append({
+          spreadsheetId: SHEET_ID, range: `${REFERRAL_SHEET}!A1`, valueInputOption: 'RAW',
+          resource: { values: [[inviterUserId, userId, referredByCode, todayStr(), deadlineStr, '', 'pending']] },
+        });
+      }
+    }
+    res.json({ ok: true, member });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -3250,6 +3299,71 @@ header{background:#c9a98a;color:#fff;padding:20px 16px 16px;text-align:center}
 </style>
 </head>
 <body>
+
+<!-- ── 未註冊：會員福利 + 加入表單 ── -->
+<div id="register-view" style="display:none;padding-bottom:40px">
+  <header style="background:#c9a98a;color:#fff;padding:20px 16px;text-align:center">
+    <div style="font-size:18px;font-weight:bold">👑 Bijin 會員計畫</div>
+    <div style="font-size:12px;opacity:.85;margin-top:4px">加入會員，享受專屬優惠</div>
+  </header>
+
+  <!-- 會員福利 -->
+  <div style="margin:12px;background:#fff;border-radius:14px;padding:16px;box-shadow:0 1px 6px rgba(0,0,0,.07)">
+    <div style="font-size:13px;font-weight:bold;color:#c9a98a;margin-bottom:12px;border-bottom:1px solid #f5ede0;padding-bottom:8px">會員福利一覽</div>
+    <table style="width:100%;border-collapse:collapse;font-size:12px">
+      <tr style="background:#f5ede0;color:#7a5c3e">
+        <th style="padding:8px 6px;text-align:left;border-radius:6px 0 0 6px">等級</th>
+        <th style="padding:8px 4px;text-align:center">年消費門檻</th>
+        <th style="padding:8px 4px;text-align:center">點數回饋</th>
+        <th style="padding:8px 6px;text-align:center;border-radius:0 6px 6px 0">生日禮</th>
+      </tr>
+      <tr style="border-bottom:1px solid #faf5ef">
+        <td style="padding:8px 6px;color:#a08060;font-weight:bold">一般</td>
+        <td style="padding:8px 4px;text-align:center;color:#888">免門檻</td>
+        <td style="padding:8px 4px;text-align:center;color:#888">NT$300 / 1點</td>
+        <td style="padding:8px 6px;text-align:center;color:#888">NT$30券×1</td>
+      </tr>
+      <tr style="border-bottom:1px solid #faf5ef">
+        <td style="padding:8px 6px;color:#888;font-weight:bold">銀卡</td>
+        <td style="padding:8px 4px;text-align:center;color:#888">NT$3,000</td>
+        <td style="padding:8px 4px;text-align:center;color:#888">NT$200 / 1點</td>
+        <td style="padding:8px 6px;text-align:center;color:#888">NT$50券×1</td>
+      </tr>
+      <tr style="border-bottom:1px solid #faf5ef">
+        <td style="padding:8px 6px;color:#a07800;font-weight:bold">金卡</td>
+        <td style="padding:8px 4px;text-align:center;color:#888">NT$6,000</td>
+        <td style="padding:8px 4px;text-align:center;color:#888">NT$100 / 1點</td>
+        <td style="padding:8px 6px;text-align:center;color:#888">NT$50券×2</td>
+      </tr>
+      <tr>
+        <td style="padding:8px 6px;color:#3949ab;font-weight:bold">白金</td>
+        <td style="padding:8px 4px;text-align:center;color:#888">NT$12,000</td>
+        <td style="padding:8px 4px;text-align:center;color:#888">NT$50 / 1點</td>
+        <td style="padding:8px 6px;text-align:center;color:#888">NT$50券×4</td>
+      </tr>
+    </table>
+    <div style="margin-top:12px;padding:10px;background:#fff8f0;border-radius:8px;font-size:12px;color:#888;line-height:1.6">
+      🎟 <strong style="color:#c9a98a">邀請好友</strong>：好友完成首筆訂單，雙方各獲 NT$50 折扣券 × 2 張<br>
+      🪙 <strong style="color:#c9a98a">1點 = NT$1</strong>：結帳時直接折抵
+    </div>
+  </div>
+
+  <!-- 加入會員表單 -->
+  <div style="margin:12px;background:#fff;border-radius:14px;padding:16px;box-shadow:0 1px 6px rgba(0,0,0,.07)">
+    <div style="font-size:13px;font-weight:bold;color:#c9a98a;margin-bottom:14px;border-bottom:1px solid #f5ede0;padding-bottom:8px">加入會員</div>
+    <label style="display:block;font-size:12px;color:#888;margin-bottom:4px">姓名 *</label>
+    <input id="reg-name" type="text" placeholder="請輸入真實姓名" style="width:100%;border:1px solid #ddd;border-radius:8px;padding:10px;font-size:14px;margin-bottom:12px;outline:none">
+    <label style="display:block;font-size:12px;color:#888;margin-bottom:4px">手機號碼 * <span style="font-size:11px;color:#bbb">（每支手機只能綁一個帳號）</span></label>
+    <input id="reg-phone" type="tel" placeholder="09xxxxxxxx" style="width:100%;border:1px solid #ddd;border-radius:8px;padding:10px;font-size:14px;margin-bottom:12px;outline:none">
+    <label style="display:block;font-size:12px;color:#888;margin-bottom:4px">生日 * <span style="font-size:11px;color:#bbb">（格式：MM-DD，例：03-15）</span></label>
+    <input id="reg-birthday" type="text" placeholder="MM-DD" maxlength="5" style="width:100%;border:1px solid #ddd;border-radius:8px;padding:10px;font-size:14px;margin-bottom:12px;outline:none">
+    <label style="display:block;font-size:12px;color:#888;margin-bottom:4px">邀請碼（選填）</label>
+    <input id="reg-invite" type="text" placeholder="輸入好友邀請碼" maxlength="6" style="width:100%;border:1px solid #ddd;border-radius:8px;padding:10px;font-size:14px;text-transform:uppercase;margin-bottom:16px;outline:none">
+    <button onclick="register()" style="width:100%;background:#c9a98a;color:#fff;border:none;border-radius:10px;padding:14px;font-size:16px;font-weight:bold;cursor:pointer;letter-spacing:1px">立即加入會員</button>
+    <div id="reg-error" style="margin-top:10px;font-size:13px;color:#e07070;text-align:center;display:none"></div>
+  </div>
+</div>
+
 <div id="app" style="display:none">
   <header>
     <div class="header-name" id="hdr-name">載入中…</div>
@@ -3313,21 +3427,67 @@ header{background:#c9a98a;color:#fff;padding:20px 16px 16px;text-align:center}
 <div id="toast" class="toast"></div>
 
 <script>
-let userId = '', memberData = null;
+let userId = '', displayName = '', memberData = null;
 
 async function init() {
   await liff.init({ liffId: '${MEMBER_LIFF_ID}' });
   if (!liff.isLoggedIn()) { liff.login(); return; }
   const profile = await liff.getProfile();
   userId = profile.userId;
+  displayName = profile.displayName || '';
 
   const r = await fetch('/api/member?userId=' + userId);
   const d = await r.json();
-  if (!d.ok) { document.getElementById('loading').textContent = '載入失敗'; return; }
-  memberData = d;
-  render(d);
   document.getElementById('loading').style.display = 'none';
-  document.getElementById('app').style.display = 'block';
+  if (!d.ok) { document.getElementById('loading').textContent = '載入失敗'; return; }
+
+  if (!d.registered) {
+    document.getElementById('register-view').style.display = 'block';
+  } else {
+    memberData = d;
+    render(d);
+    document.getElementById('app').style.display = 'block';
+  }
+}
+
+async function register() {
+  const name = document.getElementById('reg-name').value.trim();
+  const phone = document.getElementById('reg-phone').value.trim();
+  const birthday = document.getElementById('reg-birthday').value.trim();
+  const inviteCode = document.getElementById('reg-invite').value.trim().toUpperCase();
+  const errEl = document.getElementById('reg-error');
+  errEl.style.display = 'none';
+
+  if (!name || !phone || !birthday) { errEl.textContent = '請填寫所有必填欄位'; errEl.style.display = 'block'; return; }
+  if (!/^09\d{8}$/.test(phone)) { errEl.textContent = '手機號碼格式不正確（例：0912345678）'; errEl.style.display = 'block'; return; }
+  if (!/^\d{2}-\d{2}$/.test(birthday)) { errEl.textContent = '生日格式應為 MM-DD（例：03-15）'; errEl.style.display = 'block'; return; }
+
+  const btn = document.querySelector('#register-view button');
+  btn.disabled = true; btn.textContent = '處理中…';
+  try {
+    const resp = await fetch('/api/member/register', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId, displayName, name, phone, birthday, inviteCode }),
+    });
+    const d = await resp.json();
+    if (!d.ok) {
+      errEl.textContent = d.error || '註冊失敗，請稍後再試';
+      errEl.style.display = 'block';
+      btn.disabled = false; btn.textContent = '立即加入會員';
+      return;
+    }
+    // 成功：重新載入會員資料
+    document.getElementById('register-view').style.display = 'none';
+    const mr = await fetch('/api/member?userId=' + userId);
+    const md = await mr.json();
+    if (md.ok && md.registered) { memberData = md; render(md); }
+    document.getElementById('app').style.display = 'block';
+    showToast('🎉 歡迎加入 Bijin 會員！');
+  } catch(e) {
+    errEl.textContent = '網路錯誤，請稍後再試';
+    errEl.style.display = 'block';
+    btn.disabled = false; btn.textContent = '立即加入會員';
+  }
 }
 
 function render(d) {
