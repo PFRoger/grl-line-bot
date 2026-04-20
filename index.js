@@ -3360,8 +3360,17 @@ header{background:#c9a98a;color:#fff;padding:20px 16px 16px;text-align:center}
     <input id="reg-name" type="text" placeholder="請輸入真實姓名" style="width:100%;border:1px solid #ddd;border-radius:8px;padding:10px;font-size:14px;margin-bottom:12px;outline:none">
     <label style="display:block;font-size:12px;color:#888;margin-bottom:4px">手機號碼 * <span style="font-size:11px;color:#bbb">（每支手機只能綁一個帳號）</span></label>
     <input id="reg-phone" type="tel" placeholder="09xxxxxxxx" style="width:100%;border:1px solid #ddd;border-radius:8px;padding:10px;font-size:14px;margin-bottom:12px;outline:none">
-    <label style="display:block;font-size:12px;color:#888;margin-bottom:4px">生日 * <span style="font-size:11px;color:#bbb">（格式：MM-DD，例：03-15）</span></label>
-    <input id="reg-birthday" type="text" placeholder="MM-DD" maxlength="5" style="width:100%;border:1px solid #ddd;border-radius:8px;padding:10px;font-size:14px;margin-bottom:12px;outline:none">
+    <label style="display:block;font-size:12px;color:#888;margin-bottom:4px">生日 * <span style="font-size:11px;color:#bbb">（用於生日禮發放）</span></label>
+    <div style="display:flex;gap:8px;margin-bottom:12px">
+      <select id="reg-bday-m" style="flex:1;border:1px solid #ddd;border-radius:8px;padding:10px;font-size:14px;outline:none;background:#fff;color:#333">
+        <option value="">月份</option>
+        ${Array.from({length:12},(_,i)=>{const m=String(i+1).padStart(2,'0');return `<option value="${m}">${i+1}月</option>`;}).join('')}
+      </select>
+      <select id="reg-bday-d" style="flex:1;border:1px solid #ddd;border-radius:8px;padding:10px;font-size:14px;outline:none;background:#fff;color:#333">
+        <option value="">日期</option>
+        ${Array.from({length:31},(_,i)=>{const d=String(i+1).padStart(2,'0');return `<option value="${d}">${i+1}日</option>`;}).join('')}
+      </select>
+    </div>
     <label style="display:block;font-size:12px;color:#888;margin-bottom:4px">邀請碼（選填）</label>
     <input id="reg-invite" type="text" placeholder="輸入好友邀請碼" maxlength="6" style="width:100%;border:1px solid #ddd;border-radius:8px;padding:10px;font-size:14px;text-transform:uppercase;margin-bottom:16px;outline:none">
     <button onclick="register()" style="width:100%;background:#c9a98a;color:#fff;border:none;border-radius:10px;padding:14px;font-size:16px;font-weight:bold;cursor:pointer;letter-spacing:1px">立即加入會員</button>
@@ -3495,14 +3504,15 @@ function toggleBenefits() {
 async function register() {
   const name = document.getElementById('reg-name').value.trim();
   const phone = document.getElementById('reg-phone').value.trim();
-  const birthday = document.getElementById('reg-birthday').value.trim();
+  const bm = document.getElementById('reg-bday-m').value;
+  const bd = document.getElementById('reg-bday-d').value;
+  const birthday = (bm && bd) ? bm + '-' + bd : '';
   const inviteCode = document.getElementById('reg-invite').value.trim().toUpperCase();
   const errEl = document.getElementById('reg-error');
   errEl.style.display = 'none';
 
   if (!name || !phone || !birthday) { errEl.textContent = '請填寫所有必填欄位'; errEl.style.display = 'block'; return; }
-  if (!/^09\d{8}$/.test(phone)) { errEl.textContent = '手機號碼格式不正確（例：0912345678）'; errEl.style.display = 'block'; return; }
-  if (!/^\d{2}-\d{2}$/.test(birthday)) { errEl.textContent = '生日格式應為 MM-DD（例：03-15）'; errEl.style.display = 'block'; return; }
+  if (!/^09\\d{8}$/.test(phone)) { errEl.textContent = '手機號碼格式不正確（例：0912345678）'; errEl.style.display = 'block'; return; }
 
   const btn = document.querySelector('#register-view button');
   btn.disabled = true; btn.textContent = '處理中…';
