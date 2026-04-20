@@ -3059,6 +3059,76 @@ app.post('/api/admin/complete-order-points', express.json(), async (req, res) =>
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── Cron：每月1號自動發送生日禮 ──────────────────────────────────────────────
+// Vercel Cron 每月1日 00:00 UTC（台灣時間 08:00）呼叫
+app.post('/api/cron/birthday', async (req, res) => {
+  // 驗證來自 Vercel Cron 或管理員
+  const auth = req.headers['authorization'] || '';
+  const cronSecret = process.env.CRON_SECRET || ADMIN_KEY;
+  if (auth !== `Bearer ${cronSecret}` && auth !== `Bearer ${ADMIN_KEY}`) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  const now = new Date();
+  const thisMonth = String(now.getMonth() + 1).padStart(2, '0'); // '01'~'12'
+  const thisYear = now.getFullYear();
+  const thisYearStr = String(thisYear);
+
+  try {
+    const sheets = getSheetsClient();
+
+    // 取所有會員
+    const mResp = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${MEMBER_SHEET}!A:L` });
+    const mRows = mResp.data.values || [];
+
+    // 取今年已發過生日禮的 userId
+    await ensureCouponSheet(sheets);
+    const cResp = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${COUPON_SHEET}!A:H` });
+    const cRows = cResp.data.values || [];
+    const alreadyGifted = new Set(
+      cRows.slice(1)
+        .filter(r => r[2] === '生日禮' && (r[4] || '').startsWith(thisYearStr))
+        .map(r => r[1])
+    );
+
+    const client = new line.Client({ channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN });
+    let count = 0;
+
+    for (let i = 1; i < mRows.length; i++) {
+      const r = mRows[i];
+      const userId    = r[0] || '';
+      const birthday  = r[3] || ''; // MM-DD
+      const tier      = r[9] || '一般';
+
+      if (!userId || !birthday) continue;
+      const bMonth = birthday.split('-')[0]; // 'MM'
+      if (bMonth !== thisMonth) continue;
+      if (alreadyGifted.has(userId)) continue;
+
+      // 發優惠券
+      const gifts = BIRTHDAY_GIFTS[tier] || BIRTHDAY_GIFTS['一般'];
+      const expiry = `${thisYear}-${thisMonth}-${new Date(thisYear, parseInt(thisMonth), 0).getDate().toString().padStart(2,'0')}`; // 當月最後一天
+      const codes = [];
+      for (const g of gifts) {
+        const issued = await issueCoupons(sheets, userId, '生日禮', g.amount, g.qty, expiry);
+        codes.push(...issued);
+      }
+
+      // 發 LINE 通知
+      const totalQty = gifts.reduce((s, g) => s + g.qty, 0);
+      const totalAmt = gifts.reduce((s, g) => s + g.amount * g.qty, 0);
+      const msg = `🎂 生日快樂！\n\n感謝您是 Bijin 的 ${tier}會員 🌸\n\n生日禮券已發送：\nNT$${gifts[0].amount} 折扣碼 × ${totalQty} 張（共 NT$${totalAmt}）\n有效至本月底 ${expiry}\n\n請至會員中心查看並使用 💝`;
+      await client.pushMessage(userId, { type: 'text', text: msg }).catch(() => {});
+      count++;
+    }
+
+    res.json({ ok: true, sent: count, month: thisMonth });
+  } catch (e) {
+    console.error('[birthday cron error]', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ── 本地開發啟動 ──────────────────────────────────────────────────────────────
 if (require.main === module) {
   const PORT = process.env.PORT || 3000;

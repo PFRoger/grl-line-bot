@@ -11,5 +11,11 @@
       "src": "/(.*)",
       "dest": "/index.js"
     }
+  ],
+  "crons": [
+    {
+      "path": "/api/cron/birthday",
+      "schedule": "0 0 1 * *"
+    }
   ]
 }
