@@ -1409,7 +1409,7 @@ function updateTotals() {
   // show/hide discount section
   const discSection = document.getElementById('discount-section');
   if (discSection) {
-    if (subtotal > 0 && (memberPoints > 0 || activeCoupons.length > 0)) {
+    if (subtotal > 0) {
       discSection.style.display = 'block';
       document.getElementById('avail-pts').textContent = memberPoints;
       const ptsInput = document.getElementById('pts-input');
@@ -1417,7 +1417,7 @@ function updateTotals() {
       // render coupon list
       const cpnList = document.getElementById('cpn-list');
       if (activeCoupons.length === 0) {
-        cpnList.innerHTML = '<div style="font-size:13px;color:#bbb;padding:4px 0">目前沒有可用優惠券</div>';
+        cpnList.innerHTML = '<div style="font-size:13px;color:#bbb;padding:4px 0">目前無可用優惠券</div>';
       } else {
         cpnList.innerHTML = '';
         activeCoupons.forEach(c => {
