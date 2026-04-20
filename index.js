@@ -815,7 +815,7 @@ function buildTutorialFlexMessage() {
         { text: '商品到台灣後我們主動通知您', bold: false },
         { text: ' ', bold: false },
         { text: '收到通知後前往您選擇的', bold: false },
-        { text: '7-11 門市刷條碼取件即可 ✨', bold: false },
+        { text: '7-11 門市取件即可 ✨', bold: false },
         { text: ' ', bold: false },
         { text: '有任何問題隨時留言給我們 🌸', bold: true },
       ],
