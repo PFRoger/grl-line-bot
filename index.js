@@ -906,7 +906,7 @@ async function handlePostback(event, client) {
   } else if (action === 'member') {
     await client.replyMessage(replyToken, {
       type: 'text',
-      text: '👤 會員中心即將上線！\n\n我們正在努力開發中，敬請期待 🌸',
+      text: `👤 會員中心\n\n請點選連結查看您的點數、優惠券與邀請碼：\nhttps://liff.line.me/${LIFF_ID}?path=/member`,
     });
 
   } else if (action === 'out_of_stock') {
@@ -2003,6 +2003,18 @@ app.post('/api/admin/order-status', express.json(), async (req, res) => {
       valueInputOption: 'RAW',
       resource: { values: [[status]] },
     });
+    // 訂單轉已完成時，觸發點數與邀請獎勵
+    if (status === '已完成') {
+      const orderResp = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${ORDER_SHEET}!A${rowIndex}:K${rowIndex}` });
+      const orderRow = (orderResp.data.values || [])[0] || [];
+      const buyerUserId = orderRow[2] || '';
+      const displayName = orderRow[5] || '';
+      const totalTwd = parseFloat(orderRow[4]) || 0;
+      if (buyerUserId) {
+        processOrderCompletion(sheets, buyerUserId, displayName, orderRow[0], totalTwd)
+          .catch(e => console.error('[processOrderCompletion error]', e.message));
+      }
+    }
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -2440,6 +2452,610 @@ app.post('/api/admin/notify-progress', express.json(), async (req, res) => {
     console.error('[notify-progress error]', err.message);
     res.status(500).json({ error: err.message });
   }
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 會員制度
+// ══════════════════════════════════════════════════════════════════════════════
+
+const MEMBER_SHEET   = '會員';
+const POINTS_SHEET   = '點數紀錄';
+const COUPON_SHEET   = '優惠券';
+const REFERRAL_SHEET = '邀請紀錄';
+
+const TIER_THRESHOLDS = [
+  { name: '白金', min: 12000 },
+  { name: '金卡', min: 6000 },
+  { name: '銀卡', min: 3000 },
+  { name: '一般', min: 0 },
+];
+// 每 NT$X 得 1 點
+const POINTS_DIVISOR = { '一般': 300, '銀卡': 200, '金卡': 100, '白金': 50 }; // 白金=100元2點→50元1點
+const BIRTHDAY_GIFTS = {
+  '一般': [{ amount: 30, qty: 1 }],
+  '銀卡': [{ amount: 30, qty: 1 }],
+  '金卡': [{ amount: 50, qty: 1 }],
+  '白金': [{ amount: 50, qty: 3 }],
+};
+
+function calcTier(yearlySpend) {
+  for (const t of TIER_THRESHOLDS) if (yearlySpend >= t.min) return t.name;
+  return '一般';
+}
+function calcPoints(tier, amount) {
+  const div = POINTS_DIVISOR[tier] || 300;
+  return Math.floor(amount / div);
+}
+function calcPointsExpiry(earnDate) {
+  const m = new Date(earnDate).getMonth() + 1; // 1-12
+  const y = new Date(earnDate).getFullYear();
+  return m <= 6 ? `${y}-12-31` : `${y + 1}-06-30`;
+}
+function generateCode(len = 6) {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  return Array.from({ length: len }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+}
+function generateCouponCode() { return 'C' + generateCode(7); }
+function generateReferralCode() { return generateCode(6); }
+function todayStr() { return new Date().toISOString().slice(0, 10); }
+
+// ── Sheet 初始化 ──────────────────────────────────────────────────────────────
+async function ensureMemberSheet(sheets) {
+  const headers = ['userId','displayName','joinDate','birthday','referralCode','referredByCode','referralCodeSetDate','currentYear','yearlySpend','tier','points','lastUpdated'];
+  try { await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${MEMBER_SHEET}!A1` }); }
+  catch {
+    await sheets.spreadsheets.batchUpdate({ spreadsheetId: SHEET_ID, resource: { requests: [{ addSheet: { properties: { title: MEMBER_SHEET } } }] } });
+    await sheets.spreadsheets.values.update({ spreadsheetId: SHEET_ID, range: `${MEMBER_SHEET}!A1`, valueInputOption: 'RAW', resource: { values: [headers] } });
+  }
+}
+async function ensurePointsSheet(sheets) {
+  const headers = ['pointId','date','userId','orderId','points','expiryDate','status'];
+  try { await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${POINTS_SHEET}!A1` }); }
+  catch {
+    await sheets.spreadsheets.batchUpdate({ spreadsheetId: SHEET_ID, resource: { requests: [{ addSheet: { properties: { title: POINTS_SHEET } } }] } });
+    await sheets.spreadsheets.values.update({ spreadsheetId: SHEET_ID, range: `${POINTS_SHEET}!A1`, valueInputOption: 'RAW', resource: { values: [headers] } });
+  }
+}
+async function ensureCouponSheet(sheets) {
+  const headers = ['couponCode','userId','type','amount','issueDate','expiryDate','status','usedOrderId'];
+  try { await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${COUPON_SHEET}!A1` }); }
+  catch {
+    await sheets.spreadsheets.batchUpdate({ spreadsheetId: SHEET_ID, resource: { requests: [{ addSheet: { properties: { title: COUPON_SHEET } } }] } });
+    await sheets.spreadsheets.values.update({ spreadsheetId: SHEET_ID, range: `${COUPON_SHEET}!A1`, valueInputOption: 'RAW', resource: { values: [headers] } });
+  }
+}
+async function ensureReferralSheet(sheets) {
+  const headers = ['inviterUserId','inviteeUserId','inviteCode','bindDate','orderDeadline','qualifyingOrderId','status'];
+  try { await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${REFERRAL_SHEET}!A1` }); }
+  catch {
+    await sheets.spreadsheets.batchUpdate({ spreadsheetId: SHEET_ID, resource: { requests: [{ addSheet: { properties: { title: REFERRAL_SHEET } } }] } });
+    await sheets.spreadsheets.values.update({ spreadsheetId: SHEET_ID, range: `${REFERRAL_SHEET}!A1`, valueInputOption: 'RAW', resource: { values: [headers] } });
+  }
+}
+
+// ── 取得會員資料（找不到回傳 null）────────────────────────────────────────────
+async function getMember(sheets, userId) {
+  const resp = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${MEMBER_SHEET}!A:L` });
+  const rows = resp.data.values || [];
+  const idx = rows.findIndex((r, i) => i > 0 && r[0] === userId);
+  if (idx === -1) return null;
+  const r = rows[idx];
+  return {
+    rowIndex: idx + 1, // 1-indexed
+    userId: r[0], displayName: r[1], joinDate: r[2], birthday: r[3],
+    referralCode: r[4], referredByCode: r[5], referralCodeSetDate: r[6],
+    currentYear: parseInt(r[7]) || new Date().getFullYear(),
+    yearlySpend: parseFloat(r[8]) || 0,
+    tier: r[9] || '一般', points: parseInt(r[10]) || 0, lastUpdated: r[11],
+  };
+}
+
+// ── 建立新會員 ────────────────────────────────────────────────────────────────
+async function createMember(sheets, userId, displayName) {
+  await ensureMemberSheet(sheets);
+  const refCode = generateReferralCode();
+  const today = todayStr();
+  const year = new Date().getFullYear();
+  const row = [userId, displayName, today, '', refCode, '', '', year, 0, '一般', 0, today];
+  await sheets.spreadsheets.values.append({
+    spreadsheetId: SHEET_ID, range: `${MEMBER_SHEET}!A1`,
+    valueInputOption: 'RAW', resource: { values: [row] },
+  });
+  return { userId, displayName, joinDate: today, birthday: '', referralCode: refCode, referredByCode: '', referralCodeSetDate: '', currentYear: year, yearlySpend: 0, tier: '一般', points: 0 };
+}
+
+// ── 取得或建立會員 ─────────────────────────────────────────────────────────────
+async function getOrCreateMember(sheets, userId, displayName) {
+  await ensureMemberSheet(sheets);
+  let member = await getMember(sheets, userId);
+  if (!member) member = await createMember(sheets, userId, displayName || '');
+  // 若跨年，重置年度消費
+  const thisYear = new Date().getFullYear();
+  if (member.currentYear !== thisYear) {
+    member = await resetMemberYear(sheets, member, thisYear);
+  }
+  return member;
+}
+
+// ── 跨年重置 ──────────────────────────────────────────────────────────────────
+async function resetMemberYear(sheets, member, year) {
+  const newTier = '一般';
+  const today = todayStr();
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: SHEET_ID,
+    range: `${MEMBER_SHEET}!H${member.rowIndex}:L${member.rowIndex}`,
+    valueInputOption: 'RAW',
+    resource: { values: [[year, 0, newTier, member.points, today]] },
+  });
+  return { ...member, currentYear: year, yearlySpend: 0, tier: newTier };
+}
+
+// ── 更新會員欄位 ──────────────────────────────────────────────────────────────
+async function updateMemberFields(sheets, rowIndex, fields) {
+  // fields: { col (A=1), value }[]
+  for (const f of fields) {
+    const col = String.fromCharCode(64 + f.col);
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: SHEET_ID,
+      range: `${MEMBER_SHEET}!${col}${rowIndex}`,
+      valueInputOption: 'RAW',
+      resource: { values: [[f.value]] },
+    });
+  }
+}
+
+// ── 發行優惠券 ────────────────────────────────────────────────────────────────
+async function issueCoupons(sheets, userId, type, amount, qty, expiryDate) {
+  await ensureCouponSheet(sheets);
+  const today = todayStr();
+  const rows = [];
+  for (let i = 0; i < qty; i++) {
+    const code = generateCouponCode();
+    rows.push([code, userId, type, amount, today, expiryDate, 'unused', '']);
+  }
+  await sheets.spreadsheets.values.append({
+    spreadsheetId: SHEET_ID, range: `${COUPON_SHEET}!A1`,
+    valueInputOption: 'RAW', resource: { values: rows },
+  });
+  return rows.map(r => r[0]); // coupon codes
+}
+
+// ── 訂單完成：計算點數 + 更新年度消費 + 等級 ───────────────────────────────────
+async function processOrderCompletion(sheets, userId, displayName, orderId, orderAmountTwd) {
+  const member = await getOrCreateMember(sheets, userId, displayName);
+  const pts = calcPoints(member.tier, orderAmountTwd);
+  const today = todayStr();
+  const expiry = calcPointsExpiry(today);
+  const newSpend = member.yearlySpend + orderAmountTwd;
+  const newTier = calcTier(newSpend);
+  const newPoints = member.points + pts;
+
+  // 更新 yearlySpend / tier / points / lastUpdated (cols H=8, I=9, J=10, K=11, L=12)
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: SHEET_ID,
+    range: `${MEMBER_SHEET}!I${member.rowIndex}:L${member.rowIndex}`,
+    valueInputOption: 'RAW',
+    resource: { values: [[newSpend, newTier, newPoints, today]] },
+  });
+
+  // 寫入點數紀錄
+  if (pts > 0) {
+    await ensurePointsSheet(sheets);
+    const pointId = 'P' + Date.now().toString(36).toUpperCase();
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: SHEET_ID, range: `${POINTS_SHEET}!A1`,
+      valueInputOption: 'RAW',
+      resource: { values: [[pointId, today, userId, orderId, pts, expiry, 'active']] },
+    });
+  }
+
+  // 通知買家（升等 or 點數）
+  const tierChanged = newTier !== member.tier;
+  let notifyText = `🌸 訂單已完成！\n\n`;
+  if (pts > 0) notifyText += `本次獲得 ${pts} 點（有效至 ${expiry}）\n`;
+  notifyText += `目前總點數：${newPoints} 點\n等級：${newTier}`;
+  if (tierChanged) notifyText += `\n🎉 恭喜升等為 ${newTier}！`;
+
+  try {
+    const client = new line.Client({ channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN });
+    await client.pushMessage(userId, { type: 'text', text: notifyText });
+  } catch(e) { console.error('[member notify error]', e.message); }
+
+  // 處理邀請獎勵
+  await processReferralReward(sheets, userId, orderId).catch(e => console.error('[referral error]', e.message));
+
+  return { pts, newTier, newPoints, tierChanged };
+}
+
+// ── 邀請獎勵處理（訂單完成時呼叫）────────────────────────────────────────────
+async function processReferralReward(sheets, inviteeUserId, orderId) {
+  await ensureReferralSheet(sheets);
+  const resp = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${REFERRAL_SHEET}!A:G` });
+  const rows = resp.data.values || [];
+  const today = todayStr();
+
+  for (let i = 1; i < rows.length; i++) {
+    const r = rows[i];
+    const [inviterUserId, inviteeId, inviteCode, bindDate, orderDeadline, qualifyingOrderId, status] = r;
+    if (inviteeId !== inviteeUserId) continue;
+    if (status !== 'pending') continue;
+    // 確認訂單在截止日前
+    if (today > orderDeadline) {
+      // 過期
+      await sheets.spreadsheets.values.update({
+        spreadsheetId: SHEET_ID, range: `${REFERRAL_SHEET}!G${i + 1}`,
+        valueInputOption: 'RAW', resource: { values: [['expired']] },
+      });
+      continue;
+    }
+    // 發獎勵：雙方各 NT$50 × 2 張，效期 6 個月
+    const expiry = new Date(Date.now() + 180 * 86400000).toISOString().slice(0, 10);
+    await issueCoupons(sheets, inviteeUserId, '邀請獎勵', 50, 2, expiry);
+    await issueCoupons(sheets, inviterUserId, '邀請獎勵', 50, 2, expiry);
+
+    // 更新邀請紀錄
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: SHEET_ID, range: `${REFERRAL_SHEET}!F${i + 1}:G${i + 1}`,
+      valueInputOption: 'RAW', resource: { values: [[orderId, 'rewarded']] },
+    });
+
+    // 通知雙方
+    const client = new line.Client({ channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN });
+    const msg = `🎁 邀請獎勵！\n好友訂單已完成，雙方各獲得 NT$50 折扣碼 × 2 張！\n請至會員中心查看。`;
+    await client.pushMessage(inviteeUserId, { type: 'text', text: msg }).catch(() => {});
+    await client.pushMessage(inviterUserId, { type: 'text', text: msg }).catch(() => {});
+  }
+}
+
+// ── 綁定邀請碼 ────────────────────────────────────────────────────────────────
+async function bindReferralCode(sheets, inviteeUserId, inviteCode) {
+  // 找邀請者
+  const memberResp = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${MEMBER_SHEET}!A:F` });
+  const mRows = memberResp.data.values || [];
+  const inviterRow = mRows.find((r, i) => i > 0 && r[4] === inviteCode);
+  if (!inviterRow) return { ok: false, error: '無效的邀請碼' };
+  if (inviterRow[0] === inviteeUserId) return { ok: false, error: '不能使用自己的邀請碼' };
+
+  // 確認被邀請者入會不超過1個月
+  const inviteeMember = await getMember(sheets, inviteeUserId);
+  if (!inviteeMember) return { ok: false, error: '找不到會員資料' };
+  const joinDate = new Date(inviteeMember.joinDate);
+  const monthAgo = new Date(Date.now() - 30 * 86400000);
+  if (joinDate < monthAgo) return { ok: false, error: '入會超過 1 個月，無法補填邀請碼' };
+  if (inviteeMember.referredByCode) return { ok: false, error: '已綁定邀請碼' };
+
+  const today = todayStr();
+  const orderDeadline = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10);
+
+  // 更新會員的 referredByCode / referralCodeSetDate
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: SHEET_ID,
+    range: `${MEMBER_SHEET}!F${inviteeMember.rowIndex}:G${inviteeMember.rowIndex}`,
+    valueInputOption: 'RAW',
+    resource: { values: [[inviteCode, today]] },
+  });
+
+  // 新增邀請紀錄
+  await ensureReferralSheet(sheets);
+  await sheets.spreadsheets.values.append({
+    spreadsheetId: SHEET_ID, range: `${REFERRAL_SHEET}!A1`,
+    valueInputOption: 'RAW',
+    resource: { values: [[inviterRow[0], inviteeUserId, inviteCode, today, orderDeadline, '', 'pending']] },
+  });
+
+  return { ok: true, inviterName: inviterRow[1] };
+}
+
+// ── 取得可用優惠券（未使用且未過期）─────────────────────────────────────────
+async function getActiveCoupons(sheets, userId) {
+  await ensureCouponSheet(sheets);
+  const resp = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${COUPON_SHEET}!A:H` });
+  const rows = resp.data.values || [];
+  const today = todayStr();
+  return rows.slice(1)
+    .map((r, i) => ({ rowIndex: i + 2, code: r[0], userId: r[1], type: r[2], amount: parseInt(r[3]) || 0, issueDate: r[4], expiryDate: r[5], status: r[6], usedOrderId: r[7] }))
+    .filter(c => c.userId === userId && c.status === 'unused' && c.expiryDate >= today);
+}
+
+// ── 取得會員點數明細（有效點數）──────────────────────────────────────────────
+async function getActivePoints(sheets, userId) {
+  await ensurePointsSheet(sheets);
+  const resp = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${POINTS_SHEET}!A:G` });
+  const rows = resp.data.values || [];
+  const today = todayStr();
+  return rows.slice(1)
+    .map((r, i) => ({ rowIndex: i + 2, pointId: r[0], date: r[1], userId: r[2], orderId: r[3], points: parseInt(r[4]) || 0, expiryDate: r[5], status: r[6] }))
+    .filter(p => p.userId === userId && p.status === 'active' && p.expiryDate >= today);
+}
+
+// ── API：取得會員資料（LIFF 用）──────────────────────────────────────────────
+app.get('/api/member', async (req, res) => {
+  const { userId } = req.query;
+  if (!userId) return res.status(400).json({ error: 'userId required' });
+  try {
+    const sheets = getSheetsClient();
+    const member = await getOrCreateMember(sheets, userId, '');
+    const coupons = await getActiveCoupons(sheets, userId);
+    const pointsRows = await getActivePoints(sheets, userId);
+    const totalPoints = pointsRows.reduce((s, p) => s + p.points, 0);
+    res.json({ ok: true, member: { ...member, points: totalPoints }, coupons, pointsRows });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── API：更新生日 ─────────────────────────────────────────────────────────────
+app.post('/api/member/birthday', express.json(), async (req, res) => {
+  const { userId, birthday } = req.body; // birthday: "MM-DD"
+  if (!userId || !birthday) return res.status(400).json({ error: 'Missing fields' });
+  if (!/^\d{2}-\d{2}$/.test(birthday)) return res.status(400).json({ error: '格式應為 MM-DD' });
+  try {
+    const sheets = getSheetsClient();
+    const member = await getMember(sheets, userId);
+    if (!member) return res.status(404).json({ error: '找不到會員' });
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: SHEET_ID, range: `${MEMBER_SHEET}!D${member.rowIndex}`,
+      valueInputOption: 'RAW', resource: { values: [[birthday]] },
+    });
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── API：綁定邀請碼 ───────────────────────────────────────────────────────────
+app.post('/api/member/referral', express.json(), async (req, res) => {
+  const { userId, inviteCode } = req.body;
+  if (!userId || !inviteCode) return res.status(400).json({ error: 'Missing fields' });
+  try {
+    const sheets = getSheetsClient();
+    const result = await bindReferralCode(sheets, userId, inviteCode.toUpperCase().trim());
+    if (!result.ok) return res.status(400).json({ error: result.error });
+    res.json({ ok: true, message: `已成功綁定邀請碼！` });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── 會員中心 LIFF 頁面 ────────────────────────────────────────────────────────
+app.get('/member', (req, res) => {
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.send(`<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<title>會員中心 | Bijin</title>
+<script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,sans-serif;background:#fdf8f3;min-height:100vh;padding-bottom:40px}
+header{background:#c9a98a;color:#fff;padding:20px 16px 16px;text-align:center}
+.header-name{font-size:18px;font-weight:bold;margin-bottom:2px}
+.header-sub{font-size:12px;opacity:.85}
+.tier-badge{display:inline-block;padding:3px 14px;border-radius:20px;font-size:13px;font-weight:bold;margin-top:8px}
+.tier-一般{background:#f5ede0;color:#a08060}
+.tier-銀卡{background:#e8e8e8;color:#666}
+.tier-金卡{background:#fff3cd;color:#a07800}
+.tier-白金{background:#e8f0fe;color:#3949ab}
+.card{background:#fff;margin:12px;border-radius:14px;padding:16px;box-shadow:0 1px 6px rgba(0,0,0,.07)}
+.card-title{font-size:13px;font-weight:bold;color:#c9a98a;margin-bottom:12px;border-bottom:1px solid #f5ede0;padding-bottom:8px}
+.stat-row{display:flex;justify-content:space-between;align-items:center;padding:6px 0;font-size:14px;color:#444;border-bottom:1px solid #faf5ef}
+.stat-row:last-child{border-bottom:none}
+.stat-val{font-weight:bold;color:#333}
+.progress-wrap{margin-top:10px}
+.progress-label{font-size:12px;color:#aaa;margin-bottom:4px;display:flex;justify-content:space-between}
+.progress-bar{height:6px;background:#f0e8de;border-radius:4px;overflow:hidden}
+.progress-fill{height:100%;background:#c9a98a;border-radius:4px;transition:width .4s}
+.coupon-item{background:#fff8f0;border:1px dashed #e8c9a0;border-radius:10px;padding:10px 12px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center}
+.coupon-amount{font-size:20px;font-weight:bold;color:#c9a98a}
+.coupon-info{font-size:11px;color:#aaa;margin-top:2px}
+.coupon-code{font-family:monospace;font-size:11px;color:#bbb}
+.ref-code-box{background:#f5ede0;border-radius:10px;padding:14px;text-align:center}
+.ref-code{font-size:26px;font-weight:bold;letter-spacing:4px;color:#7a5c3e;margin:6px 0}
+.ref-copy-btn{background:#c9a98a;color:#fff;border:none;border-radius:8px;padding:8px 20px;font-size:13px;font-weight:bold;cursor:pointer;margin-top:6px}
+.input-row{display:flex;gap:8px;margin-top:10px}
+.input-row input{flex:1;border:1px solid #ddd;border-radius:8px;padding:9px 10px;font-size:14px;outline:none;text-transform:uppercase}
+.input-row input:focus{border-color:#c9a98a}
+.input-row button{background:#c9a98a;color:#fff;border:none;border-radius:8px;padding:9px 14px;font-size:13px;font-weight:bold;cursor:pointer;white-space:nowrap}
+.bday-row{display:flex;gap:8px;margin-top:10px;align-items:center}
+.bday-row input{flex:1;border:1px solid #ddd;border-radius:8px;padding:9px 10px;font-size:14px;outline:none}
+.bday-row input:focus{border-color:#c9a98a}
+.bday-row button{background:#c9a98a;color:#fff;border:none;border-radius:8px;padding:9px 14px;font-size:13px;font-weight:bold;cursor:pointer}
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#333;color:#fff;padding:10px 20px;border-radius:20px;font-size:13px;opacity:0;transition:opacity .3s;pointer-events:none;z-index:100;white-space:nowrap}
+.toast.show{opacity:1}
+.empty{text-align:center;color:#ccc;font-size:13px;padding:16px 0}
+</style>
+</head>
+<body>
+<div id="app" style="display:none">
+  <header>
+    <div class="header-name" id="hdr-name">載入中…</div>
+    <div class="header-sub" id="hdr-sub"></div>
+    <div id="tier-badge" class="tier-badge"></div>
+  </header>
+
+  <!-- 消費進度 -->
+  <div class="card">
+    <div class="card-title">年度消費進度</div>
+    <div class="stat-row"><span>今年累積消費</span><span class="stat-val" id="yearly-spend">—</span></div>
+    <div class="stat-row"><span>下一等級門檻</span><span class="stat-val" id="next-tier-threshold">—</span></div>
+    <div class="progress-wrap">
+      <div class="progress-label"><span id="cur-tier-label">—</span><span id="next-tier-label">—</span></div>
+      <div class="progress-bar"><div class="progress-fill" id="progress-fill" style="width:0%"></div></div>
+    </div>
+  </div>
+
+  <!-- 點數 -->
+  <div class="card">
+    <div class="card-title">點數</div>
+    <div class="stat-row"><span>可用點數</span><span class="stat-val" id="total-pts">—</span></div>
+    <div class="stat-row"><span>折抵方式</span><span class="stat-val">1點 = NT$1</span></div>
+    <div id="pts-list" style="margin-top:8px;font-size:12px;color:#aaa"></div>
+  </div>
+
+  <!-- 優惠券 -->
+  <div class="card">
+    <div class="card-title">優惠券</div>
+    <div id="coupon-list"><div class="empty">目前沒有可用優惠券</div></div>
+  </div>
+
+  <!-- 生日設定 -->
+  <div class="card">
+    <div class="card-title">生日設定</div>
+    <div style="font-size:13px;color:#888">設定後每年生日當月自動發送禮券</div>
+    <div class="bday-row">
+      <input id="bday-input" type="text" placeholder="MM-DD（例：03-15）" maxlength="5">
+      <button onclick="saveBirthday()">儲存</button>
+    </div>
+  </div>
+
+  <!-- 邀請碼 -->
+  <div class="card">
+    <div class="card-title">我的邀請碼</div>
+    <div class="ref-code-box">
+      <div style="font-size:12px;color:#aaa">分享給好友，好友首單完成後雙方各獲 NT$50 × 2 張</div>
+      <div class="ref-code" id="my-ref-code">——</div>
+      <button class="ref-copy-btn" onclick="copyRefCode()">複製邀請碼</button>
+    </div>
+    <div style="margin-top:14px;font-size:13px;color:#888">填入好友邀請碼（入會 1 個月內可填）</div>
+    <div class="input-row" id="referral-input-row">
+      <input id="ref-input" type="text" placeholder="輸入邀請碼" maxlength="6">
+      <button onclick="bindReferral()">確認</button>
+    </div>
+    <div id="ref-bound-msg" style="display:none;font-size:13px;color:#c9a98a;margin-top:8px"></div>
+  </div>
+</div>
+
+<div id="loading" style="text-align:center;padding:80px 20px;color:#ccc;font-size:14px">載入中…</div>
+<div id="toast" class="toast"></div>
+
+<script>
+let userId = '', memberData = null;
+
+async function init() {
+  await liff.init({ liffId: '${LIFF_ID}' });
+  if (!liff.isLoggedIn()) { liff.login(); return; }
+  const profile = await liff.getProfile();
+  userId = profile.userId;
+
+  const r = await fetch('/api/member?userId=' + userId);
+  const d = await r.json();
+  if (!d.ok) { document.getElementById('loading').textContent = '載入失敗'; return; }
+  memberData = d;
+  render(d);
+  document.getElementById('loading').style.display = 'none';
+  document.getElementById('app').style.display = 'block';
+}
+
+function render(d) {
+  const m = d.member;
+  document.getElementById('hdr-name').textContent = m.displayName || '會員';
+  document.getElementById('hdr-sub').textContent = '加入日期：' + m.joinDate;
+  const badge = document.getElementById('tier-badge');
+  badge.textContent = m.tier;
+  badge.className = 'tier-badge tier-' + m.tier;
+
+  // 消費進度
+  const tiers = [{name:'一般',min:0},{name:'銀卡',min:3000},{name:'金卡',min:6000},{name:'白金',min:12000}];
+  const curIdx = tiers.findIndex(t => t.name === m.tier);
+  const nextTier = tiers[curIdx + 1];
+  document.getElementById('yearly-spend').textContent = 'NT$' + (m.yearlySpend||0).toLocaleString();
+  if (nextTier) {
+    const curMin = tiers[curIdx].min;
+    const pct = Math.min(100, Math.round(((m.yearlySpend - curMin) / (nextTier.min - curMin)) * 100));
+    document.getElementById('next-tier-threshold').textContent = 'NT$' + nextTier.min.toLocaleString() + '（' + nextTier.name + '）';
+    document.getElementById('cur-tier-label').textContent = m.tier;
+    document.getElementById('next-tier-label').textContent = nextTier.name;
+    document.getElementById('progress-fill').style.width = pct + '%';
+  } else {
+    document.getElementById('next-tier-threshold').textContent = '已達最高等級 🏆';
+    document.getElementById('progress-fill').style.width = '100%';
+  }
+
+  // 點數
+  const totalPts = d.pointsRows.reduce((s, p) => s + p.points, 0);
+  document.getElementById('total-pts').textContent = totalPts + ' 點';
+  if (d.pointsRows.length) {
+    document.getElementById('pts-list').innerHTML = d.pointsRows
+      .map(p => \`<div style="display:flex;justify-content:space-between;padding:3px 0"><span>+\${p.points}點（\${p.orderId.substring(0,8)}…）</span><span>到期：\${p.expiryDate}</span></div>\`)
+      .join('');
+  }
+
+  // 優惠券
+  const cl = document.getElementById('coupon-list');
+  if (d.coupons.length) {
+    cl.innerHTML = d.coupons.map(c => \`
+      <div class="coupon-item">
+        <div>
+          <div class="coupon-amount">NT$\${c.amount}</div>
+          <div class="coupon-info">\${c.type}｜到期：\${c.expiryDate}</div>
+          <div class="coupon-code">\${c.code}</div>
+        </div>
+      </div>\`).join('');
+  } else {
+    cl.innerHTML = '<div class="empty">目前沒有可用優惠券</div>';
+  }
+
+  // 生日
+  if (m.birthday) document.getElementById('bday-input').value = m.birthday;
+
+  // 邀請碼
+  document.getElementById('my-ref-code').textContent = m.referralCode || '——';
+  if (m.referredByCode) {
+    document.getElementById('referral-input-row').style.display = 'none';
+    document.getElementById('ref-bound-msg').style.display = 'block';
+    document.getElementById('ref-bound-msg').textContent = '✅ 已綁定邀請碼：' + m.referredByCode;
+  }
+}
+
+async function saveBirthday() {
+  const val = document.getElementById('bday-input').value.trim();
+  if (!/^\\d{2}-\\d{2}$/.test(val)) { showToast('格式應為 MM-DD，例：03-15'); return; }
+  const r = await fetch('/api/member/birthday', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ userId, birthday: val }) });
+  const d = await r.json();
+  showToast(d.ok ? '✅ 生日已儲存' : '❌ ' + d.error);
+}
+
+async function bindReferral() {
+  const code = document.getElementById('ref-input').value.trim().toUpperCase();
+  if (!code) { showToast('請輸入邀請碼'); return; }
+  const r = await fetch('/api/member/referral', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ userId, inviteCode: code }) });
+  const d = await r.json();
+  if (d.ok) {
+    showToast('✅ ' + d.message);
+    document.getElementById('referral-input-row').style.display = 'none';
+    document.getElementById('ref-bound-msg').style.display = 'block';
+    document.getElementById('ref-bound-msg').textContent = '✅ 已綁定邀請碼：' + code;
+  } else showToast('❌ ' + d.error);
+}
+
+function copyRefCode() {
+  const code = document.getElementById('my-ref-code').textContent;
+  navigator.clipboard.writeText(code).then(() => showToast('✅ 已複製邀請碼：' + code)).catch(() => showToast('請手動複製：' + code));
+}
+
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2500);
+}
+
+init().catch(e => { document.getElementById('loading').textContent = '載入失敗：' + e.message; });
+</script>
+</body>
+</html>`);
+});
+
+// ── 管理員 API：手動觸發訂單完成點數（補發）────────────────────────────────────
+app.post('/api/admin/complete-order-points', express.json(), async (req, res) => {
+  const { key, orderId } = req.body;
+  if (key !== ADMIN_KEY) return res.status(401).json({ error: 'Unauthorized' });
+  try {
+    const sheets = getSheetsClient();
+    const resp = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${ORDER_SHEET}!A:K` });
+    const rows = resp.data.values || [];
+    const row = rows.find(r => r[0] === orderId);
+    if (!row) return res.status(404).json({ error: '找不到訂單' });
+    const userId = row[2], displayName = row[5], totalTwd = parseFloat(row[4]) || 0;
+    const result = await processOrderCompletion(sheets, userId, displayName, orderId, totalTwd);
+    res.json({ ok: true, ...result });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // ── 本地開發啟動 ──────────────────────────────────────────────────────────────
