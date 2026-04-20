@@ -1888,11 +1888,10 @@ async function handleEvent(event, client) {
 
   bgTasks.push(
     client.getProfile(userId)
-      .then((profile) =>
-        logQueryToSheet(userId, profile.displayName, productId, productName, jpy, weightInfo, imageUrl, suggested, userText)
-      )
-      .catch(() =>
-        logQueryToSheet(userId, userId, productId, productName, jpy, weightInfo, imageUrl, suggested, userText)
+      .then((profile) => profile.displayName)
+      .catch(() => userId)
+      .then((displayName) =>
+        logQueryToSheet(userId, displayName, productId, productName, jpy, weightInfo, imageUrl, suggested, userText)
       )
       .catch((e) => console.error('[sheets log error]', e.message))
   );
