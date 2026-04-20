@@ -3361,7 +3361,7 @@ header{background:#c9a98a;color:#fff;padding:20px 16px 16px;text-align:center}
     <input id="reg-name" type="text" placeholder="請輸入真實姓名" style="width:100%;border:1px solid #ddd;border-radius:8px;padding:10px;font-size:14px;margin-bottom:12px;outline:none">
     <label style="display:block;font-size:12px;color:#888;margin-bottom:4px">手機號碼 * <span style="font-size:11px;color:#bbb">（每支手機只能綁一個帳號）</span></label>
     <input id="reg-phone" type="tel" placeholder="09xxxxxxxx" style="width:100%;border:1px solid #ddd;border-radius:8px;padding:10px;font-size:14px;margin-bottom:12px;outline:none">
-    <label style="display:block;font-size:12px;color:#888;margin-bottom:4px">生日 * <span style="font-size:11px;color:#bbb">（用於生日禮發放）</span></label>
+    <label style="display:block;font-size:12px;color:#888;margin-bottom:4px">生日 * <span style="font-size:11px;color:#c97a7a">（登錄後無法修改，請確認正確）</span></label>
     <div style="display:flex;gap:8px;margin-bottom:12px">
       <select id="reg-bday-m" style="flex:1;border:1px solid #ddd;border-radius:8px;padding:10px;font-size:14px;outline:none;background:#fff;color:#333">
         <option value="">月份</option>
@@ -3436,14 +3436,12 @@ header{background:#c9a98a;color:#fff;padding:20px 16px 16px;text-align:center}
     <div id="coupon-list"><div class="empty">目前沒有可用優惠券</div></div>
   </div>
 
-  <!-- 生日設定 -->
+  <!-- 生日（唯讀） -->
   <div class="card">
-    <div class="card-title">生日設定</div>
-    <div style="font-size:13px;color:#888">設定後每年生日當月自動發送禮券</div>
-    <div class="bday-row">
-      <input id="bday-input" type="text" placeholder="MM-DD（例：03-15）" maxlength="5">
-      <button onclick="saveBirthday()">儲存</button>
-    </div>
+    <div class="card-title">生日</div>
+    <div style="font-size:13px;color:#888;margin-bottom:8px">每年生日當月自動發送禮券</div>
+    <div id="bday-input" style="font-size:20px;font-weight:bold;color:#c9a98a;letter-spacing:2px">——</div>
+    <div style="font-size:11px;color:#bbb;margin-top:6px">生日登錄後無法修改，如有疑問請聯繫客服</div>
   </div>
 
   <!-- 邀請碼 -->
@@ -3592,8 +3590,8 @@ function render(d) {
     cl.innerHTML = '<div class="empty">目前沒有可用優惠券</div>';
   }
 
-  // 生日
-  if (m.birthday) document.getElementById('bday-input').value = m.birthday;
+  // 生日（唯讀顯示）
+  document.getElementById('bday-input').textContent = m.birthday || '——';
 
   // 邀請碼
   document.getElementById('my-ref-code').textContent = m.referralCode || '——';
