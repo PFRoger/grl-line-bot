@@ -483,7 +483,7 @@ async function logQueryToSheet(userId, displayName, productId, productName, jpy,
 // ── 購物車 Sheet 操作 ─────────────────────────────────────────────────────────
 // 欄位：A=userId B=productId C=productName D=color(JP) E=size
 //        F=jpy G=suggestedPrice H=productUrl I=addedAt J=status K=imageUrl
-const CART_HEADERS = ['userId','displayName','productId','productName','color','size','jpy','suggestedPrice','productUrl','addedAt','status','imageUrl'];
+const CART_HEADERS = ['userId','productId','productName','color','size','jpy','suggestedPrice','productUrl','addedAt','status','imageUrl','displayName'];
 
 async function ensureCartSheet(sheets) {
   try {
@@ -514,7 +514,7 @@ async function ensureOrderSheet(sheets) {
       spreadsheetId: SHEET_ID,
       range: `${ORDER_SHEET}!A1`,
       valueInputOption: 'RAW',
-      resource: { values: [['訂單ID','下單時間','userId','LINE顯示名稱','商品明細','總金額(NT$)','買家姓名','手機','聯繫方式','聯繫帳號','備註','狀態','使用點數','優惠券','折扣金額(NT$)','實付金額(NT$)']] },
+      resource: { values: [['訂單ID','下單時間','userId','商品明細','總金額(NT$)','買家姓名','手機','聯繫方式','聯繫帳號','備註','狀態','使用點數','優惠券','折扣金額(NT$)','實付金額(NT$)','LINE顯示名稱']] },
     });
   }
 }
@@ -527,7 +527,7 @@ async function addToCartSheet(userId, displayName, productId, productName, color
     spreadsheetId: SHEET_ID,
     range: `${CART_SHEET}!A:L`,
     valueInputOption: 'RAW',
-    resource: { values: [[userId, displayName || '', productId, productName, colorJp, size, jpy, suggestedPrice, productUrl, addedAt, 'active', imageUrl]] },
+    resource: { values: [[userId, productId, productName, colorJp, size, jpy, suggestedPrice, productUrl, addedAt, 'active', imageUrl, displayName || '']] },
   });
 }
 
@@ -546,22 +546,22 @@ async function getCartItems(userId) {
   rows.forEach((row, idx) => {
     if (idx === 0) return; // header
     if (row[0] !== userId) return;
-    if (row[10] !== 'active') return;
-    const addedAt = new Date(row[9]).getTime();
+    if (row[9] !== 'active') return;
+    const addedAt = new Date(row[8]).getTime();
     if (now - addedAt > EXPIRE_MS) return; // expired
-    const colorJp = row[4] || '';
+    const colorJp = row[3] || '';
     items.push({
       rowIndex: idx + 1, // 1-based sheet row
-      productId: row[2] || '',
-      productName: row[3] || '',
+      productId: row[1] || '',
+      productName: row[2] || '',
       color: colorJp,
       colorDisplay: translateColorWithJp(colorJp),
-      size: row[5] || '',
-      jpy: parseInt(row[6]) || 0,
-      suggestedPrice: parseInt(row[7]) || 0,
-      productUrl: row[8] || '',
-      addedAt: row[9] || '',
-      imageUrl: row[11] || '',
+      size: row[4] || '',
+      jpy: parseInt(row[5]) || 0,
+      suggestedPrice: parseInt(row[6]) || 0,
+      productUrl: row[7] || '',
+      addedAt: row[8] || '',
+      imageUrl: row[10] || '',
     });
   });
   return items;
@@ -569,10 +569,10 @@ async function getCartItems(userId) {
 
 async function clearCartItem(rowIndex) {
   const sheets = getSheetsClient();
-  // Mark as deleted by updating status column (K = index 10, col 11)
+  // Mark as deleted by updating status column (J = index 9, col 10)
   await sheets.spreadsheets.values.update({
     spreadsheetId: SHEET_ID,
-    range: `${CART_SHEET}!K${rowIndex}`,
+    range: `${CART_SHEET}!J${rowIndex}`,
     valueInputOption: 'RAW',
     resource: { values: [['deleted']] },
   });
@@ -583,7 +583,7 @@ async function markCartItemsOrdered(userId, rowIndexes) {
   await Promise.all(rowIndexes.map((idx) =>
     sheets.spreadsheets.values.update({
       spreadsheetId: SHEET_ID,
-      range: `${CART_SHEET}!K${idx}`,
+      range: `${CART_SHEET}!J${idx}`,
       valueInputOption: 'RAW',
       resource: { values: [['ordered']] },
     })
@@ -619,11 +619,12 @@ async function submitOrder(userId, displayName, cartItems, buyerInfo, discountIn
     range: `${ORDER_SHEET}!A:P`,
     valueInputOption: 'RAW',
     resource: { values: [[
-      orderId, orderTime, userId, displayName || '',
+      orderId, orderTime, userId,
       itemsSummary, totalTwd,
       buyerInfo.name, buyerInfo.phone, buyerInfo.contactMethod || '',
       buyerInfo.contactAccount || '', buyerInfo.note || '', '待確認',
       pointsUsed || 0, couponCode || '', discountTotal, finalAmount,
+      displayName || '',
     ]] },
   });
   await markCartItemsOrdered(userId, cartItems.map(i => i.rowIndex));
@@ -2362,19 +2363,19 @@ app.get('/api/admin/orders', async (req, res) => {
       orderId:         row[0] || '',
       orderTime:       row[1] || '',
       userId:          row[2] || '',
-      lineDisplayName: row[3] || '',
-      items:           row[4] || '',
-      total:           row[5] || '',
-      buyerName:       row[6] || '',
-      phone:           row[7] || '',
-      contact:         row[8] || '',
-      contactId:       row[9] || '',
-      note:            row[10] || '',
-      status:          row[11] || '待確認',
-      pointsUsed:      parseInt(row[12]) || 0,
-      couponCode:      row[13] || '',
-      discountTotal:   parseInt(row[14]) || 0,
-      finalAmount:     parseInt(row[15]) || parseInt(row[5]) || 0,
+      items:           row[3] || '',
+      total:           row[4] || '',
+      buyerName:       row[5] || '',
+      phone:           row[6] || '',
+      contact:         row[7] || '',
+      contactId:       row[8] || '',
+      note:            row[9] || '',
+      status:          row[10] || '待確認',
+      pointsUsed:      parseInt(row[11]) || 0,
+      couponCode:      row[12] || '',
+      discountTotal:   parseInt(row[13]) || 0,
+      finalAmount:     parseInt(row[14]) || parseInt(row[4]) || 0,
+      lineDisplayName: row[15] || '',
     })).reverse();
     res.json({ orders });
   } catch (err) {
@@ -2391,17 +2392,17 @@ app.post('/api/admin/order-status', express.json(), async (req, res) => {
     const sheets = getSheetsClient();
     await sheets.spreadsheets.values.update({
       spreadsheetId: SHEET_ID,
-      range: `${ORDER_SHEET}!L${rowIndex}`,
+      range: `${ORDER_SHEET}!K${rowIndex}`,
       valueInputOption: 'RAW',
       resource: { values: [[status]] },
     });
     // 訂單轉已完成時，觸發點數與邀請獎勵
     if (status === '已完成') {
-      const orderResp = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${ORDER_SHEET}!A${rowIndex}:L${rowIndex}` });
+      const orderResp = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${ORDER_SHEET}!A${rowIndex}:P${rowIndex}` });
       const orderRow = (orderResp.data.values || [])[0] || [];
       const buyerUserId = orderRow[2] || '';
-      const displayName = orderRow[3] || '';
-      const totalTwd = parseFloat(orderRow[5]) || 0;
+      const displayName = orderRow[15] || '';
+      const totalTwd = parseFloat(orderRow[4]) || 0;
       if (buyerUserId) {
         processOrderCompletion(sheets, buyerUserId, displayName, orderRow[0], totalTwd)
           .catch(e => console.error('[processOrderCompletion error]', e.message));
@@ -2723,16 +2724,16 @@ app.get('/admin/notify-buyer', async (req, res) => {
   try {
     // 從訂單 sheet 找 orderId
     const sheets = getSheetsClient();
-    const resp = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${ORDER_SHEET}!A:L` });
+    const resp = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${ORDER_SHEET}!A:P` });
     const rows = resp.data.values || [];
     const orderRow = rows.find((r) => r[0] === orderId);
     if (!orderRow) return res.status(404).json({ error: `找不到訂單 ${orderId}` });
 
     const orderRowIndex = rows.indexOf(orderRow) + 1; // 1-indexed (includes header)
     const buyerUserId  = orderRow[2] || '';
-    const buyerName    = orderRow[6] || '';
-    const itemsSummary = orderRow[4] || '';
-    const totalTwd     = orderRow[5] || '';
+    const buyerName    = orderRow[5] || '';
+    const itemsSummary = orderRow[3] || '';
+    const totalTwd     = orderRow[4] || '';
 
     if (!buyerUserId) return res.status(400).json({ error: '訂單缺少 userId' });
 
@@ -2803,14 +2804,14 @@ app.post('/api/admin/notify-progress', express.json(), async (req, res) => {
 
   try {
     const sheets = getSheetsClient();
-    const resp = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${ORDER_SHEET}!A:L` });
+    const resp = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${ORDER_SHEET}!A:P` });
     const rows = resp.data.values || [];
     const orderRow = rows.find(r => r[0] === orderId);
     if (!orderRow) return res.status(404).json({ error: `找不到訂單 ${orderId}` });
 
     const buyerUserId = orderRow[2] || '';
-    const buyerName   = orderRow[6] || '';
-    const itemsSummary = orderRow[4] || '';
+    const buyerName   = orderRow[5] || '';
+    const itemsSummary = orderRow[3] || '';
     if (!buyerUserId) return res.status(400).json({ error: '訂單缺少 userId' });
 
     // 組合進度文字
@@ -2835,7 +2836,7 @@ app.post('/api/admin/notify-progress', express.json(), async (req, res) => {
     // 更新訂單狀態
     await sheets.spreadsheets.values.update({
       spreadsheetId: SHEET_ID,
-      range: `${ORDER_SHEET}!L${rowIndex}`,
+      range: `${ORDER_SHEET}!K${rowIndex}`,
       valueInputOption: 'RAW',
       resource: { values: [[status]] },
     });
@@ -3647,11 +3648,11 @@ app.post('/api/admin/complete-order-points', express.json(), async (req, res) =>
   if (key !== ADMIN_KEY) return res.status(401).json({ error: 'Unauthorized' });
   try {
     const sheets = getSheetsClient();
-    const resp = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${ORDER_SHEET}!A:L` });
+    const resp = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${ORDER_SHEET}!A:P` });
     const rows = resp.data.values || [];
     const row = rows.find(r => r[0] === orderId);
     if (!row) return res.status(404).json({ error: '找不到訂單' });
-    const userId = row[2], displayName = row[3], totalTwd = parseFloat(row[5]) || 0;
+    const userId = row[2], displayName = row[15] || '', totalTwd = parseFloat(row[4]) || 0;
     const result = await processOrderCompletion(sheets, userId, displayName, orderId, totalTwd);
     res.json({ ok: true, ...result });
   } catch (e) { res.status(500).json({ error: e.message }); }
