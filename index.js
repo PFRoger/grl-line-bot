@@ -1969,6 +1969,23 @@ app.get('/admin/setup-rich-menu', async (req, res) => {
   }
 });
 
+// ── 強制更新特定用戶的 Rich Menu ─────────────────────────────────────────────
+app.get('/admin/link-rich-menu', async (req, res) => {
+  const { userId } = req.query;
+  if (!userId) return res.status(400).json({ error: 'userId required' });
+  const token = process.env.LINE_CHANNEL_ACCESS_TOKEN;
+  const headers = { Authorization: `Bearer ${token}` };
+  try {
+    // 取得目前預設 Rich Menu ID
+    const defaultRes = await axios.get('https://api.line.me/v2/bot/user/all/richmenu', { headers });
+    const richMenuId = defaultRes.data.richMenuId;
+    if (!richMenuId) return res.status(404).json({ error: '找不到預設 Rich Menu' });
+    // 強制綁定給指定用戶
+    await axios.post(`https://api.line.me/v2/bot/user/${userId}/richmenu/${richMenuId}`, {}, { headers });
+    res.json({ ok: true, userId, richMenuId });
+  } catch (e) { res.status(500).json({ error: e.message, detail: e.response?.data }); }
+});
+
 // ── 除錯：查看目前 Rich Menu 定義 ────────────────────────────────────────────
 app.get('/admin/check-rich-menu', async (req, res) => {
   const token = process.env.LINE_CHANNEL_ACCESS_TOKEN;
