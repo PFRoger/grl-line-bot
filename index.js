@@ -2573,12 +2573,17 @@ function statusBadge(s) {
 let allOrders = [];
 
 async function loadOrders() {
+  document.getElementById('order-count').textContent = '載入中…';
   try {
     const r = await fetch('/api/admin/orders?key=' + KEY);
     const d = await r.json();
+    if (!r.ok) throw new Error(d.error || 'HTTP ' + r.status);
     allOrders = d.orders || [];
     renderOrders();
-  } catch(e) { showToast('載入失敗：' + e.message); }
+  } catch(e) {
+    document.getElementById('order-count').textContent = '載入失敗，請按重新整理';
+    showToast('載入失敗：' + e.message);
+  }
 }
 
 const CLOSED_STATUSES = new Set(['已完成','已取消','退單']);
