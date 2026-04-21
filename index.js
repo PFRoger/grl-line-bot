@@ -1091,7 +1091,7 @@ input:focus,select:focus,textarea:focus{border-color:#c9a98a}
       <div class="disc-box">
         <div class="disc-label">🪙 點數折抵</div>
         <div style="font-size:12px;color:#aaa;margin-bottom:8px">可用 <strong id="avail-pts" style="color:#c9a98a">0</strong> 點（1點折抵 NT$1）</div>
-        <div class="pts-row">使用 <input type="number" id="pts-input" value="0" min="0" max="0" step="1" oninput="onPtsChange()"> 點</div>
+        <div class="pts-row">使用 <input type="number" id="pts-input" placeholder="0" min="0" max="0" step="1" oninput="onPtsChange()"> 點 <button onclick="useAllPts()" style="margin-left:8px;padding:4px 10px;background:#c9a98a;color:#fff;border:none;border-radius:6px;font-size:12px;cursor:pointer">全部折抵</button></div>
       </div>
       <div class="disc-box" style="margin-top:8px">
         <div class="disc-label">🎟 優惠券</div>
@@ -1448,6 +1448,13 @@ function onPtsChange() {
   let val = parseInt(input.value) || 0;
   val = Math.max(0, Math.min(val, memberPoints, subtotal));
   input.value = val;
+  updateTotals();
+}
+
+function useAllPts() {
+  const input = document.getElementById('pts-input');
+  const max = Math.min(memberPoints, subtotal);
+  input.value = max > 0 ? max : '';
   updateTotals();
 }
 
