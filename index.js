@@ -987,7 +987,7 @@ async function handlePostback(event, client) {
     const colorDisplay = translateColorWithJp(colorJp);
     await client.replyMessage(replyToken, {
       type: 'text',
-      text: `✅ 已加入購物車${isPreorder ? '（📅 預購商品）' : ''}\n商品：${productName || productId}\n\n顏色：${colorDisplay}\n尺寸：${size}${isPreorder ? '【預購】' : ''}\n\n售價：NT$${suggested}\n\n請按下方主選單「購物車」查看內容\n════════════\n購物車每 48 小時自動清空`,
+      text: `✅ 已加入購物車\n商品：${isPreorder ? '【預購】' : ''}${productName || productId}\n\n顏色：${colorDisplay}\n尺寸：${size}\n\n售價：NT$${suggested}\n\n請按下方主選單「購物車」查看內容\n════════════\n購物車每 48 小時自動清空`,
     });
 
   } else if (action === 'view_cart') {
@@ -2215,7 +2215,7 @@ app.post('/api/order', express.json(), async (req, res) => {
       _iMap[k].qty++;
     }
     const _iList = Object.values(_iMap);
-    const itemsText = _iList.map(i => `・${(i.productId||'').toUpperCase()} ${translateColorWithJp(i.color)} ${i.size} NT$${i.suggestedPrice}${i.qty > 1 ? ` ×${i.qty}` : ''}${i.isPreorder ? ' 【預購】' : ''}`).join('\n')
+    const itemsText = _iList.map(i => `${i.isPreorder ? '【預購】' : '・'}${(i.productId||'').toUpperCase()} ${translateColorWithJp(i.color)} ${i.size} NT$${i.suggestedPrice}${i.qty > 1 ? ` ×${i.qty}` : ''}`).join('\n')
       + `\n共 ${cartItems.length} 件`;
 
     // 折扣文字（賣家用）
@@ -2374,10 +2374,10 @@ app.get('/api/admin/orders', async (req, res) => {
   if (req.query.key !== ADMIN_KEY) return res.status(401).json({ error: 'Unauthorized' });
   try {
     const sheets = getSheetsClient();
-    const resp = await sheets.spreadsheets.values.get({
-      spreadsheetId: SHEET_ID,
-      range: `${ORDER_SHEET}!A:P`,
-    });
+    const resp = await Promise.race([
+      sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${ORDER_SHEET}!A:P` }),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('Sheets API timeout')), 8000)),
+    ]);
     const rows = (resp.data.values || []).slice(1);
     const orders = rows.map((row, i) => ({
       rowIndex:        i + 2,
