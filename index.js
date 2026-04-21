@@ -3089,41 +3089,59 @@ async function processOrderCompletion(sheets, userId, displayName, orderId, orde
   return { pts, newTier, newPoints, tierChanged };
 }
 
-// ── 退單：撤銷點數 ────────────────────────────────────────────────────────────
+// ── 退單：撤銷點數 + 回扣年度消費 + 重新計算等級 ─────────────────────────────
 async function processOrderReturn(sheets, orderId) {
+  // 取訂單資料（找實付金額）
+  const oResp = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${ORDER_SHEET}!A:P` });
+  const oRows = oResp.data.values || [];
+  const oRow = oRows.find((r, i) => i > 0 && r[0] === orderId);
+  const returnUserId = oRow ? (oRow[2] || '') : '';
+  const returnAmount = oRow ? (parseFloat(oRow[14]) || parseFloat(oRow[4]) || 0) : 0; // 實付金額(O) 或 總金額(E)
+
   // 找點數紀錄中此訂單的點數
   const pResp = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${POINTS_SHEET}!A:H` });
   const pRows = pResp.data.values || [];
   const pIdx = pRows.findIndex((r, i) => i > 0 && r[4] === orderId && r[7] === 'active');
-  if (pIdx === -1) return { ptsDeducted: 0 }; // 此訂單無有效點數
-
-  const pRow = pRows[pIdx];
-  const userId = pRow[2] || '';
-  const pts = parseInt(pRow[5]) || 0;
+  const pts = pIdx > 0 ? (parseInt(pRows[pIdx][5]) || 0) : 0;
+  const pointUserId = pIdx > 0 ? (pRows[pIdx][2] || '') : '';
+  const userId = returnUserId || pointUserId;
 
   // 標記點數已撤銷
-  await sheets.spreadsheets.values.update({
-    spreadsheetId: SHEET_ID, range: `${POINTS_SHEET}!H${pIdx + 1}`,
-    valueInputOption: 'RAW', resource: { values: [['cancelled']] },
-  });
+  if (pIdx > 0) {
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: SHEET_ID, range: `${POINTS_SHEET}!H${pIdx + 1}`,
+      valueInputOption: 'RAW', resource: { values: [['cancelled']] },
+    });
+  }
 
-  // 扣除會員點數
-  if (userId && pts > 0) {
+  // 更新會員：扣點 + 回扣年度消費 + 重算等級
+  if (userId) {
     const member = await getMember(sheets, userId);
     if (member) {
       const newPoints = Math.max(0, (member.points || 0) - pts);
+      const newSpend  = Math.max(0, (member.yearlySpend || 0) - returnAmount);
+      const newTier   = calcTier(newSpend);
+      const tierChanged = newTier !== member.tier;
       await sheets.spreadsheets.values.update({
-        spreadsheetId: SHEET_ID, range: `${MEMBER_SHEET}!K${member.rowIndex}:L${member.rowIndex}`,
-        valueInputOption: 'RAW', resource: { values: [[newPoints, todayStr()]] },
+        spreadsheetId: SHEET_ID,
+        range: `${MEMBER_SHEET}!I${member.rowIndex}:L${member.rowIndex}`,
+        valueInputOption: 'RAW',
+        resource: { values: [[newSpend, newTier, newPoints, todayStr()]] },
       });
       // 通知買家
       try {
         const client = new line.Client({ channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN });
-        await client.pushMessage(userId, { type: 'text', text: `📦 訂單 ${orderId} 已辦理退單。\n\n本次退單已扣除 ${pts} 點。\n目前剩餘點數：${newPoints} 點\n\n如有疑問請聯繫客服 🌸` });
+        let msg = `📦 訂單 ${orderId} 已辦理退單。\n`;
+        if (pts > 0) msg += `\n💎 已扣除本次獲得的 ${pts} 點`;
+        msg += `\n📊 目前剩餘點數：${newPoints} 點`;
+        msg += `\n🏅 會員等級：${newTier}`;
+        if (tierChanged) msg += `\n（等級調整為 ${newTier}）`;
+        msg += `\n\n如有疑問請聯繫客服 🌸`;
+        await client.pushMessage(userId, { type: 'text', text: msg });
       } catch(e) { console.error('[return notify error]', e.message); }
     }
   }
-  return { ptsDeducted: pts };
+  return { ptsDeducted: pts, amountDeducted: returnAmount };
 }
 
 // ── 邀請獎勵處理（訂單完成時呼叫）────────────────────────────────────────────
