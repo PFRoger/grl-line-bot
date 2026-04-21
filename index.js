@@ -483,7 +483,7 @@ async function logQueryToSheet(userId, displayName, productId, productName, jpy,
 // ── 購物車 Sheet 操作 ─────────────────────────────────────────────────────────
 // 欄位：A=userId B=productId C=productName D=color(JP) E=size
 //        F=jpy G=suggestedPrice H=productUrl I=addedAt J=status K=imageUrl
-const CART_HEADERS = ['userId','productId','productName','color','size','jpy','suggestedPrice','productUrl','addedAt','status','imageUrl','displayName'];
+const CART_HEADERS = ['userId','productId','productName','color','size','jpy','suggestedPrice','productUrl','addedAt','status','imageUrl','displayName','isPreorder'];
 
 async function ensureCartSheet(sheets) {
   try {
@@ -519,15 +519,15 @@ async function ensureOrderSheet(sheets) {
   }
 }
 
-async function addToCartSheet(userId, displayName, productId, productName, colorJp, size, jpy, suggestedPrice, productUrl, imageUrl = '') {
+async function addToCartSheet(userId, displayName, productId, productName, colorJp, size, jpy, suggestedPrice, productUrl, imageUrl = '', isPreorder = false) {
   const sheets = getSheetsClient();
   await ensureCartSheet(sheets);
   const addedAt = new Date().toISOString();
   await sheets.spreadsheets.values.append({
     spreadsheetId: SHEET_ID,
-    range: `${CART_SHEET}!A:L`,
+    range: `${CART_SHEET}!A:M`,
     valueInputOption: 'RAW',
-    resource: { values: [[userId, productId, productName, colorJp, size, jpy, suggestedPrice, productUrl, addedAt, 'active', imageUrl, displayName || '']] },
+    resource: { values: [[userId, productId, productName, colorJp, size, jpy, suggestedPrice, productUrl, addedAt, 'active', imageUrl, displayName || '', isPreorder ? '1' : '']] },
   });
 }
 
@@ -535,7 +535,7 @@ async function getCartItems(userId) {
   const sheets = getSheetsClient();
   let resp;
   try {
-    resp = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${CART_SHEET}!A:L` });
+    resp = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${CART_SHEET}!A:M` });
   } catch {
     return []; // 工作表尚未建立，視為空購物車
   }
@@ -562,6 +562,7 @@ async function getCartItems(userId) {
       productUrl: row[7] || '',
       addedAt: row[8] || '',
       imageUrl: row[10] || '',
+      isPreorder: row[12] === '1',
     });
   });
   return items;
@@ -968,6 +969,7 @@ async function handlePostback(event, client) {
     const suggested    = parseInt(params.get('p')) || 0;
     const productUrl   = params.get('url') || `https://www.grail.bz/item/${productId}/`;
     const imgUrl       = params.get('img') || '';
+    const isPreorder   = params.get('pre') === '1';
 
     // 從查詢紀錄找商品名稱
     let productName = productId;
@@ -981,7 +983,7 @@ async function handlePostback(event, client) {
 
     let lineDisplayName = '';
     try { const p = await client.getProfile(userId); lineDisplayName = p.displayName || ''; } catch(e) {}
-    await addToCartSheet(userId, lineDisplayName, productId, productName, colorJp, size, jpy, suggested, productUrl, imgUrl);
+    await addToCartSheet(userId, lineDisplayName, productId, productName, colorJp, size, jpy, suggested, productUrl, imgUrl, isPreorder);
     const colorDisplay = translateColorWithJp(colorJp);
     await client.replyMessage(replyToken, {
       type: 'text',
@@ -1586,7 +1588,7 @@ function buildAddToCartFlex(stockLines, productId, jpy, suggested, productUrl, i
       const btnLabel = Array.from(`🛒 加入購物車｜${item.size} ${shortStatus}`).slice(0, 20).join('');
       const displayText = `加入購物車：${item.colorZh || colorJp} ${item.size}`;
       const imgUrl = colorImages[colorJp] || imageUrl || '';
-      const data = `action=add_to_cart&id=${productId}&c=${encodeURIComponent(colorJp)}&s=${encodeURIComponent(item.size)}&jpy=${jpy}&p=${suggested}&url=${encodeURIComponent(productUrl)}&img=${encodeURIComponent(imgUrl)}`;
+      const data = `action=add_to_cart&id=${productId}&c=${encodeURIComponent(colorJp)}&s=${encodeURIComponent(item.size)}&jpy=${jpy}&p=${suggested}&url=${encodeURIComponent(productUrl)}&img=${encodeURIComponent(imgUrl)}${item.isPreorder ? '&pre=1' : ''}`;
       const btnColor = item.inStock ? '#b8895a' : item.isPreorder ? '#7a8fb5' : '#c4956a';
       return {
         type: 'button',
@@ -2142,10 +2144,10 @@ app.delete('/api/cart/item', express.json(), async (req, res) => {
 });
 
 app.post('/api/cart/add', express.json(), async (req, res) => {
-  const { userId, displayName, productId, productName, color, size, jpy, suggestedPrice, productUrl, imageUrl } = req.body;
+  const { userId, displayName, productId, productName, color, size, jpy, suggestedPrice, productUrl, imageUrl, isPreorder } = req.body;
   if (!userId || !productId || !color || !size) return res.status(400).json({ error: 'missing fields' });
   try {
-    await addToCartSheet(userId, displayName || '', productId, productName || productId, color, size, jpy || 0, suggestedPrice || 0, productUrl || '', imageUrl || '');
+    await addToCartSheet(userId, displayName || '', productId, productName || productId, color, size, jpy || 0, suggestedPrice || 0, productUrl || '', imageUrl || '', !!isPreorder);
     res.json({ status: 'ok' });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -2213,7 +2215,7 @@ app.post('/api/order', express.json(), async (req, res) => {
       _iMap[k].qty++;
     }
     const _iList = Object.values(_iMap);
-    const itemsText = _iList.map(i => `・${(i.productId||'').toUpperCase()} ${translateColorWithJp(i.color)} ${i.size} NT$${i.suggestedPrice}${i.qty > 1 ? ` ×${i.qty}` : ''}`).join('\n')
+    const itemsText = _iList.map(i => `・${(i.productId||'').toUpperCase()} ${translateColorWithJp(i.color)} ${i.size} NT$${i.suggestedPrice}${i.qty > 1 ? ` ×${i.qty}` : ''}${i.isPreorder ? ' 【預購】' : ''}`).join('\n')
       + `\n共 ${cartItems.length} 件`;
 
     // 折扣文字（賣家用）
