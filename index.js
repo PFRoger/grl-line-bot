@@ -2449,6 +2449,7 @@ app.get('/admin', (req, res) => {
   const { key } = req.query;
   if (key !== ADMIN_KEY) return res.status(401).send('Unauthorized');
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  const adminKey = ADMIN_KEY;
   res.send(`<!DOCTYPE html>
 <html lang="zh-TW">
 <head>
@@ -2457,104 +2458,144 @@ app.get('/admin', (req, res) => {
 <title>Bijin 管理後台</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:-apple-system,sans-serif;background:#faf8f6;min-height:100vh;color:#333}
-header{background:#fff;border-bottom:1px solid #ece8e2;padding:16px 20px;position:sticky;top:0;z-index:10}
-header h1{font-size:18px;font-weight:bold;color:#7a5c3e}
-header p{font-size:12px;color:#aaa;margin-top:2px}
-.toolbar{padding:12px 20px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-.toolbar select{border:1px solid #ddd;border-radius:8px;padding:6px 10px;font-size:13px;background:#fff;color:#555}
-.toolbar button{background:#c9a98a;color:#fff;border:none;border-radius:8px;padding:7px 14px;font-size:13px;font-weight:bold;cursor:pointer}
-#orders{padding:0 12px 80px;display:grid;grid-template-columns:repeat(4,1fr);gap:12px;align-items:start}
-@media(max-width:1200px){#orders{grid-template-columns:repeat(3,1fr)}}
-@media(max-width:800px){#orders{grid-template-columns:repeat(2,1fr)}}
-@media(max-width:500px){#orders{grid-template-columns:1fr}}
-#empty{grid-column:1/-1}
-.order-card{background:#fff;border-radius:12px;box-shadow:0 1px 4px rgba(0,0,0,.07);overflow:hidden}
-.order-header{padding:12px 16px;display:flex;justify-content:space-between;align-items:flex-start;border-bottom:1px solid #f0ebe4}
-.order-id{font-size:11px;color:#aaa;font-family:monospace}
-.order-time{font-size:11px;color:#bbb;text-align:right}
-.order-body{padding:12px 16px}
-.buyer-name{font-size:15px;font-weight:bold;color:#3d2c1e;margin-bottom:4px}
-.order-items{font-size:12px;color:#888;line-height:1.8;margin-bottom:8px}
-.order-total{font-size:14px;font-weight:bold;color:#c9a98a}
-.order-contact{font-size:12px;color:#aaa;margin-top:4px}
-.order-footer{padding:10px 16px;display:flex;gap:8px;align-items:center;background:#faf8f6;flex-wrap:wrap}
-.status-select{border:1px solid #ddd;border-radius:8px;padding:6px 10px;font-size:13px;background:#fff;flex:1;min-width:100px}
-.btn-save{background:#c9a98a;color:#fff;border:none;border-radius:8px;padding:7px 14px;font-size:13px;font-weight:bold;cursor:pointer;white-space:nowrap}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f5f3f0;min-height:100vh;color:#2d2218}
+/* ── Header ── */
+header{background:#fff;border-bottom:2px solid #e8ddd4;padding:0 24px;position:sticky;top:0;z-index:50;display:flex;align-items:center;justify-content:space-between;height:56px}
+.hdr-left{display:flex;align-items:center;gap:12px}
+.hdr-logo{font-size:20px;font-weight:700;color:#7a5c3e;letter-spacing:.5px}
+.hdr-counts{display:flex;gap:10px;flex-wrap:wrap}
+.hdr-pill{display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:600}
+.pill-active{background:#fff3e0;color:#c75c00}
+.pill-done{background:#f3e5f5;color:#6a1b9a}
+.pill-return{background:#fbe9e7;color:#bf360c}
+.pill-cancel{background:#fafafa;color:#999;border:1px solid #eee}
+/* ── Toolbar ── */
+.toolbar{padding:12px 24px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:#fff;border-bottom:1px solid #ede8e2}
+.toolbar select{border:1px solid #ddd;border-radius:8px;padding:7px 12px;font-size:13px;background:#fff;color:#555;cursor:pointer;outline:none}
+.toolbar select:focus{border-color:#c9a98a}
+.btn-refresh{background:#7a5c3e;color:#fff;border:none;border-radius:8px;padding:7px 16px;font-size:13px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:6px}
+.btn-refresh:hover{background:#5e4530}
+.search-box{border:1px solid #ddd;border-radius:8px;padding:7px 12px;font-size:13px;outline:none;min-width:160px}
+.search-box:focus{border-color:#c9a98a}
+#err-bar{display:none;background:#fde8e4;color:#c0392b;padding:10px 24px;font-size:13px;font-weight:600;border-bottom:1px solid #f5c6c0}
+#err-bar button{margin-left:12px;background:#c0392b;color:#fff;border:none;border-radius:6px;padding:3px 10px;font-size:12px;cursor:pointer}
+/* ── Grid ── */
+#orders{padding:16px 24px 80px;display:grid;grid-template-columns:repeat(4,1fr);gap:14px;align-items:start}
+@media(max-width:1300px){#orders{grid-template-columns:repeat(3,1fr)}}
+@media(max-width:900px){#orders{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:560px){#orders{grid-template-columns:1fr;padding:12px 12px 80px}}
+/* ── Card ── */
+.order-card{background:#fff;border-radius:14px;box-shadow:0 2px 8px rgba(0,0,0,.07);overflow:hidden;transition:box-shadow .2s}
+.order-card:hover{box-shadow:0 4px 16px rgba(0,0,0,.1)}
+.card-top{display:flex;justify-content:space-between;align-items:flex-start;padding:12px 16px 0}
+.card-id{font-size:11px;color:#bbb;font-family:monospace;letter-spacing:.3px}
+.card-time{font-size:11px;color:#ccc;text-align:right;line-height:1.4}
+.card-status{padding:6px 16px 10px}
+.card-body{padding:0 16px 12px}
+.buyer-name{font-size:15px;font-weight:700;color:#2d2218;margin-bottom:2px}
+.line-name{font-size:12px;color:#bbb;font-weight:400;margin-bottom:8px}
+.order-items{font-size:12px;color:#777;line-height:1.9;margin-bottom:8px;border-left:3px solid #ede8e2;padding-left:10px}
+.price-row{display:flex;align-items:baseline;gap:8px;margin-bottom:6px}
+.price-final{font-size:17px;font-weight:700;color:#7a5c3e}
+.price-orig{font-size:12px;color:#bbb;text-decoration:line-through}
+.price-disc{font-size:12px;color:#a55;background:#fff0f0;border-radius:4px;padding:1px 6px}
+.info-row{font-size:12px;color:#999;margin-top:3px;display:flex;align-items:center;gap:6px}
+.info-label{background:#f0ebe4;color:#7a5c3e;border-radius:4px;padding:1px 6px;font-size:11px;font-weight:600;white-space:nowrap}
+.card-divider{border:none;border-top:1px solid #f0ebe4;margin:0}
+/* ── Card footer ── */
+.card-footer{padding:10px 12px;display:flex;gap:8px;align-items:center;background:#fcfaf8}
+.status-select{border:1px solid #ddd;border-radius:8px;padding:7px 10px;font-size:13px;background:#fff;flex:1;min-width:120px;outline:none;cursor:pointer}
+.status-select:focus{border-color:#c9a98a}
+.btn-save{background:#c9a98a;color:#fff;border:none;border-radius:8px;padding:7px 14px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap}
+.btn-save:hover{background:#b0885e}
 .btn-save:disabled{opacity:.5;cursor:default}
-.btn-notify{background:#7a8fb5;color:#fff;border:none;border-radius:8px;padding:7px 14px;font-size:13px;font-weight:bold;cursor:pointer;white-space:nowrap}
-.notify-row{display:none;padding:10px 16px;border-top:1px solid #f0ebe4;gap:8px;align-items:center}
+/* ── Notify (賣貨便) row ── */
+.notify-row{display:none;padding:10px 12px;border-top:1px solid #f0ebe4;gap:8px;align-items:center}
 .notify-row input{flex:1;border:1px solid #ddd;border-radius:8px;padding:7px 10px;font-size:13px;outline:none}
 .notify-row input:focus{border-color:#7a8fb5}
-.btn-send{background:#7a8fb5;color:#fff;border:none;border-radius:8px;padding:7px 14px;font-size:13px;font-weight:bold;cursor:pointer}
-.status-badge{display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:bold}
-.s-待確認{background:#fff3e0;color:#e65100}
-.s-待買家完成下單{background:#e3f2fd;color:#1565c0}
-.s-處理中(待處理或完成官網下單){background:#ede7f6;color:#4527a0}
-.s-已發貨{background:#e8f5e9;color:#2e7d32}
-.s-已完成{background:#f3e5f5;color:#6a1b9a}
-.s-已取消{background:#fce4ec;color:#880e4f}
-/* date modal */
-.date-modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:200;display:none;align-items:center;justify-content:center}
-.date-modal-box{background:#fff;border-radius:14px;padding:24px 20px;width:280px;box-shadow:0 8px 32px rgba(0,0,0,.18)}
-.date-modal-title{font-size:15px;font-weight:bold;color:#333;margin-bottom:6px}
-.date-modal-sub{font-size:12px;color:#888;margin-bottom:14px}
-.date-modal-input{width:100%;border:1px solid #ddd;border-radius:8px;padding:10px;font-size:16px;outline:none;box-sizing:border-box;text-align:center;letter-spacing:2px}
-.date-modal-input:focus{border-color:#c9a98a}
-.date-modal-btns{display:flex;gap:10px;margin-top:16px}
-.date-modal-cancel{flex:1;background:#eee;color:#555;border:none;border-radius:8px;padding:10px;font-size:14px;cursor:pointer}
-.date-modal-ok{flex:1;background:#c9a98a;color:#fff;border:none;border-radius:8px;padding:10px;font-size:14px;font-weight:bold;cursor:pointer}
-.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#333;color:#fff;padding:10px 20px;border-radius:20px;font-size:13px;opacity:0;transition:opacity .3s;pointer-events:none;z-index:100}
+.btn-send{background:#7a8fb5;color:#fff;border:none;border-radius:8px;padding:7px 14px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap}
+.btn-send:hover{background:#5e7399}
+/* ── Status badge ── */
+.sbadge{display:inline-block;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:700}
+/* ── Closed sections ── */
+.sec-closed{margin:0 24px 14px;border-radius:14px;background:#fff;box-shadow:0 2px 8px rgba(0,0,0,.06);overflow:hidden}
+@media(max-width:560px){.sec-closed{margin:0 12px 12px}}
+.sec-summary{padding:14px 20px;font-size:14px;font-weight:700;color:#888;cursor:pointer;list-style:none;display:flex;justify-content:space-between;align-items:center;user-select:none}
+.sec-summary::-webkit-details-marker{display:none}
+details.sec-closed[open] .sec-summary::after{content:'▾';font-size:12px}
+.sec-summary::after{content:'▸';font-size:12px;color:#bbb}
+.closed-row{display:flex;justify-content:space-between;align-items:center;padding:10px 20px;border-top:1px solid #f5f2ee;font-size:13px;gap:8px}
+.closed-row:hover{background:#fdf9f5}
+.cr-left{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.cr-id{font-size:11px;color:#ccc;font-family:monospace}
+.cr-name{color:#555;font-weight:600}
+.cr-time{font-size:11px;color:#ccc;white-space:nowrap}
+.btn-return{padding:4px 12px;font-size:12px;background:#fbe9e7;color:#bf360c;border:1px solid #ffccbc;border-radius:6px;cursor:pointer;font-weight:600}
+.btn-return:hover{background:#f5c6c0}
+/* ── Empty state ── */
+.empty-state{grid-column:1/-1;text-align:center;padding:60px 20px;color:#ccc;font-size:14px}
+/* ── Toast ── */
+.toast{position:fixed;bottom:28px;left:50%;transform:translateX(-50%);background:#2d2218;color:#fff;padding:11px 22px;border-radius:24px;font-size:13px;opacity:0;transition:opacity .3s;pointer-events:none;z-index:999;white-space:nowrap}
 .toast.show{opacity:1}
-#empty{text-align:center;color:#bbb;padding:60px 20px;font-size:14px}
-.closed-section{margin:12px;border-radius:12px;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.07);overflow:hidden}
-.closed-section summary{padding:14px 16px;font-size:14px;font-weight:bold;color:#999;cursor:pointer;list-style:none;display:flex;justify-content:space-between;align-items:center}
-.closed-section summary::-webkit-details-marker{display:none}
-details.closed-section[open] summary::after{content:'▾'}
-.closed-section summary::after{content:'▸';font-size:12px}
+/* ── Date modal ── */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:200;display:none;align-items:center;justify-content:center}
+.modal-box{background:#fff;border-radius:16px;padding:28px 24px;width:300px;box-shadow:0 12px 40px rgba(0,0,0,.2)}
+.modal-title{font-size:16px;font-weight:700;color:#2d2218;margin-bottom:4px}
+.modal-sub{font-size:13px;color:#999;margin-bottom:16px}
+.modal-input{width:100%;border:1.5px solid #ddd;border-radius:10px;padding:12px;font-size:18px;outline:none;text-align:center;letter-spacing:4px;font-weight:700}
+.modal-input:focus{border-color:#c9a98a}
+.modal-btns{display:flex;gap:10px;margin-top:20px}
+.modal-cancel{flex:1;background:#f0ebe4;color:#7a5c3e;border:none;border-radius:10px;padding:11px;font-size:14px;font-weight:600;cursor:pointer}
+.modal-ok{flex:1;background:#c9a98a;color:#fff;border:none;border-radius:10px;padding:11px;font-size:14px;font-weight:700;cursor:pointer}
+.modal-ok:hover{background:#b0885e}
 </style>
 </head>
 <body>
 <header>
-  <h1>🌸 Bijin 管理後台</h1>
-  <p id="order-count">載入中…</p>
+  <div class="hdr-left">
+    <div class="hdr-logo">🌸 Bijin 管理後台</div>
+    <div class="hdr-counts" id="hdr-counts"><span style="font-size:13px;color:#ccc">載入中…</span></div>
+  </div>
+  <button class="btn-refresh" onclick="loadOrders()">↻ 重新整理</button>
 </header>
+<div id="err-bar">
+  <span id="err-msg"></span>
+  <button onclick="loadOrders()">重試</button>
+</div>
 <div class="toolbar">
   <select id="filter-status" onchange="renderOrders()">
-    <option value="">全部訂單</option>
+    <option value="">全部進行中</option>
     <option value="待確認">待確認</option>
     <option value="待買家完成下單">待買家完成下單</option>
-    <option value="處理中(待處理或完成官網下單)">處理中(待處理或完成官網下單)</option>
+    <option value="處理中(待處理或完成官網下單)">處理中</option>
     <option value="已發貨(官網出貨)">已發貨(官網出貨)</option>
-    <option value="已發貨(已達台灣海關作業)">已發貨(已達台灣海關作業)</option>
-    <option value="已發貨(賣貨便出貨)">已發貨(賣貨便出貨)</option>
+    <option value="已發貨(已達台灣海關作業)">已發貨(台灣海關)</option>
+    <option value="已發貨(賣貨便出貨)">已發貨(賣貨便)</option>
     <option value="待買家取貨">待買家取貨</option>
-    <option value="已完成">已完成</option>
-    <option value="已取消">已取消</option>
-    <option value="退單">退單</option>
   </select>
-  <button onclick="loadOrders()">重新整理</button>
+  <input class="search-box" id="search-box" placeholder="搜尋買家姓名…" oninput="renderOrders()">
 </div>
-<div id="orders"><div id="empty" style="display:none">沒有符合條件的訂單</div></div>
-<details class="closed-section">
-  <summary>✅ 已完成訂單</summary>
+<div id="orders"></div>
+<details class="sec-closed">
+  <summary class="sec-summary">✅ 已完成訂單 <span id="cnt-done" style="margin-left:4px;font-size:12px;font-weight:400;color:#c9a98a"></span></summary>
   <div id="done-orders"></div>
 </details>
-<details class="closed-section">
-  <summary>🔄 退單訂單</summary>
+<details class="sec-closed">
+  <summary class="sec-summary">🔄 退單訂單 <span id="cnt-return" style="margin-left:4px;font-size:12px;font-weight:400;color:#bf360c"></span></summary>
   <div id="return-orders"></div>
 </details>
-<details class="closed-section">
-  <summary>❌ 已取消訂單</summary>
+<details class="sec-closed">
+  <summary class="sec-summary">❌ 已取消訂單 <span id="cnt-cancel" style="margin-left:4px;font-size:12px;font-weight:400;color:#aaa"></span></summary>
   <div id="cancel-orders"></div>
 </details>
 <div class="toast" id="toast"></div>
 
 <script>
-const KEY = '${ADMIN_KEY}';
-const STATUSES = ['待確認','待買家完成下單','處理中(待處理或完成官網下單)','已發貨(官網出貨)','已發貨(已達台灣海關作業)','已發貨(賣貨便出貨)','待買家取貨','已完成','已取消','退單'];
-const NOTIFY_STATUSES = new Set(['處理中(待處理或完成官網下單)','已發貨(官網出貨)','已發貨(已達台灣海關作業)','已發貨(賣貨便出貨)','待買家取貨']);
-const STATUS_STYLE = {
+var KEY = '${adminKey}';
+var STATUSES = ['待確認','待買家完成下單','處理中(待處理或完成官網下單)','已發貨(官網出貨)','已發貨(已達台灣海關作業)','已發貨(賣貨便出貨)','待買家取貨','已完成','已取消','退單'];
+var NOTIFY_STATUSES = {'處理中(待處理或完成官網下單)':1,'已發貨(官網出貨)':1,'已發貨(已達台灣海關作業)':1,'已發貨(賣貨便出貨)':1,'待買家取貨':1};
+var CLOSED = {'已完成':1,'已取消':1,'退單':1};
+var STATUS_STYLE = {
   '待確認':'background:#fff3e0;color:#e65100',
   '待買家完成下單':'background:#e3f2fd;color:#1565c0',
   '處理中(待處理或完成官網下單)':'background:#ede7f6;color:#4527a0',
@@ -2563,226 +2604,266 @@ const STATUS_STYLE = {
   '已發貨(賣貨便出貨)':'background:#f1f8e9;color:#33691e',
   '待買家取貨':'background:#fce4ec;color:#880e4f',
   '已完成':'background:#f3e5f5;color:#6a1b9a',
-  '已取消':'background:#fafafa;color:#aaa',
+  '已取消':'background:#fafafa;color:#aaa;border:1px solid #eee',
   '退單':'background:#fbe9e7;color:#bf360c',
 };
-function statusBadge(s) {
-  const st = STATUS_STYLE[s] || 'background:#eee;color:#666';
-  return \`<span class="status-badge" style="\${st}">\${s||'待確認'}</span>\`;
+function sbadge(s) {
+  var st = STATUS_STYLE[s] || 'background:#eee;color:#666';
+  return '<span class="sbadge" style="' + st + '">' + (s||'待確認') + '</span>';
 }
-let allOrders = [];
+var allOrders = [];
+
+function showErr(msg) {
+  var bar = document.getElementById('err-bar');
+  document.getElementById('err-msg').textContent = msg;
+  bar.style.display = 'block';
+}
+function hideErr() {
+  document.getElementById('err-bar').style.display = 'none';
+}
 
 async function loadOrders() {
-  document.getElementById('order-count').textContent = '載入中…';
+  hideErr();
+  document.getElementById('hdr-counts').innerHTML = '<span style="font-size:13px;color:#ccc">載入中…</span>';
   try {
-    const r = await fetch('/api/admin/orders?key=' + KEY);
-    const d = await r.json();
+    var r = await fetch('/api/admin/orders?key=' + KEY);
+    var d = await r.json();
     if (!r.ok) throw new Error(d.error || 'HTTP ' + r.status);
     allOrders = d.orders || [];
     renderOrders();
   } catch(e) {
-    document.getElementById('order-count').textContent = '載入失敗，請按重新整理';
-    showToast('載入失敗：' + e.message);
+    document.getElementById('hdr-counts').innerHTML = '<span style="font-size:13px;color:#c0392b">載入失敗</span>';
+    showErr('載入失敗：' + e.message + '　請點右上角重新整理');
   }
 }
 
-const CLOSED_STATUSES = new Set(['已完成','已取消','退單']);
-
 function renderOrders() {
-  const filter = document.getElementById('filter-status').value;
-  const active = allOrders.filter(o => !CLOSED_STATUSES.has(o.status));
-  const closed = allOrders.filter(o => CLOSED_STATUSES.has(o.status));
-  const list = filter
-    ? (CLOSED_STATUSES.has(filter) ? closed : active).filter(o => o.status === filter)
-    : active;
+  var keyword = (document.getElementById('search-box').value || '').trim().toLowerCase();
+  var filter = document.getElementById('filter-status').value;
+  var active = allOrders.filter(function(o){ return !CLOSED[o.status]; });
+  var done = allOrders.filter(function(o){ return o.status === '已完成'; });
+  var returns = allOrders.filter(function(o){ return o.status === '退單'; });
+  var cancelled = allOrders.filter(function(o){ return o.status === '已取消'; });
 
-  const done    = allOrders.filter(o => o.status === '已完成');
-  const returns = allOrders.filter(o => o.status === '退單');
-  const cancelled = allOrders.filter(o => o.status === '已取消');
+  var list = active;
+  if (filter) list = list.filter(function(o){ return o.status === filter; });
+  if (keyword) list = list.filter(function(o){ return (o.buyerName||'').toLowerCase().indexOf(keyword) >= 0 || (o.lineDisplayName||'').toLowerCase().indexOf(keyword) >= 0 || (o.orderId||'').toLowerCase().indexOf(keyword) >= 0; });
 
-  document.getElementById('order-count').textContent =
-    '進行中 ' + active.length + ' 筆' +
-    (done.length ? '　已完成 ' + done.length + ' 筆' : '') +
-    (returns.length ? '　退單 ' + returns.length + ' 筆' : '') +
-    (cancelled.length ? '　已取消 ' + cancelled.length + ' 筆' : '');
+  // header counts
+  var pills = '<span class="hdr-pill pill-active">' + active.length + ' 進行中</span>';
+  if (done.length) pills += '<span class="hdr-pill pill-done">' + done.length + ' 已完成</span>';
+  if (returns.length) pills += '<span class="hdr-pill pill-return">' + returns.length + ' 退單</span>';
+  if (cancelled.length) pills += '<span class="hdr-pill pill-cancel">' + cancelled.length + ' 已取消</span>';
+  document.getElementById('hdr-counts').innerHTML = pills;
 
-  const container = document.getElementById('orders');
-  const emptyHtml = '<div id="empty" style="grid-column:1/-1;text-align:center;color:#bbb;padding:40px;display:' + (list.length?'none':'block') + '">沒有符合條件的訂單</div>';
-  container.innerHTML = emptyHtml + list.map(o => createCard(o)).join('');
+  // section counts
+  document.getElementById('cnt-done').textContent = done.length ? done.length + ' 筆' : '';
+  document.getElementById('cnt-return').textContent = returns.length ? returns.length + ' 筆' : '';
+  document.getElementById('cnt-cancel').textContent = cancelled.length ? cancelled.length + ' 筆' : '';
 
-  const empty = '<div style="color:#bbb;padding:12px;font-size:13px">';
-  document.getElementById('done-orders').innerHTML = done.length
-    ? done.map(o => createClosedRow(o, true)).join('') : empty + '無已完成訂單</div>';
-  document.getElementById('return-orders').innerHTML = returns.length
-    ? returns.map(o => createClosedRow(o, false)).join('') : empty + '無退單訂單</div>';
-  document.getElementById('cancel-orders').innerHTML = cancelled.length
-    ? cancelled.map(o => createClosedRow(o, false)).join('') : empty + '無已取消訂單</div>';
+  // active orders grid
+  var container = document.getElementById('orders');
+  if (list.length === 0) {
+    container.innerHTML = '<div class="empty-state">沒有符合條件的訂單</div>';
+  } else {
+    var html = '';
+    for (var i = 0; i < list.length; i++) html += createCard(list[i]);
+    container.innerHTML = html;
+  }
+
+  // closed sections
+  var emptyMsg = '<div style="color:#ccc;padding:14px 20px;font-size:13px">';
+  document.getElementById('done-orders').innerHTML = done.length ? done.map(function(o){ return closedRow(o, true); }).join('') : emptyMsg + '無已完成訂單</div>';
+  document.getElementById('return-orders').innerHTML = returns.length ? returns.map(function(o){ return closedRow(o, false); }).join('') : emptyMsg + '無退單訂單</div>';
+  document.getElementById('cancel-orders').innerHTML = cancelled.length ? cancelled.map(function(o){ return closedRow(o, false); }).join('') : emptyMsg + '無已取消訂單</div>';
+}
+
+function esc(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
 function createCard(o) {
-  const statusOpts = STATUSES.map(s =>
-    '<option value="' + s + '"' + (o.status === s ? ' selected' : '') + '>' + s + '</option>'
-  ).join('');
-  const badge = statusBadge(o.status||'待確認');
-  const contact = o.contact ? o.contact + (o.contactId ? '：' + o.contactId : '') : '';
-  return \`<div class="order-card" id="card-\${o.rowIndex}">
-  <div class="order-header">
-    <div>
-      <div class="order-id">\${o.orderId}</div>
-      <div style="margin-top:4px">\${badge}</div>
-    </div>
-    <div class="order-time">\${o.orderTime}</div>
-  </div>
-  <div class="order-body">
-    <div class="buyer-name">\${o.buyerName || '（未填姓名）'}\${o.lineDisplayName ? ' <span style="font-size:12px;color:#aaa;font-weight:normal">LINE：' + o.lineDisplayName + '</span>' : ''}</div>
-    <div class="order-items">\${o.items.split('\\n').map(l=>'<div>'+l+'</div>').join('')}</div>
-    \${o.discountTotal > 0 ? \`<div style="font-size:12px;color:#aaa;margin-top:4px">小計 NT$\${o.total}\${o.pointsUsed > 0 ? ' · 點數 -NT$' + o.pointsUsed : ''}\${o.couponCode ? ' · 券 -NT$' + (o.discountTotal - o.pointsUsed) : ''}</div>\` : ''}
-    <div class="order-total">\${o.discountTotal > 0 ? '實付 ' : ''}NT$\${o.discountTotal > 0 ? o.finalAmount : o.total}</div>
-    \${contact ? '<div class="order-contact">' + contact + '</div>' : ''}
-    \${o.note ? '<div class="order-contact">備註：' + o.note + '</div>' : ''}
-  </div>
-  <div class="order-footer">
-    <select class="status-select" id="sel-\${o.rowIndex}">\${statusOpts}</select>
-    <button class="btn-save" onclick="saveStatus(\${o.rowIndex}, '\${o.orderId}')">儲存狀態與通知</button>
-  </div>
-  \${(o.status||'待確認')==='待確認' ? \`<div class="notify-row" id="notify-\${o.rowIndex}" style="display:flex">
-    <input type="url" id="url-\${o.rowIndex}" placeholder="貼上賣場網址…">
-    <button class="btn-send" onclick="sendNotify('\${o.orderId}', \${o.rowIndex})">傳送</button>
-  </div>\` : ''}
-</div>\`;
+  var ri = o.rowIndex;
+  var opts = STATUSES.map(function(s){
+    return '<option value="' + esc(s) + '"' + (o.status === s ? ' selected' : '') + '>' + esc(s) + '</option>';
+  }).join('');
+
+  var itemsHtml = (o.items||'').split('\\n').map(function(l){ return '<div>' + esc(l) + '</div>'; }).join('');
+
+  var priceHtml = '<div class="price-row"><span class="price-final">NT$' + (o.discountTotal > 0 ? o.finalAmount : o.total) + '</span>';
+  if (o.discountTotal > 0) {
+    priceHtml += '<span class="price-orig">NT$' + o.total + '</span>';
+    var discParts = [];
+    if (o.pointsUsed > 0) discParts.push('點數 -' + o.pointsUsed);
+    if (o.couponCode) discParts.push('券 -' + (o.discountTotal - o.pointsUsed));
+    if (discParts.length) priceHtml += '<span class="price-disc">' + discParts.join(' / ') + '</span>';
+  }
+  priceHtml += '</div>';
+
+  var contactHtml = '';
+  if (o.contact) contactHtml += '<div class="info-row"><span class="info-label">聯繫</span>' + esc(o.contact) + (o.contactId ? '　' + esc(o.contactId) : '') + '</div>';
+  if (o.phone) contactHtml += '<div class="info-row"><span class="info-label">手機</span>' + esc(o.phone) + '</div>';
+  if (o.note) contactHtml += '<div class="info-row"><span class="info-label">備註</span>' + esc(o.note) + '</div>';
+
+  var notifyRowHtml = '';
+  if ((o.status||'待確認') === '待確認') {
+    notifyRowHtml = '<div class="notify-row" id="nrow-' + ri + '" style="display:flex">'
+      + '<input type="url" id="nurl-' + ri + '" placeholder="貼上賣貨便網址…">'
+      + '<button class="btn-send" onclick="sendNotify(\'' + esc(o.orderId) + '\',' + ri + ')">傳送網址</button>'
+      + '</div>';
+  }
+
+  return '<div class="order-card" id="card-' + ri + '">'
+    + '<div class="card-top">'
+    + '<div class="card-id">' + esc(o.orderId) + '</div>'
+    + '<div class="card-time">' + esc(o.orderTime) + '</div>'
+    + '</div>'
+    + '<div class="card-status">' + sbadge(o.status||'待確認') + '</div>'
+    + '<div class="card-body">'
+    + '<div class="buyer-name">' + esc(o.buyerName||'（未填姓名）') + '</div>'
+    + (o.lineDisplayName ? '<div class="line-name">LINE：' + esc(o.lineDisplayName) + '</div>' : '')
+    + '<div class="order-items">' + itemsHtml + '</div>'
+    + priceHtml
+    + contactHtml
+    + '</div>'
+    + '<hr class="card-divider">'
+    + '<div class="card-footer">'
+    + '<select class="status-select" id="sel-' + ri + '">' + opts + '</select>'
+    + '<button class="btn-save" onclick="saveStatus(' + ri + ',\'' + esc(o.orderId) + '\')">儲存</button>'
+    + '</div>'
+    + notifyRowHtml
+    + '</div>';
 }
 
-function createClosedRow(o, showReturn) {
-  const badge = statusBadge(o.status);
-  const returnBtn = showReturn
-    ? '<button onclick="doReturn(\'' + o.rowIndex + '\',\'' + o.orderId + '\')" style="margin-left:10px;padding:3px 10px;font-size:11px;background:#fbe9e7;color:#bf360c;border:1px solid #ffccbc;border-radius:6px;cursor:pointer">退單</button>'
+function closedRow(o, showReturn) {
+  var returnBtn = showReturn
+    ? '<button class="btn-return" onclick="doReturn(' + o.rowIndex + ',\'' + esc(o.orderId) + '\')">退單</button>'
     : '';
-  return '<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 16px;border-bottom:1px solid #f0ebe4;font-size:13px">'
-    + '<div><span style="color:#aaa;font-family:monospace;font-size:11px">' + o.orderId + '</span>'
-    + ' ' + badge + ' <span style="color:#555;margin-left:8px">' + (o.buyerName||'—') + '</span>'
-    + returnBtn + '</div>'
-    + '<div style="color:#aaa;font-size:11px">' + o.orderTime + '</div></div>';
-}
-
-async function doReturn(rowIndex, orderId) {
-  if (!confirm('確定要將此訂單標記為退單？\n將自動扣除買家點數、回扣年度消費並重算等級。')) return;
-  try {
-    const r = await fetch('/api/admin/order-status', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ key: KEY, rowIndex: parseInt(rowIndex), status: '退單' }),
-    });
-    if (r.ok) {
-      const o = allOrders.find(x => x.rowIndex === parseInt(rowIndex));
-      if (o) o.status = '退單';
-      showToast('✅ 已標記退單，點數已扣除');
-      renderOrders();
-    } else {
-      const d = await r.json();
-      showToast('❌ ' + (d.error || '失敗'));
-    }
-  } catch(e) { showToast('❌ 網路錯誤'); }
-}
-
-function toggleNotify(rowIndex) {
-  const row = document.getElementById('notify-' + rowIndex);
-  row.style.display = row.style.display === 'none' ? 'flex' : 'none';
+  return '<div class="closed-row">'
+    + '<div class="cr-left">'
+    + '<span class="cr-id">' + esc(o.orderId) + '</span>'
+    + sbadge(o.status)
+    + '<span class="cr-name">' + esc(o.buyerName||'—') + '</span>'
+    + returnBtn
+    + '</div>'
+    + '<div class="cr-time">' + esc(o.orderTime) + '</div>'
+    + '</div>';
 }
 
 async function saveStatus(rowIndex, orderId) {
-  const status = document.getElementById('sel-' + rowIndex).value;
-  if (NOTIFY_STATUSES.has(status)) {
+  var status = document.getElementById('sel-' + rowIndex).value;
+  if (NOTIFY_STATUSES[status]) {
     showDateModal(rowIndex, orderId, status);
     return;
   }
   try {
-    const r = await fetch('/api/admin/order-status', {
+    var r = await fetch('/api/admin/order-status', {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({ key: KEY, rowIndex, status }),
+      body: JSON.stringify({ key: KEY, rowIndex: rowIndex, status: status }),
     });
     if (r.ok) {
-      const o = allOrders.find(x => x.rowIndex === rowIndex);
+      var o = allOrders.find(function(x){ return x.rowIndex === rowIndex; });
       if (o) o.status = status;
-      showToast('✅ 狀態已更新');
+      toast('✅ 狀態已更新');
       renderOrders();
     } else {
-      const d = await r.json();
-      showToast('❌ ' + (d.error || '失敗'));
+      var d = await r.json();
+      toast('❌ ' + (d.error || '更新失敗'));
     }
-  } catch(e) { showToast('❌ 網路錯誤'); }
+  } catch(e) { toast('❌ 網路錯誤'); }
 }
 
-let _dateCtx = null;
+async function sendNotify(orderId, rowIndex) {
+  var url = document.getElementById('nurl-' + rowIndex).value.trim();
+  if (!url) { toast('請貼上賣貨便網址'); return; }
+  try {
+    var r = await fetch('/admin/notify-buyer?key=' + KEY + '&orderId=' + encodeURIComponent(orderId) + '&url=' + encodeURIComponent(url));
+    var d = await r.json();
+    if (r.ok) {
+      var o = allOrders.find(function(x){ return x.rowIndex === rowIndex; });
+      if (o) o.status = '待買家完成下單';
+      toast('✅ ' + (d.message || '已傳送'));
+      renderOrders();
+    } else toast('❌ ' + (d.error || '失敗'));
+  } catch(e) { toast('❌ 網路錯誤'); }
+}
+
+async function doReturn(rowIndex, orderId) {
+  if (!confirm('確定要將此訂單標記為退單？\\n將自動扣除買家點數、回扣年度消費並重算等級。')) return;
+  try {
+    var r = await fetch('/api/admin/order-status', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ key: KEY, rowIndex: rowIndex, status: '退單' }),
+    });
+    if (r.ok) {
+      var o = allOrders.find(function(x){ return x.rowIndex === rowIndex; });
+      if (o) o.status = '退單';
+      toast('✅ 已標記退單，點數已扣除');
+      renderOrders();
+    } else {
+      var d = await r.json();
+      toast('❌ ' + (d.error || '失敗'));
+    }
+  } catch(e) { toast('❌ 網路錯誤'); }
+}
+
+var _dateCtx = null;
 function showDateModal(rowIndex, orderId, status) {
-  _dateCtx = { rowIndex, orderId, status };
+  _dateCtx = { rowIndex: rowIndex, orderId: orderId, status: status };
   document.getElementById('dm-status').textContent = status;
-  const now = new Date();
-  const mm = String(now.getMonth()+1).padStart(2,'0');
-  const dd = String(now.getDate()).padStart(2,'0');
+  var now = new Date();
+  var mm = String(now.getMonth()+1).padStart(2,'0');
+  var dd = String(now.getDate()).padStart(2,'0');
   document.getElementById('dm-input').value = mm + '/' + dd;
   document.getElementById('date-modal').style.display = 'flex';
-  setTimeout(() => document.getElementById('dm-input').select(), 50);
+  setTimeout(function(){ document.getElementById('dm-input').select(); }, 50);
 }
 function closeDateModal() {
   document.getElementById('date-modal').style.display = 'none';
   _dateCtx = null;
 }
 async function confirmDateModal() {
-  const date = document.getElementById('dm-input').value.trim();
-  if (!date) { showToast('請輸入日期'); return; }
-  const { rowIndex, orderId, status } = _dateCtx;
+  var date = document.getElementById('dm-input').value.trim();
+  if (!date) { toast('請輸入日期'); return; }
+  var ctx = _dateCtx;
   document.getElementById('date-modal').style.display = 'none';
   try {
-    const r = await fetch('/api/admin/notify-progress', {
+    var r = await fetch('/api/admin/notify-progress', {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({ key: KEY, orderId, rowIndex, status, date }),
+      body: JSON.stringify({ key: KEY, orderId: ctx.orderId, rowIndex: ctx.rowIndex, status: ctx.status, date: date }),
     });
-    const d = await r.json();
+    var d = await r.json();
     if (r.ok) {
-      const o = allOrders.find(x => x.rowIndex === rowIndex);
-      if (o) o.status = status;
-      showToast('✅ 狀態已更新並通知買家');
+      var o = allOrders.find(function(x){ return x.rowIndex === ctx.rowIndex; });
+      if (o) o.status = ctx.status;
+      toast('✅ 狀態已更新並通知買家');
       renderOrders();
-    } else showToast('❌ ' + (d.error || '失敗'));
-  } catch(e) { showToast('❌ 網路錯誤'); }
+    } else toast('❌ ' + (d.error || '失敗'));
+  } catch(e) { toast('❌ 網路錯誤'); }
 }
 
-async function sendNotify(orderId, rowIndex) {
-  const url = document.getElementById('url-' + rowIndex).value.trim();
-  if (!url) { showToast('請填入賣場網址'); return; }
-  try {
-    const r = await fetch('/admin/notify-buyer?key=' + KEY + '&orderId=' + encodeURIComponent(orderId) + '&url=' + encodeURIComponent(url));
-    const d = await r.json();
-    if (r.ok) {
-      // 自動更新本地狀態，不需重整頁面
-      const o = allOrders.find(x => x.rowIndex === rowIndex);
-      if (o) o.status = '待買家完成下單';
-      showToast('✅ ' + d.message);
-      renderOrders();
-    } else showToast('❌ ' + (d.error || '失敗'));
-  } catch(e) { showToast('❌ 網路錯誤'); }
-}
-
-function showToast(msg) {
-  const t = document.getElementById('toast');
+function toast(msg) {
+  var t = document.getElementById('toast');
   t.textContent = msg;
   t.classList.add('show');
-  setTimeout(() => t.classList.remove('show'), 2500);
+  setTimeout(function(){ t.classList.remove('show'); }, 2800);
 }
 
 loadOrders();
 </script>
 
-<div id="date-modal" class="date-modal-overlay" onclick="if(event.target===this)closeDateModal()">
-  <div class="date-modal-box">
-    <div class="date-modal-title">輸入進度日期</div>
-    <div class="date-modal-sub">狀態：<strong id="dm-status"></strong></div>
-    <input id="dm-input" class="date-modal-input" type="text" placeholder="MM/DD" maxlength="5"
+<div id="date-modal" class="modal-overlay" onclick="if(event.target===this)closeDateModal()">
+  <div class="modal-box">
+    <div class="modal-title">輸入進度日期</div>
+    <div class="modal-sub">狀態：<strong id="dm-status" style="color:#7a5c3e"></strong></div>
+    <input id="dm-input" class="modal-input" type="text" placeholder="MM/DD" maxlength="5"
       onkeydown="if(event.key==='Enter')confirmDateModal()">
-    <div class="date-modal-btns">
-      <button class="date-modal-cancel" onclick="closeDateModal()">取消</button>
-      <button class="date-modal-ok" onclick="confirmDateModal()">確定並通知買家</button>
+    <div class="modal-btns">
+      <button class="modal-cancel" onclick="closeDateModal()">取消</button>
+      <button class="modal-ok" onclick="confirmDateModal()">確定並通知買家</button>
     </div>
   </div>
 </div>
