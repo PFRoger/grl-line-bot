@@ -2418,6 +2418,15 @@ app.post('/api/admin/order-status', express.json(), async (req, res) => {
           .catch(e => console.error('[processOrderCompletion error]', e.message));
       }
     }
+    // 訂單退單時，撤銷點數
+    if (status === '退單') {
+      const orderResp = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${ORDER_SHEET}!A${rowIndex}:A${rowIndex}` });
+      const returnOrderId = ((orderResp.data.values || [])[0] || [])[0] || '';
+      if (returnOrderId) {
+        processOrderReturn(sheets, returnOrderId)
+          .catch(e => console.error('[processOrderReturn error]', e.message));
+      }
+    }
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -2523,7 +2532,7 @@ details.closed-section[open] summary::after{content:'▾'}
 
 <script>
 const KEY = '${ADMIN_KEY}';
-const STATUSES = ['待確認','待買家完成下單','處理中(待處理或完成官網下單)','已發貨(官網出貨)','已發貨(已達台灣海關作業)','已發貨(賣貨便出貨)','待買家取貨','已完成','已取消'];
+const STATUSES = ['待確認','待買家完成下單','處理中(待處理或完成官網下單)','已發貨(官網出貨)','已發貨(已達台灣海關作業)','已發貨(賣貨便出貨)','待買家取貨','已完成','已取消','退單'];
 const NOTIFY_STATUSES = new Set(['處理中(待處理或完成官網下單)','已發貨(官網出貨)','已發貨(已達台灣海關作業)','已發貨(賣貨便出貨)','待買家取貨']);
 const STATUS_STYLE = {
   '待確認':'background:#fff3e0;color:#e65100',
@@ -2535,6 +2544,7 @@ const STATUS_STYLE = {
   '待買家取貨':'background:#fce4ec;color:#880e4f',
   '已完成':'background:#f3e5f5;color:#6a1b9a',
   '已取消':'background:#fafafa;color:#aaa',
+  '退單':'background:#fbe9e7;color:#bf360c',
 };
 function statusBadge(s) {
   const st = STATUS_STYLE[s] || 'background:#eee;color:#666';
@@ -2551,7 +2561,7 @@ async function loadOrders() {
   } catch(e) { showToast('載入失敗：' + e.message); }
 }
 
-const CLOSED_STATUSES = new Set(['已完成','已取消']);
+const CLOSED_STATUSES = new Set(['已完成','已取消','退單']);
 
 function renderOrders() {
   const filter = document.getElementById('filter-status').value;
@@ -3057,10 +3067,16 @@ async function processOrderCompletion(sheets, userId, displayName, orderId, orde
 
   // 通知買家（升等 or 點數）
   const tierChanged = newTier !== member.tier;
-  let notifyText = `🌸 訂單已完成！\n\n`;
-  if (pts > 0) notifyText += `本次獲得 ${pts} 點（有效至 ${expiry}）\n`;
-  notifyText += `目前總點數：${newPoints} 點\n等級：${newTier}`;
-  if (tierChanged) notifyText += `\n🎉 恭喜升等為 ${newTier}！`;
+  const TIER_RATE = { '一般': '每NT$300得1點', '銀卡': '每NT$200得1點', '金卡': '每NT$100得1點', '白金': '每NT$50得1點' };
+  const TIER_BDAY = { '一般': 'NT$30×1張', '銀卡': 'NT$50×1張', '金卡': 'NT$50×2張', '白金': 'NT$50×4張' };
+  let notifyText = `🌸 訂單已完成，感謝您的購買！\n`;
+  if (pts > 0) {
+    notifyText += `\n💎 本次獲得 ${pts} 點\n   有效至：${expiry}\n   點數將於7天內正式入帳\n`;
+  }
+  notifyText += `\n📊 目前累積：${newPoints} 點 ｜ ${newTier}`;
+  if (tierChanged) {
+    notifyText += `\n\n🎉 恭喜升等為【${newTier}】！\n✨ 新等級專屬權益：\n・點數回饋：${TIER_RATE[newTier] || ''}\n・生日禮：${TIER_BDAY[newTier] || ''}`;
+  }
 
   try {
     const client = new line.Client({ channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN });
@@ -3071,6 +3087,43 @@ async function processOrderCompletion(sheets, userId, displayName, orderId, orde
   await processReferralReward(sheets, userId, orderId).catch(e => console.error('[referral error]', e.message));
 
   return { pts, newTier, newPoints, tierChanged };
+}
+
+// ── 退單：撤銷點數 ────────────────────────────────────────────────────────────
+async function processOrderReturn(sheets, orderId) {
+  // 找點數紀錄中此訂單的點數
+  const pResp = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${POINTS_SHEET}!A:H` });
+  const pRows = pResp.data.values || [];
+  const pIdx = pRows.findIndex((r, i) => i > 0 && r[4] === orderId && r[7] === 'active');
+  if (pIdx === -1) return { ptsDeducted: 0 }; // 此訂單無有效點數
+
+  const pRow = pRows[pIdx];
+  const userId = pRow[2] || '';
+  const pts = parseInt(pRow[5]) || 0;
+
+  // 標記點數已撤銷
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: SHEET_ID, range: `${POINTS_SHEET}!H${pIdx + 1}`,
+    valueInputOption: 'RAW', resource: { values: [['cancelled']] },
+  });
+
+  // 扣除會員點數
+  if (userId && pts > 0) {
+    const member = await getMember(sheets, userId);
+    if (member) {
+      const newPoints = Math.max(0, (member.points || 0) - pts);
+      await sheets.spreadsheets.values.update({
+        spreadsheetId: SHEET_ID, range: `${MEMBER_SHEET}!K${member.rowIndex}:L${member.rowIndex}`,
+        valueInputOption: 'RAW', resource: { values: [[newPoints, todayStr()]] },
+      });
+      // 通知買家
+      try {
+        const client = new line.Client({ channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN });
+        await client.pushMessage(userId, { type: 'text', text: `📦 訂單 ${orderId} 已辦理退單。\n\n本次退單已扣除 ${pts} 點。\n目前剩餘點數：${newPoints} 點\n\n如有疑問請聯繫客服 🌸` });
+      } catch(e) { console.error('[return notify error]', e.message); }
+    }
+  }
+  return { ptsDeducted: pts };
 }
 
 // ── 邀請獎勵處理（訂單完成時呼叫）────────────────────────────────────────────
