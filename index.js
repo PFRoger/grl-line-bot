@@ -2625,15 +2625,21 @@ function hideErr() {
 async function loadOrders() {
   hideErr();
   document.getElementById('hdr-counts').innerHTML = '<span style="font-size:13px;color:#ccc">載入中…</span>';
+  var controller = new AbortController();
+  var timer = setTimeout(function(){ controller.abort(); }, 10000);
   try {
-    var r = await fetch('/api/admin/orders?key=' + KEY);
+    var r = await fetch('/api/admin/orders?key=' + KEY, { signal: controller.signal });
+    clearTimeout(timer);
     var d = await r.json();
     if (!r.ok) throw new Error(d.error || 'HTTP ' + r.status);
     allOrders = d.orders || [];
     renderOrders();
   } catch(e) {
+    clearTimeout(timer);
+    var msg = e.name === 'AbortError' ? '請求逾時（10秒），請重新整理' : e.message;
+    console.error('[Admin] loadOrders error:', e.name, e.message);
     document.getElementById('hdr-counts').innerHTML = '<span style="font-size:13px;color:#c0392b">載入失敗</span>';
-    showErr('載入失敗：' + e.message + '　請點右上角重新整理');
+    showErr('載入失敗：' + msg + '　請點右上角重新整理');
   }
 }
 
