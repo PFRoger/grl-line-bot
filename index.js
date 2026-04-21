@@ -580,7 +580,9 @@ async function clearCartItem(rowIndex) {
 
 async function markCartItemsOrdered(userId, rowIndexes) {
   const sheets = getSheetsClient();
-  await Promise.all(rowIndexes.map((idx) =>
+  const validIndexes = rowIndexes.filter(idx => Number.isInteger(idx) && idx > 0);
+  if (!validIndexes.length) return;
+  await Promise.all(validIndexes.map((idx) =>
     sheets.spreadsheets.values.update({
       spreadsheetId: SHEET_ID,
       range: `${CART_SHEET}!J${idx}`,
@@ -627,7 +629,7 @@ async function submitOrder(userId, displayName, cartItems, buyerInfo, discountIn
       displayName || '',
     ]] },
   });
-  await markCartItemsOrdered(userId, cartItems.map(i => i.rowIndex));
+  markCartItemsOrdered(userId, cartItems.map(i => i.rowIndex)).catch(e => console.error('[markOrdered error]', e.message));
   return { orderId, orderTime, totalTwd, discountTotal, finalAmount, pointsUsed: pointsUsed || 0, couponCode: couponCode || '', couponAmount: couponAmount || 0 };
 }
 
