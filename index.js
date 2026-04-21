@@ -2371,6 +2371,7 @@ app.get('/admin/check-rich-menu', async (req, res) => {
 
 // ── 管理員 API：取得所有訂單 ──────────────────────────────────────────────────
 app.get('/api/admin/orders', async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache');
   if (req.query.key !== ADMIN_KEY) return res.status(401).json({ error: 'Unauthorized' });
   try {
     const sheets = getSheetsClient();
@@ -2449,7 +2450,10 @@ app.get('/admin', (req, res) => {
   const { key } = req.query;
   if (key !== ADMIN_KEY) return res.status(401).send('Unauthorized');
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.setHeader('Pragma', 'no-cache');
   const adminKey = ADMIN_KEY;
+  const buildTs = new Date().toLocaleString('zh-TW', { timeZone: 'Asia/Taipei', hour12: false });
   res.send(`<!DOCTYPE html>
 <html lang="zh-TW">
 <head>
@@ -2553,7 +2557,7 @@ details.sec-closed[open] .sec-summary::after{content:'▾';font-size:12px}
 <body>
 <header>
   <div class="hdr-left">
-    <div class="hdr-logo">🌸 Bijin 管理後台</div>
+    <div class="hdr-logo">🌸 Bijin 管理後台 <span style="font-size:11px;color:#c9a98a;font-weight:400">${buildTs}</span></div>
     <div class="hdr-counts" id="hdr-counts"><span style="font-size:13px;color:#ccc">載入中…</span></div>
   </div>
   <button class="btn-refresh" onclick="loadOrders()">↻ 重新整理</button>
@@ -2628,7 +2632,7 @@ async function loadOrders() {
   var controller = new AbortController();
   var timer = setTimeout(function(){ controller.abort(); }, 10000);
   try {
-    var r = await fetch('/api/admin/orders?key=' + KEY, { signal: controller.signal });
+    var r = await fetch('/api/admin/orders?key=' + KEY + '&_=' + Date.now(), { signal: controller.signal });
     clearTimeout(timer);
     var d = await r.json();
     if (!r.ok) throw new Error(d.error || 'HTTP ' + r.status);
