@@ -2205,7 +2205,16 @@ app.post('/api/order', express.json(), async (req, res) => {
     if (couponCode) await markCouponUsed(sheets, couponCode, result.orderId).catch(e => console.error('[markCoupon error]', e.message));
 
     const client = new line.Client({ channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN });
-    const itemsText = cartItems.map(i => `・${i.productId} ${translateColorWithJp(i.color)} ${i.size} NT$${i.suggestedPrice}`).join('\n');
+    // 合併相同規格，顯示數量
+    const _iMap = {};
+    for (const i of cartItems) {
+      const k = `${i.productId}|${i.color}|${i.size}`;
+      if (!_iMap[k]) _iMap[k] = { ...i, qty: 0 };
+      _iMap[k].qty++;
+    }
+    const _iList = Object.values(_iMap);
+    const itemsText = _iList.map(i => `・${(i.productId||'').toUpperCase()} ${translateColorWithJp(i.color)} ${i.size} NT$${i.suggestedPrice}${i.qty > 1 ? ` ×${i.qty}` : ''}`).join('\n')
+      + `\n共 ${cartItems.length} 件`;
 
     // 折扣文字（賣家用）
     let adminDiscText = '';
