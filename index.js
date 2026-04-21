@@ -2520,13 +2520,22 @@ details.closed-section[open] summary::after{content:'▾'}
     <option value="待買家取貨">待買家取貨</option>
     <option value="已完成">已完成</option>
     <option value="已取消">已取消</option>
+    <option value="退單">退單</option>
   </select>
   <button onclick="loadOrders()">重新整理</button>
 </div>
 <div id="orders"><div id="empty" style="display:none">沒有符合條件的訂單</div></div>
 <details class="closed-section">
-  <summary>已完成 / 已取消訂單</summary>
-  <div id="closed-orders"></div>
+  <summary>✅ 已完成訂單</summary>
+  <div id="done-orders"></div>
+</details>
+<details class="closed-section">
+  <summary>🔄 退單訂單</summary>
+  <div id="return-orders"></div>
+</details>
+<details class="closed-section">
+  <summary>❌ 已取消訂單</summary>
+  <div id="cancel-orders"></div>
 </details>
 <div class="toast" id="toast"></div>
 
@@ -2571,19 +2580,27 @@ function renderOrders() {
     ? (CLOSED_STATUSES.has(filter) ? closed : active).filter(o => o.status === filter)
     : active;
 
+  const done    = allOrders.filter(o => o.status === '已完成');
+  const returns = allOrders.filter(o => o.status === '退單');
+  const cancelled = allOrders.filter(o => o.status === '已取消');
+
   document.getElementById('order-count').textContent =
-    '進行中 ' + active.length + ' 筆' + (closed.length ? '　已結束 ' + closed.length + ' 筆' : '');
+    '進行中 ' + active.length + ' 筆' +
+    (done.length ? '　已完成 ' + done.length + ' 筆' : '') +
+    (returns.length ? '　退單 ' + returns.length + ' 筆' : '') +
+    (cancelled.length ? '　已取消 ' + cancelled.length + ' 筆' : '');
 
   const container = document.getElementById('orders');
   const emptyHtml = '<div id="empty" style="grid-column:1/-1;text-align:center;color:#bbb;padding:40px;display:' + (list.length?'none':'block') + '">沒有符合條件的訂單</div>';
   container.innerHTML = emptyHtml + list.map(o => createCard(o)).join('');
 
-  // Closed orders collapsible
-  const closedEl = document.getElementById('closed-orders');
-  const closedFiltered = filter && CLOSED_STATUSES.has(filter) ? closed.filter(o=>o.status===filter) : closed;
-  closedEl.innerHTML = closedFiltered.length
-    ? closedFiltered.map(o => createClosedRow(o)).join('')
-    : '<div style="color:#bbb;padding:12px;font-size:13px">無已完成或已取消訂單</div>';
+  const empty = '<div style="color:#bbb;padding:12px;font-size:13px">';
+  document.getElementById('done-orders').innerHTML = done.length
+    ? done.map(o => createClosedRow(o, true)).join('') : empty + '無已完成訂單</div>';
+  document.getElementById('return-orders').innerHTML = returns.length
+    ? returns.map(o => createClosedRow(o, false)).join('') : empty + '無退單訂單</div>';
+  document.getElementById('cancel-orders').innerHTML = cancelled.length
+    ? cancelled.map(o => createClosedRow(o, false)).join('') : empty + '無已取消訂單</div>';
 }
 
 function createCard(o) {
@@ -2619,12 +2636,35 @@ function createCard(o) {
 </div>\`;
 }
 
-function createClosedRow(o) {
+function createClosedRow(o, showReturn) {
   const badge = statusBadge(o.status);
+  const returnBtn = showReturn
+    ? '<button onclick="doReturn(\'' + o.rowIndex + '\',\'' + o.orderId + '\')" style="margin-left:10px;padding:3px 10px;font-size:11px;background:#fbe9e7;color:#bf360c;border:1px solid #ffccbc;border-radius:6px;cursor:pointer">退單</button>'
+    : '';
   return '<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 16px;border-bottom:1px solid #f0ebe4;font-size:13px">'
     + '<div><span style="color:#aaa;font-family:monospace;font-size:11px">' + o.orderId + '</span>'
-    + ' ' + badge + ' <span style="color:#555;margin-left:8px">' + (o.buyerName||'—') + '</span></div>'
+    + ' ' + badge + ' <span style="color:#555;margin-left:8px">' + (o.buyerName||'—') + '</span>'
+    + returnBtn + '</div>'
     + '<div style="color:#aaa;font-size:11px">' + o.orderTime + '</div></div>';
+}
+
+async function doReturn(rowIndex, orderId) {
+  if (!confirm('確定要將此訂單標記為退單？\n將自動扣除買家點數、回扣年度消費並重算等級。')) return;
+  try {
+    const r = await fetch('/api/admin/order-status', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ key: KEY, rowIndex: parseInt(rowIndex), status: '退單' }),
+    });
+    if (r.ok) {
+      const o = allOrders.find(x => x.rowIndex === parseInt(rowIndex));
+      if (o) o.status = '退單';
+      showToast('✅ 已標記退單，點數已扣除');
+      renderOrders();
+    } else {
+      const d = await r.json();
+      showToast('❌ ' + (d.error || '失敗'));
+    }
+  } catch(e) { showToast('❌ 網路錯誤'); }
 }
 
 function toggleNotify(rowIndex) {
