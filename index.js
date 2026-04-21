@@ -1139,6 +1139,7 @@ input:focus,select:focus,textarea:focus{border-color:#c9a98a}
 </div>
 <script>
 let userId = '';
+let displayName = '';
 let cartItems = [];
 let groupedItems = [];
 const imageCache = {}; // key: productId|color → imageUrl
@@ -1217,6 +1218,7 @@ async function init() {
     if (!liff.isLoggedIn()) { liff.login(); return; }
     const profile = await liff.getProfile();
     userId = profile.userId;
+    displayName = profile.displayName || '';
     const [cartData, memberData] = await Promise.all([
       fetch('/api/cart?userId=' + userId).then(r => r.json()).catch(() => ({ items: [] })),
       fetch('/api/member?userId=' + userId).then(r => r.json()).catch(() => ({ ok: false })),
