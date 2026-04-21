@@ -987,7 +987,7 @@ async function handlePostback(event, client) {
     const colorDisplay = translateColorWithJp(colorJp);
     await client.replyMessage(replyToken, {
       type: 'text',
-      text: `✅ 已加入購物車\n商品：${productName || productId}\n\n顏色：${colorDisplay}\n尺寸：${size}\n\n售價：NT$${suggested}\n\n請按下方主選單「購物車」查看內容\n════════════\n購物車每 48 小時自動清空`,
+      text: `✅ 已加入購物車${isPreorder ? '（📅 預購商品）' : ''}\n商品：${productName || productId}\n\n顏色：${colorDisplay}\n尺寸：${size}${isPreorder ? '【預購】' : ''}\n\n售價：NT$${suggested}\n\n請按下方主選單「購物車」查看內容\n════════════\n購物車每 48 小時自動清空`,
     });
 
   } else if (action === 'view_cart') {
@@ -1344,7 +1344,7 @@ async function changeQty(idx, delta) {
     cartItems.push({ rowIndex: -1, productId: group.productId, productName: group.productName,
       color: group.color, colorDisplay: group.colorDisplay, size: group.size,
       jpy: group.jpy, suggestedPrice: group.suggestedPrice, productUrl: group.productUrl,
-      imageUrl: group.imageUrl, addedAt: new Date().toISOString() });
+      imageUrl: group.imageUrl, isPreorder: group.isPreorder || false, addedAt: new Date().toISOString() });
     render();
     fetch('/api/cart/add', { method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({ userId, displayName, productId: group.productId, productName: group.productName,
