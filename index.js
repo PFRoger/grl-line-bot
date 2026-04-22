@@ -2237,17 +2237,18 @@ app.post('/api/order', express.json(), async (req, res) => {
       buyerDiscText = `\n合計：NT$${result.totalTwd}`;
     }
 
-    await Promise.all([
+    const [adminR, buyerR] = await Promise.allSettled([
       client.pushMessage(ADMIN_USER_ID, {
         type: 'text',
         text: `🛍 新訂單！\n訂單ID: ${result.orderId}\n時間: ${result.orderTime}\n━━━━━━━━━━\n${itemsText}\n━━━━━━━━━━\n商品小計: NT$${result.totalTwd}${adminDiscText || ('\n合計: NT$' + result.totalTwd)}\n\n買家: ${buyerInfo.name}\n手機: ${buyerInfo.phone}\n聯繫方式: ${buyerInfo.contactMethod} @${buyerInfo.contactAccount}${buyerInfo.note ? '\n備註: ' + buyerInfo.note : ''}`,
-      }).catch(e => console.error('[admin notify error]', e.message)),
+      }),
       client.pushMessage(userId, {
         type: 'text',
         text: `🎉 訂單已收到！\n\n訂單編號：${result.orderId}\n下單時間：${result.orderTime}\n━━━━━━━━━━\n${itemsText}\n━━━━━━━━━━\n商品小計：NT$${result.totalTwd}${buyerDiscText}\n\n我們確認後會盡快提供賣貨便下單連結，請耐心等候 🌸`,
-      }).catch(e => console.error('[buyer notify error]', e.message)),
+      }),
     ]);
-    res.json({ status: 'ok', orderId: result.orderId });
+    console.error('[notify]', 'admin:', adminR.status, adminR.reason?.message || '', 'buyer:', buyerR.status, buyerR.reason?.message || '');
+    res.json({ status: 'ok', orderId: result.orderId, _n: { a: adminR.status, ae: adminR.reason?.message, b: buyerR.status, be: buyerR.reason?.message } });
   } catch (err) {
     console.error('[api/order error]', err.message);
     res.status(500).json({ error: err.message });
