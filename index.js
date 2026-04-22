@@ -3470,6 +3470,7 @@ async function getActivePoints(sheets, userId) {
 
 // ── API：取得會員資料（LIFF 用，不自動建立）─────────────────────────────────
 app.get('/api/member', async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
   const { userId } = req.query;
   if (!userId) return res.status(400).json({ error: 'userId required' });
   try {
@@ -3560,6 +3561,7 @@ app.post('/api/member/referral', express.json(), async (req, res) => {
 // ── 會員中心 LIFF 頁面 ────────────────────────────────────────────────────────
 app.get('/member', (req, res) => {
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
   res.send(`<!DOCTYPE html>
 <html lang="zh-TW">
 <head>
