@@ -611,7 +611,7 @@ async function submitOrder(userId, displayName, cartItems, buyerInfo, discountIn
   }
   const totalQty = cartItems.length;
   const itemsSummary = Object.values(itemMap)
-    .map(i => `${(i.productId||'').toUpperCase()} ${translateColorWithJp(i.color)} ${i.size} NT$${i.suggestedPrice}${i.qty > 1 ? ` ×${i.qty}` : ''}`)
+    .map(i => `${i.isPreorder ? '【預購】' : ''}${(i.productId||'').toUpperCase()} ${translateColorWithJp(i.color)} ${i.size} NT$${i.suggestedPrice}${i.qty > 1 ? ` ×${i.qty}` : ''}`)
     .join('\n') + `\n共 ${totalQty} 件`;
   const totalTwd = cartItems.reduce((sum, i) => sum + (i.suggestedPrice || 0), 0);
   const { pointsUsed = 0, couponCode = '', couponAmount = 0 } = discountInfo;
@@ -2453,7 +2453,7 @@ app.get('/admin', async (req, res) => {
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
   res.setHeader('Pragma', 'no-cache');
   const adminKey = ADMIN_KEY;
-  const BUILD_VERSION = 'v2.4';
+  const BUILD_VERSION = 'v2.5';
   // ── 伺服器端直接讀取訂單，嵌入頁面 ──
   let ssrOrders = [];
   let ssrError = '';
