@@ -3479,8 +3479,8 @@ app.get('/api/member', async (req, res) => {
     if (!member) return res.json({ ok: true, registered: false });
     const coupons = await getActiveCoupons(sheets, userId);
     const pointsRows = await getActivePoints(sheets, userId);
-    const totalPoints = pointsRows.reduce((s, p) => s + p.points, 0);
-    res.json({ ok: true, registered: true, member: { ...member, points: totalPoints }, coupons, pointsRows });
+    // 餘額以會員表 K 欄為準（deductMemberPoints 直接更新此欄），點數紀錄只用於明細展示
+    res.json({ ok: true, registered: true, member, coupons, pointsRows });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
