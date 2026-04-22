@@ -2453,7 +2453,7 @@ app.get('/admin', async (req, res) => {
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
   res.setHeader('Pragma', 'no-cache');
   const adminKey = ADMIN_KEY;
-  const BUILD_VERSION = 'v2.3';
+  const BUILD_VERSION = 'v2.4';
   // ── 伺服器端直接讀取訂單，嵌入頁面 ──
   let ssrOrders = [];
   let ssrError = '';
@@ -2740,7 +2740,10 @@ function createCard(o) {
     return '<option value="' + esc(s) + '"' + (o.status === s ? ' selected' : '') + '>' + esc(s) + '</option>';
   }).join('');
 
-  var itemsHtml = (o.items||'').split('\\n').map(function(l){ return '<div>' + esc(l) + '</div>'; }).join('');
+  var itemsHtml = (o.items||'').split('\\n').map(function(l){
+    if (l.indexOf('【預購】')===0) return '<div><span style="background:#fff3e0;color:#e65100;font-size:10px;font-weight:700;border-radius:3px;padding:1px 5px;margin-right:4px;border:1px solid #ffcc80">預購</span>' + esc(l.replace('【預購】','')) + '</div>';
+    return '<div>' + esc(l) + '</div>';
+  }).join('');
 
   var priceHtml = '<div class="price-row"><span class="price-final">NT$' + (o.discountTotal > 0 ? o.finalAmount : o.total) + '</span>';
   if (o.discountTotal > 0) {
