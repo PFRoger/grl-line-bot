@@ -2446,14 +2446,47 @@ app.post('/api/admin/order-status', express.json(), async (req, res) => {
 });
 
 // ── 管理員頁面 ────────────────────────────────────────────────────────────────
-app.get('/admin', (req, res) => {
+app.get('/admin', async (req, res) => {
   const { key } = req.query;
   if (key !== ADMIN_KEY) return res.status(401).send('Unauthorized');
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
   res.setHeader('Pragma', 'no-cache');
   const adminKey = ADMIN_KEY;
-  const buildTs = new Date().toLocaleString('zh-TW', { timeZone: 'Asia/Taipei', hour12: false });
+  const BUILD_VERSION = 'v2.2';
+  // ── 伺服器端直接讀取訂單，嵌入頁面 ──
+  let ssrOrders = [];
+  let ssrError = '';
+  try {
+    const sheets = getSheetsClient();
+    const resp = await Promise.race([
+      sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${ORDER_SHEET}!A:P` }),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('Sheets timeout')), 25000)),
+    ]);
+    const rows = (resp.data.values || []).slice(1);
+    ssrOrders = rows.map((row, i) => ({
+      rowIndex:        i + 2,
+      orderId:         row[0] || '',
+      orderTime:       row[1] || '',
+      userId:          row[2] || '',
+      items:           row[3] || '',
+      total:           row[4] || '',
+      buyerName:       row[5] || '',
+      phone:           row[6] || '',
+      contact:         row[7] || '',
+      contactId:       row[8] || '',
+      note:            row[9] || '',
+      status:          row[10] || '待確認',
+      pointsUsed:      parseInt(row[11]) || 0,
+      couponCode:      row[12] || '',
+      discountTotal:   parseInt(row[13]) || 0,
+      finalAmount:     parseInt(row[14]) || parseInt(row[4]) || 0,
+      lineDisplayName: row[15] || '',
+    })).reverse();
+  } catch (e) {
+    ssrError = e.message;
+  }
+  const ssrOrdersJson = JSON.stringify(ssrOrders).replace(/<\/script>/gi, '<\\/script>');
   res.send(`<!DOCTYPE html>
 <html lang="zh-TW">
 <head>
@@ -2557,7 +2590,7 @@ details.sec-closed[open] .sec-summary::after{content:'▾';font-size:12px}
 <body>
 <header>
   <div class="hdr-left">
-    <div class="hdr-logo">🌸 Bijin 管理後台 <span style="font-size:11px;color:#c9a98a;font-weight:400">${buildTs}</span></div>
+    <div class="hdr-logo">🌸 Bijin 管理後台 <span style="font-size:11px;color:#c9a98a;font-weight:400">${BUILD_VERSION}</span></div>
     <div class="hdr-counts" id="hdr-counts"><span style="font-size:13px;color:#ccc">載入中…</span></div>
   </div>
   <button class="btn-refresh" onclick="loadOrders()">↻ 重新整理</button>
@@ -2595,8 +2628,7 @@ details.sec-closed[open] .sec-summary::after{content:'▾';font-size:12px}
 <div class="toast" id="toast"></div>
 
 <script>
-var KEY = '${adminKey}';
-var STATUSES = ['待確認','待買家完成下單','處理中(待處理或完成官網下單)','已發貨(官網出貨)','已發貨(已達台灣海關作業)','已發貨(賣貨便出貨)','待買家取貨','已完成','已取消','退單'];
+var STATUSES =['待確認','待買家完成下單','處理中(待處理或完成官網下單)','已發貨(官網出貨)','已發貨(已達台灣海關作業)','已發貨(賣貨便出貨)','待買家取貨','已完成','已取消','退單'];
 var NOTIFY_STATUSES = {'處理中(待處理或完成官網下單)':1,'已發貨(官網出貨)':1,'已發貨(已達台灣海關作業)':1,'已發貨(賣貨便出貨)':1,'待買家取貨':1};
 var CLOSED = {'已完成':1,'已取消':1,'退單':1};
 var STATUS_STYLE = {
@@ -2615,7 +2647,9 @@ function sbadge(s) {
   var st = STATUS_STYLE[s] || 'background:#eee;color:#666';
   return '<span class="sbadge" style="' + st + '">' + (s||'待確認') + '</span>';
 }
-var allOrders = [];
+var allOrders = ${ssrOrdersJson};
+var SSR_ERROR = '${ssrError.replace(/'/g, "\\'")}';
+var KEY = '${adminKey}';
 
 function showErr(msg) {
   var bar = document.getElementById('err-bar');
@@ -2870,7 +2904,13 @@ function toast(msg) {
   setTimeout(function(){ t.classList.remove('show'); }, 2800);
 }
 
-loadOrders();
+// 初始渲染：資料已由伺服器端嵌入，直接呈現
+if (SSR_ERROR) {
+  showErr('伺服器載入失敗：' + SSR_ERROR + '　請按右上角重新整理');
+  document.getElementById('hdr-counts').innerHTML = '<span style="font-size:13px;color:#c0392b">載入失敗</span>';
+} else {
+  renderOrders();
+}
 </script>
 
 <div id="date-modal" class="modal-overlay" onclick="if(event.target===this)closeDateModal()">
