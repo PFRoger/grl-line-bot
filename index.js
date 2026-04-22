@@ -2453,7 +2453,7 @@ app.get('/admin', async (req, res) => {
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
   res.setHeader('Pragma', 'no-cache');
   const adminKey = ADMIN_KEY;
-  const BUILD_VERSION = 'v2.2';
+  const BUILD_VERSION = 'v2.3';
   // ── 伺服器端直接讀取訂單，嵌入頁面 ──
   let ssrOrders = [];
   let ssrError = '';
