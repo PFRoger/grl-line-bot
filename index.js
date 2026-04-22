@@ -2626,25 +2626,33 @@ function hideErr() {
   document.getElementById('err-bar').style.display = 'none';
 }
 
-async function loadOrders() {
+function onLoadError(msg) {
+  console.error('[Admin] loadOrders error:', msg);
+  document.getElementById('hdr-counts').innerHTML = '<span style="font-size:13px;color:#c0392b">載入失敗</span>';
+  showErr('載入失敗：' + msg + '　請按右上角重新整理');
+}
+function loadOrders() {
   hideErr();
   document.getElementById('hdr-counts').innerHTML = '<span style="font-size:13px;color:#ccc">載入中…</span>';
-  var controller = new AbortController();
-  var timer = setTimeout(function(){ controller.abort(); }, 10000);
-  try {
-    var r = await fetch('/api/admin/orders?key=' + KEY + '&_=' + Date.now(), { signal: controller.signal });
-    clearTimeout(timer);
-    var d = await r.json();
-    if (!r.ok) throw new Error(d.error || 'HTTP ' + r.status);
-    allOrders = d.orders || [];
-    renderOrders();
-  } catch(e) {
-    clearTimeout(timer);
-    var msg = e.name === 'AbortError' ? '請求逾時（10秒），請重新整理' : e.message;
-    console.error('[Admin] loadOrders error:', e.name, e.message);
-    document.getElementById('hdr-counts').innerHTML = '<span style="font-size:13px;color:#c0392b">載入失敗</span>';
-    showErr('載入失敗：' + msg + '　請點右上角重新整理');
-  }
+  var xhr = new XMLHttpRequest();
+  xhr.open('GET', '/api/admin/orders?key=' + KEY + '&_=' + Date.now(), true);
+  xhr.timeout = 8000;
+  xhr.onload = function() {
+    if (xhr.status === 200) {
+      try {
+        var d = JSON.parse(xhr.responseText);
+        allOrders = d.orders || [];
+        renderOrders();
+      } catch(e) {
+        onLoadError('JSON解析失敗：' + e.message);
+      }
+    } else {
+      onLoadError('HTTP ' + xhr.status);
+    }
+  };
+  xhr.onerror = function() { onLoadError('網路連線錯誤'); };
+  xhr.ontimeout = function() { onLoadError('逾時 8 秒，請重新整理'); };
+  xhr.send();
 }
 
 function renderOrders() {
