@@ -2234,7 +2234,18 @@ app.post('/api/order', express.json(), async (req, res) => {
       }).catch(e => console.error('[admin notify error]', e.message)),
       client.pushMessage(userId, {
         type: 'text',
-        text: `🎉 訂單已收到！\n\n訂單編號：${result.orderId}\n下單時間：${result.orderTime}\n━━━━━━━━━━\n${itemsText}\n━━━━━━━━━━\n商品小計：NT$${result.totalTwd}${result.discountTotal > 0 ? `\n折扣：-NT$${result.discountTotal}\n實付金額：NT$${result.finalAmount}` : `\n合計：NT$${result.totalTwd}`}\n\n我們確認後會盡快提供賣貨便下單連結，請耐心等候 🌸`,
+        text: (() => {
+          let msg = `🎉 訂單已收到！\n\n訂單編號：${result.orderId}\n下單時間：${result.orderTime}\n━━━━━━━━━━\n${itemsText}\n━━━━━━━━━━\n商品小計：NT$${result.totalTwd}`;
+          if (result.discountTotal > 0) {
+            if (pointsUsed > 0) msg += `\n💎 點數折抵：-NT$${pointsUsed}（${pointsUsed}點）`;
+            if (couponCode && couponAmount > 0) msg += `\n🎟 優惠券折抵：-NT$${couponAmount}`;
+            msg += `\n✅ 實付金額：NT$${result.finalAmount}`;
+          } else {
+            msg += `\n合計：NT$${result.totalTwd}`;
+          }
+          msg += `\n\n我們確認後會盡快提供賣貨便下單連結，請耐心等候 🌸`;
+          return msg;
+        })(),
       }).catch(e => console.error('[buyer notify error]', e.message)),
     ]);
     res.json({ status: 'ok', orderId: result.orderId });
