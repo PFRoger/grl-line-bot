@@ -2426,7 +2426,7 @@ app.post('/api/admin/order-status', express.json(), async (req, res) => {
       const displayName = orderRow[15] || '';
       const totalTwd = parseFloat(orderRow[4]) || 0;
       if (buyerUserId) {
-        processOrderCompletion(sheets, buyerUserId, displayName, orderRow[0], totalTwd)
+        await processOrderCompletion(sheets, buyerUserId, displayName, orderRow[0], totalTwd)
           .catch(e => console.error('[processOrderCompletion error]', e.message));
       }
     }
@@ -2435,7 +2435,7 @@ app.post('/api/admin/order-status', express.json(), async (req, res) => {
       const orderResp = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${ORDER_SHEET}!A${rowIndex}:A${rowIndex}` });
       const returnOrderId = ((orderResp.data.values || [])[0] || [])[0] || '';
       if (returnOrderId) {
-        processOrderReturn(sheets, returnOrderId)
+        await processOrderReturn(sheets, returnOrderId)
           .catch(e => console.error('[processOrderReturn error]', e.message));
       }
     }
