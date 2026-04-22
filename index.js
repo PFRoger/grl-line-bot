@@ -2761,7 +2761,7 @@ function createCard(o) {
   if ((o.status||'待確認') === '待確認') {
     notifyRowHtml = '<div class="notify-row" id="nrow-' + ri + '" style="display:flex">'
       + '<input type="url" id="nurl-' + ri + '" placeholder="貼上賣貨便網址…">'
-      + '<button class="btn-send" onclick="sendNotify(\'' + esc(o.orderId) + '\',' + ri + ')">傳送網址</button>'
+      + '<button class="btn-send" onclick="sendNotify(\\'' + esc(o.orderId) + '\\',' + ri + ')">傳送網址</button>'
       + '</div>';
   }
 
@@ -2781,7 +2781,7 @@ function createCard(o) {
     + '<hr class="card-divider">'
     + '<div class="card-footer">'
     + '<select class="status-select" id="sel-' + ri + '">' + opts + '</select>'
-    + '<button class="btn-save" onclick="saveStatus(' + ri + ',\'' + esc(o.orderId) + '\')">儲存</button>'
+    + '<button class="btn-save" onclick="saveStatus(' + ri + ',\\'' + esc(o.orderId) + '\\')">儲存</button>'
     + '</div>'
     + notifyRowHtml
     + '</div>';
@@ -2789,7 +2789,7 @@ function createCard(o) {
 
 function closedRow(o, showReturn) {
   var returnBtn = showReturn
-    ? '<button class="btn-return" onclick="doReturn(' + o.rowIndex + ',\'' + esc(o.orderId) + '\')">退單</button>'
+    ? '<button class="btn-return" onclick="doReturn(' + o.rowIndex + ',\\'' + esc(o.orderId) + '\\')">退單</button>'
     : '';
   return '<div class="closed-row">'
     + '<div class="cr-left">'
