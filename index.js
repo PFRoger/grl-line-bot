@@ -3484,6 +3484,34 @@ app.get('/api/member', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── API：取得會員進行中訂單 ──────────────────────────────────────────────────
+app.get('/api/member/orders', async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+  const { userId } = req.query;
+  if (!userId) return res.status(400).json({ error: 'userId required' });
+  try {
+    const sheets = getSheetsClient();
+    const resp = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${ORDER_SHEET}!A:P` });
+    const rows = resp.data.values || [];
+    const DONE = ['已完成', '已取消'];
+    const orders = rows.slice(1)
+      .filter(r => r[2] === userId && !DONE.includes(r[10] || ''))
+      .map(r => ({
+        orderId: r[0] || '',
+        orderTime: r[1] || '',
+        items: r[3] || '',
+        totalTwd: parseFloat(r[4]) || 0,
+        finalAmount: parseFloat(r[14]) || parseFloat(r[4]) || 0,
+        pointsUsed: parseInt(r[11]) || 0,
+        couponCode: r[12] || '',
+        discountAmount: parseFloat(r[13]) || 0,
+        status: r[10] || '待確認',
+      }))
+      .reverse();
+    res.json({ ok: true, orders });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // ── API：會員註冊 ────────────────────────────────────────────────────────────
 app.post('/api/member/register', express.json(), async (req, res) => {
   const { userId, displayName, name, phone, birthday, inviteCode } = req.body;
@@ -3735,6 +3763,12 @@ header{background:#c9a98a;color:#fff;padding:20px 16px 16px;text-align:center}
     <div id="pts-list" style="margin-top:8px;font-size:12px;color:#aaa"></div>
   </div>
 
+  <!-- 進行中訂單 -->
+  <div class="card">
+    <div class="card-title">📦 我的訂單進度</div>
+    <div id="order-list"><div class="empty">載入中…</div></div>
+  </div>
+
   <!-- 優惠券 -->
   <div class="card">
     <div class="card-title">優惠券</div>
@@ -3903,6 +3937,97 @@ function render(d) {
     document.getElementById('referral-input-row').style.display = 'none';
     document.getElementById('ref-bound-msg').style.display = 'block';
     document.getElementById('ref-bound-msg').textContent = '✅ 已綁定邀請碼：' + m.referredByCode;
+  }
+
+  // 訂單進度（非同步載入）
+  loadOrders();
+}
+
+const ORDER_STEPS = [
+  { key: '待確認', label: '訂單確認中', icon: '🕐' },
+  { key: '待買家完成下單', label: '等待您完成下單', icon: '⏳' },
+  { key: '處理中(待處理或完成官網下單)', label: '官網下單處理中', icon: '🛍' },
+  { key: '已發貨(官網出貨)', label: 'GRL 已出貨', icon: '📦' },
+  { key: '已發貨(已達台灣海關作業)', label: '台灣海關作業中', icon: '🛃' },
+  { key: '已發貨(賣貨便出貨)', label: '賣貨便已出貨', icon: '🚚' },
+  { key: '待買家取貨', label: '商品已到門市，請取貨', icon: '🏪' },
+];
+
+function renderOrderCard(o) {
+  const stepIdx = ORDER_STEPS.findIndex(s => s.key === o.status);
+  const curStep = stepIdx >= 0 ? ORDER_STEPS[stepIdx] : { label: o.status, icon: '📋' };
+  const totalSteps = ORDER_STEPS.length;
+  const pct = stepIdx >= 0 ? Math.round((stepIdx / (totalSteps - 1)) * 100) : 0;
+
+  const items = o.items.split('\\n').map(function(l) {
+    if (!l.trim()) return '';
+    const isPreorder = l.indexOf('【預購】') === 0;
+    const text = isPreorder ? l.replace('【預購】','') : l;
+    return '<div style="font-size:12px;color:#666;padding:2px 0">'
+      + (isPreorder ? '<span style="background:#fff3e0;color:#e65100;font-size:10px;font-weight:700;border-radius:3px;padding:1px 4px;margin-right:3px;border:1px solid #ffcc80">預購</span>' : '')
+      + escHtml(text) + '</div>';
+  }).join('');
+
+  let priceHtml = '<span style="font-weight:bold;color:#333">NT$' + o.finalAmount.toLocaleString() + '</span>';
+  if (o.discountAmount > 0) {
+    priceHtml = '<span style="text-decoration:line-through;color:#bbb;font-size:11px">NT$' + o.totalTwd.toLocaleString() + '</span> '
+      + '<span style="font-weight:bold;color:#c9a98a">NT$' + o.finalAmount.toLocaleString() + '</span>';
+  }
+
+  const stepsHtml = ORDER_STEPS.map(function(s, i) {
+    const done = i < stepIdx;
+    const active = i === stepIdx;
+    const col = active ? '#c9a98a' : done ? '#c9a98a' : '#ddd';
+    const textCol = active ? '#7a5c3e' : done ? '#aaa' : '#ccc';
+    const weight = active ? 'bold' : 'normal';
+    return '<div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:6px">'
+      + '<div style="width:20px;height:20px;border-radius:50%;background:' + col + ';display:flex;align-items:center;justify-content:center;font-size:10px;flex-shrink:0;margin-top:1px">'
+      + (done ? '<span style="color:#fff">✓</span>' : active ? '<span style="color:#fff">●</span>' : '<span style="color:#bbb">○</span>')
+      + '</div>'
+      + '<div style="font-size:12px;color:' + textCol + ';font-weight:' + weight + ';line-height:1.4">' + s.icon + ' ' + s.label + '</div>'
+      + '</div>';
+  }).join('');
+
+  return '<div style="border:1px solid #f0e8de;border-radius:10px;padding:12px;margin-bottom:10px;background:#fffaf6">'
+    + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">'
+    + '<div style="font-size:11px;color:#bbb">' + o.orderTime.substring(0,10) + '</div>'
+    + '<div>' + priceHtml + '</div>'
+    + '</div>'
+    + '<div style="margin-bottom:8px">' + items + '</div>'
+    + '<div style="background:#f5ede0;border-radius:8px;padding:8px 10px;margin-bottom:10px">'
+    + '<div style="font-size:12px;font-weight:bold;color:#c9a98a;margin-bottom:2px">' + curStep.icon + ' 目前狀態</div>'
+    + '<div style="font-size:13px;color:#7a5c3e;font-weight:bold">' + curStep.label + '</div>'
+    + '</div>'
+    + '<div style="font-size:11px;color:#bbb;margin-bottom:6px;cursor:pointer;text-align:right" onclick="toggleSteps(this)">▼ 查看完整進度</div>'
+    + '<div style="display:none;border-top:1px solid #f0e8de;padding-top:8px">' + stepsHtml + '</div>'
+    + '</div>';
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function toggleSteps(el) {
+  const panel = el.nextElementSibling;
+  if (panel.style.display === 'none') {
+    panel.style.display = 'block';
+    el.textContent = '▲ 收合進度';
+  } else {
+    panel.style.display = 'none';
+    el.textContent = '▼ 查看完整進度';
+  }
+}
+
+async function loadOrders() {
+  const ol = document.getElementById('order-list');
+  try {
+    const r = await fetch('/api/member/orders?userId=' + userId);
+    const d = await r.json();
+    if (!d.ok) { ol.innerHTML = '<div class="empty">載入失敗</div>'; return; }
+    if (!d.orders.length) { ol.innerHTML = '<div class="empty">目前沒有進行中的訂單</div>'; return; }
+    ol.innerHTML = d.orders.map(renderOrderCard).join('');
+  } catch(e) {
+    ol.innerHTML = '<div class="empty">載入失敗，請稍後再試</div>';
   }
 }
 
