@@ -2303,6 +2303,18 @@ app.get('/admin/insert-weight-column', async (req, res) => {
   }
 });
 
+// ── Debug：測試 LINE push 通知 ────────────────────────────────────────────────
+app.get('/api/debug/notify', async (req, res) => {
+  if (req.query.key !== ADMIN_KEY) return res.status(401).json({ error: 'Unauthorized' });
+  try {
+    const client = new line.Client({ channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN });
+    await client.pushMessage(ADMIN_USER_ID, { type: 'text', text: '🔧 通知測試 - 如果收到這訊息代表 LINE push 正常' });
+    res.json({ ok: true, message: '推播成功' });
+  } catch(e) {
+    res.json({ ok: false, error: e.message, statusCode: e.statusCode });
+  }
+});
+
 // ── 一次性：建立並啟用 Rich Menu ──────────────────────────────────────────────
 app.get('/admin/setup-rich-menu', async (req, res) => {
   const token = process.env.LINE_CHANNEL_ACCESS_TOKEN;
