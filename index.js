@@ -1422,7 +1422,7 @@ function updateTotals() {
   if (discSection) {
     if (subtotal > 0) {
       discSection.style.display = 'block';
-      document.getElementById('avail-pts').textContent = memberPoints;
+      document.getElementById('avail-pts').textContent = memberPoints - ptsUsed;
       const ptsInput = document.getElementById('pts-input');
       ptsInput.max = Math.min(memberPoints, subtotal);
       // render coupon list
