@@ -3871,9 +3871,8 @@ function render(d) {
     document.getElementById('progress-fill').style.width = '100%';
   }
 
-  // 點數
-  const totalPts = d.pointsRows.reduce((s, p) => s + p.points, 0);
-  document.getElementById('total-pts').textContent = totalPts + ' 點';
+  // 點數（以會員表餘額為準，pointsRows 只用於明細展示）
+  document.getElementById('total-pts').textContent = (m.points || 0) + ' 點';
   if (d.pointsRows.length) {
     document.getElementById('pts-list').innerHTML = d.pointsRows
       .map(p => \`<div style="display:flex;justify-content:space-between;padding:3px 0"><span>+\${p.points}點（\${p.orderId.substring(0,8)}…）</span><span>到期：\${p.expiryDate}</span></div>\`)
