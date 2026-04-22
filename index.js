@@ -3363,8 +3363,8 @@ async function processReferralReward(sheets, inviteeUserId, orderId) {
       });
       continue;
     }
-    // 發獎勵：雙方各 NT$50 × 2 張，效期 6 個月
-    const expiry = new Date(Date.now() + 180 * 86400000).toISOString().slice(0, 10);
+    // 發獎勵：雙方各 NT$50 × 2 張，效期 3 個月
+    const expiry = new Date(Date.now() + 90 * 86400000).toISOString().slice(0, 10);
     const inviteeMember = await getMember(sheets, inviteeUserId);
     const inviterMember = await getMember(sheets, inviterUserId);
     await issueCoupons(sheets, inviteeUserId, inviteeMember ? inviteeMember.displayName : '', '邀請獎勵', 50, 2, expiry);
