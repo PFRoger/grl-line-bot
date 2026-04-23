@@ -2445,6 +2445,39 @@ ${loadError ? `<div style="padding:20px;color:#c0392b;font-weight:600">載入失
 </table>
 </div>
 
+<!-- 優惠券 Modal -->
+<div class="modal" id="coupon-modal">
+  <div class="modal-box" style="width:420px">
+    <div class="modal-title">🎟 優惠券管理 — <span id="coupon-member-name"></span></div>
+    <div id="coupon-list-area" style="margin-bottom:16px;max-height:200px;overflow-y:auto"></div>
+    <div style="border-top:1px solid #f0e8de;padding-top:14px">
+      <div style="font-size:13px;font-weight:700;color:#7a5c3e;margin-bottom:10px">＋ 新增優惠券</div>
+      <div class="form-row">
+        <label>說明 / 類型（例：生日禮、客服補發、首單優惠）</label>
+        <input id="cpn-type" type="text" placeholder="輸入說明">
+      </div>
+      <div style="display:flex;gap:8px">
+        <div class="form-row" style="flex:1">
+          <label>金額（NT$）</label>
+          <input id="cpn-amount" type="number" min="1" placeholder="50">
+        </div>
+        <div class="form-row" style="flex:1">
+          <label>張數</label>
+          <input id="cpn-qty" type="number" min="1" max="10" value="1">
+        </div>
+      </div>
+      <div class="form-row">
+        <label>到期日</label>
+        <input id="cpn-expiry" type="date">
+      </div>
+    </div>
+    <div class="modal-btns">
+      <button class="btn" style="background:#aaa" onclick="closeCouponModal()">關閉</button>
+      <button class="btn btn-gold" onclick="addCoupon()">發行優惠券</button>
+    </div>
+  </div>
+</div>
+
 <!-- 編輯 Modal -->
 <div class="modal" id="edit-modal">
   <div class="modal-box">
@@ -2503,7 +2536,7 @@ function render() {
       + '<td><strong style="color:#c9a98a">' + (m.points||0) + ' 點</strong></td>'
       + '<td>' + esc(m.birthday||'—') + '</td>'
       + '<td style="color:#aaa;font-size:12px">' + esc(m.joinDate||'—') + '</td>'
-      + '<td><button class="btn btn-sm btn-gold" onclick="openEdit(' + m.rowIndex + ')">調整</button></td>'
+      + '<td style="display:flex;gap:6px"><button class="btn btn-sm btn-gold" onclick="openEdit(' + m.rowIndex + ')">調整</button><button class="btn btn-sm" style="background:#c9a98a" onclick="openCoupons(\'' + esc(m.userId) + '\',\'' + esc(m.name||m.displayName) + '\')">優惠券</button></td>'
       + '</tr>';
   }).join('');
   document.getElementById('tbody').innerHTML = rows || '<tr><td colspan="9" style="text-align:center;color:#ccc;padding:20px">找不到符合條件的會員</td></tr>';
@@ -2552,6 +2585,88 @@ function showToast(msg) {
   setTimeout(function(){ t.classList.remove('show'); }, 2500);
 }
 
+var currentCouponUserId = '', currentCouponDisplayName = '';
+
+async function openCoupons(userId, memberName) {
+  currentCouponUserId = userId;
+  currentCouponDisplayName = memberName;
+  document.getElementById('coupon-member-name').textContent = memberName;
+  document.getElementById('coupon-list-area').innerHTML = '<div style="color:#aaa;font-size:13px">載入中…</div>';
+  // 預設到期日 3 個月後
+  var d = new Date(); d.setMonth(d.getMonth()+3);
+  document.getElementById('cpn-expiry').value = d.toISOString().slice(0,10);
+  document.getElementById('cpn-type').value = '';
+  document.getElementById('cpn-amount').value = '';
+  document.getElementById('cpn-qty').value = '1';
+  document.getElementById('coupon-modal').classList.add('show');
+  try {
+    var r = await fetch('/api/admin/member-coupons?key=' + KEY + '&userId=' + encodeURIComponent(userId));
+    var d2 = await r.json();
+    renderCouponList(d2.coupons || []);
+  } catch(e) { document.getElementById('coupon-list-area').innerHTML = '<div style="color:#e53935;font-size:13px">載入失敗</div>'; }
+}
+
+function renderCouponList(coupons) {
+  if (!coupons.length) {
+    document.getElementById('coupon-list-area').innerHTML = '<div style="color:#aaa;font-size:13px">目前無優惠券</div>';
+    return;
+  }
+  var statusLabel = {'unused':'未使用','used':'已使用','voided':'已作廢','expired':'已過期'};
+  var statusColor = {'unused':'#4caf50','used':'#aaa','voided':'#e53935','expired':'#aaa'};
+  document.getElementById('coupon-list-area').innerHTML = coupons.map(function(c){
+    var st = c.status || 'unused';
+    var canVoid = st === 'unused';
+    return '<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid #f5ede0;font-size:13px">'
+      + '<div><div style="font-weight:bold;color:#7a5c3e">' + esc(c.type) + '　NT$' + c.amount + '</div>'
+      + '<div style="font-size:11px;color:#aaa">' + esc(c.couponCode||'') + '　到期：' + esc(c.expiryDate) + '</div></div>'
+      + '<div style="display:flex;align-items:center;gap:6px">'
+      + '<span style="font-size:11px;color:' + statusColor[st] + ';font-weight:700">' + (statusLabel[st]||st) + '</span>'
+      + (canVoid ? '<button class="btn btn-sm btn-danger" style="padding:2px 8px;font-size:11px" onclick="voidCoupon(' + c.rowIndex + ',this)">作廢</button>' : '')
+      + '</div></div>';
+  }).join('');
+}
+
+function closeCouponModal() {
+  document.getElementById('coupon-modal').classList.remove('show');
+}
+
+async function addCoupon() {
+  var type = document.getElementById('cpn-type').value.trim();
+  var amount = parseInt(document.getElementById('cpn-amount').value);
+  var qty = parseInt(document.getElementById('cpn-qty').value) || 1;
+  var expiry = document.getElementById('cpn-expiry').value;
+  if (!type || !amount || !expiry) { showToast('請填寫所有欄位'); return; }
+  try {
+    var r = await fetch('/api/admin/member-coupon-add', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ key:KEY, userId:currentCouponUserId, displayName:currentCouponDisplayName, type, amount, expiryDate:expiry, qty })
+    });
+    var d = await r.json();
+    if (!d.ok) { showToast('❌ ' + d.error); return; }
+    showToast('✅ 已發行 ' + d.codes.length + ' 張優惠券');
+    // 重新載入優惠券列表
+    var r2 = await fetch('/api/admin/member-coupons?key=' + KEY + '&userId=' + encodeURIComponent(currentCouponUserId));
+    var d2 = await r2.json();
+    renderCouponList(d2.coupons || []);
+  } catch(e) { showToast('❌ 網路錯誤'); }
+}
+
+async function voidCoupon(rowIndex, btn) {
+  btn.disabled = true;
+  try {
+    var r = await fetch('/api/admin/member-coupon-void', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ key:KEY, rowIndex })
+    });
+    var d = await r.json();
+    if (!d.ok) { showToast('❌ ' + d.error); btn.disabled=false; return; }
+    showToast('✅ 已作廢');
+    var r2 = await fetch('/api/admin/member-coupons?key=' + KEY + '&userId=' + encodeURIComponent(currentCouponUserId));
+    var d2 = await r2.json();
+    renderCouponList(d2.coupons || []);
+  } catch(e) { showToast('❌ 網路錯誤'); btn.disabled=false; }
+}
+
 render();
 </script>
 </body>
@@ -2572,6 +2687,49 @@ app.post('/api/admin/member-adjust', express.json(), async (req, res) => {
       range: `${MEMBER_SHEET}!I${rowIndex}:L${rowIndex}`,
       valueInputOption: 'RAW',
       resource: { values: [[parseFloat(yearlySpend)||0, tier, parseInt(points)||0, todayStr()]] },
+    });
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── 管理員 API：取得會員優惠券 ────────────────────────────────────────────────
+app.get('/api/admin/member-coupons', async (req, res) => {
+  const { key, userId } = req.query;
+  if (key !== ADMIN_KEY) return res.status(401).json({ error: 'Unauthorized' });
+  if (!userId) return res.status(400).json({ error: 'userId required' });
+  try {
+    const sheets = getSheetsClient();
+    const resp = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${COUPON_SHEET}!A:I` });
+    const rows = resp.data.values || [];
+    const coupons = rows.slice(1)
+      .map((r, i) => ({ rowIndex: i + 2, couponCode: r[0], userId: r[1], type: r[3], amount: parseInt(r[4])||0, issueDate: r[5], expiryDate: r[6], status: r[7]||'unused' }))
+      .filter(c => c.userId === userId);
+    res.json({ ok: true, coupons });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── 管理員 API：新增優惠券給會員 ──────────────────────────────────────────────
+app.post('/api/admin/member-coupon-add', express.json(), async (req, res) => {
+  const { key, userId, displayName, type, amount, expiryDate, qty } = req.body;
+  if (key !== ADMIN_KEY) return res.status(401).json({ error: 'Unauthorized' });
+  if (!userId || !type || !amount || !expiryDate) return res.status(400).json({ error: 'missing fields' });
+  try {
+    const sheets = getSheetsClient();
+    const codes = await issueCoupons(sheets, userId, displayName || '', type, parseInt(amount), parseInt(qty)||1, expiryDate);
+    res.json({ ok: true, codes });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── 管理員 API：作廢優惠券 ────────────────────────────────────────────────────
+app.post('/api/admin/member-coupon-void', express.json(), async (req, res) => {
+  const { key, rowIndex } = req.body;
+  if (key !== ADMIN_KEY) return res.status(401).json({ error: 'Unauthorized' });
+  if (!rowIndex) return res.status(400).json({ error: 'rowIndex required' });
+  try {
+    const sheets = getSheetsClient();
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: SHEET_ID, range: `${COUPON_SHEET}!H${rowIndex}`,
+      valueInputOption: 'RAW', resource: { values: [['voided']] },
     });
     res.json({ ok: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
