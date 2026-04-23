@@ -2394,7 +2394,7 @@ header{background:#fff;border-bottom:2px solid #e8ddd4;padding:0 24px;position:s
 .search-box:focus{border-color:#c9a98a}
 .summary{padding:10px 24px;font-size:13px;color:#888}
 table{width:100%;border-collapse:collapse;background:#fff}
-thead{background:#f5ede0;position:sticky;top:56px;z-index:10}
+thead{background:#f5ede0}
 th{padding:10px 12px;text-align:left;font-size:12px;color:#7a5c3e;font-weight:700;white-space:nowrap}
 td{padding:10px 12px;font-size:13px;color:#333;border-bottom:1px solid #f0e8de;vertical-align:middle}
 tr:hover td{background:#fffaf5}
