@@ -2742,7 +2742,7 @@ app.get('/api/admin/orders', async (req, res) => {
   try {
     const sheets = getSheetsClient();
     const resp = await Promise.race([
-      sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${ORDER_SHEET}!A:P` }),
+      sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${ORDER_SHEET}!A:Q` }),
       new Promise((_, reject) => setTimeout(() => reject(new Error('Sheets API timeout')), 8000)),
     ]);
     const rows = (resp.data.values || []).slice(1);
@@ -2764,6 +2764,7 @@ app.get('/api/admin/orders', async (req, res) => {
       discountTotal:   parseInt(row[13]) || 0,
       finalAmount:     parseInt(row[14]) || parseInt(row[4]) || 0,
       lineDisplayName: row[15] || '',
+      adminNote:       row[16] || '',
     })).reverse();
     res.json({ orders });
   } catch (err) {
@@ -2811,6 +2812,23 @@ app.post('/api/admin/order-status', express.json(), async (req, res) => {
   }
 });
 
+// ── 管理員 API：儲存內部備註（Q欄，不通知買家） ───────────────────────────────
+app.post('/api/admin/order-note', express.json(), async (req, res) => {
+  const { key, rowIndex, adminNote } = req.body;
+  if (key !== ADMIN_KEY) return res.status(401).json({ error: 'Unauthorized' });
+  if (!rowIndex) return res.status(400).json({ error: 'rowIndex required' });
+  try {
+    const sheets = getSheetsClient();
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: SHEET_ID,
+      range: `${ORDER_SHEET}!Q${rowIndex}`,
+      valueInputOption: 'RAW',
+      resource: { values: [[adminNote || '']] },
+    });
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 // ── 管理員頁面 ────────────────────────────────────────────────────────────────
 app.get('/admin', async (req, res) => {
   const { key } = req.query;
@@ -2819,14 +2837,14 @@ app.get('/admin', async (req, res) => {
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
   res.setHeader('Pragma', 'no-cache');
   const adminKey = ADMIN_KEY;
-  const BUILD_VERSION = 'v2.6';
+  const BUILD_VERSION = 'v2.7';
   // ── 伺服器端直接讀取訂單，嵌入頁面 ──
   let ssrOrders = [];
   let ssrError = '';
   try {
     const sheets = getSheetsClient();
     const resp = await Promise.race([
-      sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${ORDER_SHEET}!A:P` }),
+      sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${ORDER_SHEET}!A:Q` }),
       new Promise((_, reject) => setTimeout(() => reject(new Error('Sheets timeout')), 25000)),
     ]);
     const rows = (resp.data.values || []).slice(1);
@@ -2848,10 +2866,18 @@ app.get('/admin', async (req, res) => {
       discountTotal:   parseInt(row[13]) || 0,
       finalAmount:     parseInt(row[14]) || parseInt(row[4]) || 0,
       lineDisplayName: row[15] || '',
+      adminNote:       row[16] || '',
     })).reverse();
   } catch (e) {
     ssrError = e.message;
   }
+  // 取會員總數
+  let ssrMemberCount = 0;
+  try {
+    const sheets2 = getSheetsClient();
+    const mResp = await sheets2.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${MEMBER_SHEET}!A:A` });
+    ssrMemberCount = Math.max(0, ((mResp.data.values || []).length - 1));
+  } catch(e) { /* ignore */ }
   const ssrOrdersJson = JSON.stringify(ssrOrders).replace(/<\/script>/gi, '<\\/script>');
   res.send(`<!DOCTYPE html>
 <html lang="zh-TW">
@@ -2935,6 +2961,21 @@ details.sec-closed[open] .sec-summary::after{content:'▾';font-size:12px}
 .cr-time{font-size:11px;color:#ccc;white-space:nowrap}
 .btn-return{padding:4px 12px;font-size:12px;background:#fbe9e7;color:#bf360c;border:1px solid #ffccbc;border-radius:6px;cursor:pointer;font-weight:600}
 .btn-return:hover{background:#f5c6c0}
+/* ── Stats bar ── */
+.stats-bar{display:flex;gap:12px;padding:12px 24px;background:#fff;border-bottom:1px solid #ede8e2;flex-wrap:wrap}
+@media(max-width:560px){.stats-bar{padding:10px 12px;gap:8px}}
+.stat-card{flex:1;min-width:100px;background:#fdf9f5;border-radius:10px;padding:10px 14px;border:1px solid #ede8e2}
+.stat-label{font-size:11px;color:#aaa;font-weight:600;margin-bottom:4px}
+.stat-value{font-size:22px;font-weight:800;color:#7a5c3e;line-height:1}
+.stat-unit{font-size:11px;color:#c9a98a;font-weight:600;margin-left:2px}
+/* ── Admin note ── */
+.admin-note-display{margin-top:6px;background:#fffde7;border-left:3px solid #f9a825;padding:6px 10px;border-radius:4px;font-size:12px;color:#5d4037;line-height:1.5}
+.note-area{display:none;border-top:1px solid #f0ebe4;padding:10px 12px;background:#fffde7}
+.note-area textarea{width:100%;border:1px solid #ddd;border-radius:8px;padding:8px 10px;font-size:13px;resize:vertical;outline:none;font-family:inherit;background:#fff}
+.note-area textarea:focus{border-color:#c9a98a}
+.note-area-btns{display:flex;gap:6px;margin-top:6px}
+.btn-note-save{background:#c9a98a;color:#fff;border:none;border-radius:7px;padding:6px 14px;font-size:13px;font-weight:700;cursor:pointer}
+.btn-note-cancel{background:#f0ebe4;color:#7a5c3e;border:none;border-radius:7px;padding:6px 12px;font-size:13px;cursor:pointer}
 /* ── Empty state ── */
 .empty-state{grid-column:1/-1;text-align:center;padding:60px 20px;color:#ccc;font-size:14px}
 /* ── Toast ── */
@@ -2979,6 +3020,12 @@ details.sec-closed[open] .sec-summary::after{content:'▾';font-size:12px}
   <input class="search-box" id="search-box" placeholder="搜尋姓名 / 手機 / 訂單ID…" oninput="renderOrders()">
   <a href="/admin/members?key=${adminKey}" class="btn-refresh" style="text-decoration:none;background:#7a5c3e">👥 會員管理</a>
 </div>
+<div class="stats-bar" id="stats-bar">
+  <div class="stat-card"><div class="stat-label">今日新訂單</div><div class="stat-value" id="stat-today">—</div></div>
+  <div class="stat-card"><div class="stat-label">待確認</div><div class="stat-value" id="stat-pending" style="color:#e65100">—</div></div>
+  <div class="stat-card"><div class="stat-label">本月營收</div><div class="stat-value" id="stat-revenue" style="font-size:18px">—<span class="stat-unit">NT$</span></div></div>
+  <div class="stat-card"><div class="stat-label">總會員數</div><div class="stat-value" id="stat-members">—</div></div>
+</div>
 <div id="orders"></div>
 <details class="sec-closed">
   <summary class="sec-summary">✅ 已完成訂單 <span id="cnt-done" style="margin-left:4px;font-size:12px;font-weight:400;color:#c9a98a"></span></summary>
@@ -3017,6 +3064,7 @@ function sbadge(s) {
 var allOrders = ${ssrOrdersJson};
 var SSR_ERROR = '${ssrError.replace(/'/g, "\\'")}';
 var KEY = '${adminKey}';
+var MEMBER_COUNT = ${ssrMemberCount};
 
 function showErr(msg) {
   var bar = document.getElementById('err-bar');
@@ -3095,6 +3143,25 @@ function renderOrders() {
   document.getElementById('done-orders').innerHTML = done.length ? done.map(function(o){ return closedRow(o, true); }).join('') : emptyMsg + '無已完成訂單</div>';
   document.getElementById('return-orders').innerHTML = returns.length ? returns.map(function(o){ return closedRow(o, false); }).join('') : emptyMsg + '無退單訂單</div>';
   document.getElementById('cancel-orders').innerHTML = cancelled.length ? cancelled.map(function(o){ return closedRow(o, false); }).join('') : emptyMsg + '無已取消訂單</div>';
+
+  renderStats();
+}
+
+function renderStats() {
+  var now = new Date();
+  var todayStr = now.toLocaleDateString('zh-TW', { timeZone: 'Asia/Taipei' }); // e.g. "2026/4/24"
+  var thisMonthStr = todayStr.slice(0, todayStr.lastIndexOf('/')); // e.g. "2026/4"
+  var todayNew = allOrders.filter(function(o){ return (o.orderTime||'').startsWith(todayStr); }).length;
+  var pending = allOrders.filter(function(o){ return o.status === '待確認'; }).length;
+  var revenue = allOrders
+    .filter(function(o){ return o.status === '已完成' && (o.orderTime||'').startsWith(thisMonthStr); })
+    .reduce(function(s, o){ return s + (o.finalAmount || 0); }, 0);
+  document.getElementById('stat-today').textContent = todayNew;
+  var pEl = document.getElementById('stat-pending');
+  pEl.textContent = pending;
+  pEl.style.color = pending > 0 ? '#e65100' : '#7a5c3e';
+  document.getElementById('stat-revenue').innerHTML = revenue.toLocaleString() + '<span class="stat-unit"> NT$</span>';
+  document.getElementById('stat-members').textContent = MEMBER_COUNT;
 }
 
 function esc(s) {
@@ -3125,7 +3192,8 @@ function createCard(o) {
   var contactHtml = '';
   if (o.contact) contactHtml += '<div class="info-row"><span class="info-label">聯繫</span>' + esc(o.contact) + (o.contactId ? '　' + esc(o.contactId) : '') + '</div>';
   if (o.phone) contactHtml += '<div class="info-row"><span class="info-label">手機</span>' + esc(o.phone) + '</div>';
-  if (o.note) contactHtml += '<div class="info-row"><span class="info-label">備註</span>' + esc(o.note) + '</div>';
+  if (o.note) contactHtml += '<div class="info-row"><span class="info-label">客備</span>' + esc(o.note) + '</div>';
+  if (o.adminNote) contactHtml += '<div class="admin-note-display">📝 ' + esc(o.adminNote) + '</div>';
 
   var notifyRowHtml = '';
   if ((o.status||'待確認') === '待確認') {
@@ -3152,8 +3220,16 @@ function createCard(o) {
     + '<div class="card-footer">'
     + '<select class="status-select" id="sel-' + ri + '">' + opts + '</select>'
     + '<button class="btn-save" onclick="saveStatus(' + ri + ',\\'' + esc(o.orderId) + '\\')">儲存</button>'
+    + '<button class="btn-save" style="background:#f5c97a;color:#5d4037;padding:7px 10px" title="內部備註" onclick="toggleNote(' + ri + ')">📝</button>'
     + '</div>'
     + notifyRowHtml
+    + '<div class="note-area" id="note-area-' + ri + '">'
+    + '<textarea id="note-input-' + ri + '" rows="2" placeholder="輸入內部備註（不會通知買家）">' + esc(o.adminNote||'') + '</textarea>'
+    + '<div class="note-area-btns">'
+    + '<button class="btn-note-save" onclick="saveNote(' + ri + ')">儲存備註</button>'
+    + '<button class="btn-note-cancel" onclick="toggleNote(' + ri + ')">取消</button>'
+    + '</div>'
+    + '</div>'
     + '</div>';
 }
 
@@ -3264,6 +3340,37 @@ async function confirmDateModal() {
       toast('✅ 狀態已更新並通知買家');
       renderOrders();
     } else toast('❌ ' + (d.error || '失敗'));
+  } catch(e) { toast('❌ 網路錯誤'); }
+}
+
+function toggleNote(rowIndex) {
+  var area = document.getElementById('note-area-' + rowIndex);
+  if (!area) return;
+  var isOpen = area.style.display === 'block';
+  area.style.display = isOpen ? 'none' : 'block';
+  if (!isOpen) {
+    var inp = document.getElementById('note-input-' + rowIndex);
+    if (inp) inp.focus();
+  }
+}
+
+async function saveNote(rowIndex) {
+  var inp = document.getElementById('note-input-' + rowIndex);
+  if (!inp) return;
+  var noteText = inp.value;
+  try {
+    var r = await fetch('/api/admin/order-note', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ key: KEY, rowIndex: rowIndex, adminNote: noteText }),
+    });
+    var d = await r.json();
+    if (!r.ok) { toast('❌ ' + (d.error || '儲存失敗')); return; }
+    var o = allOrders.find(function(x){ return x.rowIndex === rowIndex; });
+    if (o) o.adminNote = noteText;
+    document.getElementById('note-area-' + rowIndex).style.display = 'none';
+    renderOrders();
+    toast('✅ 備註已儲存');
   } catch(e) { toast('❌ 網路錯誤'); }
 }
 
