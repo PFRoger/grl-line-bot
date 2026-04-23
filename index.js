@@ -2347,6 +2347,236 @@ app.get('/admin/check-rich-menu', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── 管理員：會員管理頁面 ────────────────────────────────────────────────────
+app.get('/admin/members', async (req, res) => {
+  const { key } = req.query;
+  if (key !== ADMIN_KEY) return res.status(401).send('Unauthorized');
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+
+  let members = [], loadError = '';
+  try {
+    const sheets = getSheetsClient();
+    const resp = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${MEMBER_SHEET}!A:N` });
+    const rows = resp.data.values || [];
+    members = rows.slice(1).map((r, i) => ({
+      rowIndex: i + 2,
+      userId: r[0] || '', displayName: r[1] || '', joinDate: r[2] || '',
+      birthday: r[3] || '', referralCode: r[4] || '', referredByCode: r[5] || '',
+      currentYear: parseInt(r[7]) || new Date().getFullYear(),
+      yearlySpend: parseFloat(r[8]) || 0, tier: r[9] || '一般',
+      points: parseInt(r[10]) || 0, lastUpdated: r[11] || '',
+      name: r[12] || '', phone: r[13] || '',
+    })).filter(m => m.userId);
+  } catch(e) { loadError = e.message; }
+
+  const membersJson = JSON.stringify(members).replace(/<\/script>/gi, '<\\/script>');
+  const adminKey = key;
+
+  res.send(`<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Bijin 會員管理</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f5f3f0;min-height:100vh;color:#2d2218}
+header{background:#fff;border-bottom:2px solid #e8ddd4;padding:0 24px;position:sticky;top:0;z-index:50;display:flex;align-items:center;justify-content:space-between;height:56px}
+.hdr-logo{font-size:18px;font-weight:700;color:#7a5c3e}
+.btn{background:#7a5c3e;color:#fff;border:none;border-radius:8px;padding:7px 16px;font-size:13px;font-weight:600;cursor:pointer;text-decoration:none;display:inline-block}
+.btn:hover{background:#5e4530}
+.btn-sm{padding:4px 10px;font-size:12px;border-radius:6px}
+.btn-gold{background:#c9a98a}
+.btn-danger{background:#e53935}
+.toolbar{display:flex;gap:10px;align-items:center;padding:14px 24px;background:#fff;border-bottom:1px solid #eee;flex-wrap:wrap}
+.search-box{border:1px solid #ddd;border-radius:8px;padding:7px 12px;font-size:13px;outline:none;min-width:220px}
+.search-box:focus{border-color:#c9a98a}
+.summary{padding:10px 24px;font-size:13px;color:#888}
+table{width:100%;border-collapse:collapse;background:#fff}
+thead{background:#f5ede0;position:sticky;top:56px;z-index:10}
+th{padding:10px 12px;text-align:left;font-size:12px;color:#7a5c3e;font-weight:700;white-space:nowrap}
+td{padding:10px 12px;font-size:13px;color:#333;border-bottom:1px solid #f0e8de;vertical-align:middle}
+tr:hover td{background:#fffaf5}
+.tier-badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700}
+.tier-一般{background:#f5ede0;color:#a08060}
+.tier-銀卡{background:#e8e8e8;color:#666}
+.tier-金卡{background:#fff3cd;color:#a07800}
+.tier-白金{background:#e8f0fe;color:#3949ab}
+.modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:100;align-items:center;justify-content:center}
+.modal.show{display:flex}
+.modal-box{background:#fff;border-radius:14px;padding:24px;width:340px;max-width:95vw}
+.modal-title{font-size:16px;font-weight:700;color:#7a5c3e;margin-bottom:16px}
+.form-row{margin-bottom:12px}
+.form-row label{display:block;font-size:12px;color:#888;margin-bottom:4px}
+.form-row input, .form-row select{width:100%;border:1px solid #ddd;border-radius:8px;padding:8px 10px;font-size:14px;outline:none}
+.form-row input:focus, .form-row select:focus{border-color:#c9a98a}
+.modal-btns{display:flex;gap:8px;justify-content:flex-end;margin-top:16px}
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#333;color:#fff;padding:10px 20px;border-radius:20px;font-size:13px;opacity:0;transition:opacity .3s;pointer-events:none;z-index:200;white-space:nowrap}
+.toast.show{opacity:1}
+</style>
+</head>
+<body>
+<header>
+  <div class="hdr-logo">👥 Bijin 會員管理</div>
+  <a href="/admin?key=${adminKey}" class="btn">← 回訂單後台</a>
+</header>
+<div class="toolbar">
+  <input class="search-box" id="search-box" placeholder="搜尋姓名 / 手機 / LINE名稱…" oninput="render()">
+  <select id="filter-tier" onchange="render()" style="border:1px solid #ddd;border-radius:8px;padding:7px 10px;font-size:13px;outline:none;background:#fff">
+    <option value="">全部等級</option>
+    <option value="一般">一般</option>
+    <option value="銀卡">銀卡</option>
+    <option value="金卡">金卡</option>
+    <option value="白金">白金</option>
+  </select>
+</div>
+<div class="summary" id="summary"></div>
+${loadError ? `<div style="padding:20px;color:#c0392b;font-weight:600">載入失敗：${loadError}</div>` : ''}
+<div style="overflow-x:auto">
+<table>
+  <thead>
+    <tr>
+      <th>姓名</th><th>LINE 名稱</th><th>手機</th><th>等級</th>
+      <th>年度消費</th><th>可用點數</th><th>生日</th><th>加入日期</th><th>操作</th>
+    </tr>
+  </thead>
+  <tbody id="tbody"></tbody>
+</table>
+</div>
+
+<!-- 編輯 Modal -->
+<div class="modal" id="edit-modal">
+  <div class="modal-box">
+    <div class="modal-title">✏️ 調整會員資料</div>
+    <input type="hidden" id="edit-row">
+    <div class="form-row">
+      <label>姓名</label>
+      <input id="edit-name" type="text" readonly style="background:#f5f5f5;color:#aaa">
+    </div>
+    <div class="form-row">
+      <label>等級</label>
+      <select id="edit-tier">
+        <option>一般</option><option>銀卡</option><option>金卡</option><option>白金</option>
+      </select>
+    </div>
+    <div class="form-row">
+      <label>可用點數</label>
+      <input id="edit-points" type="number" min="0">
+    </div>
+    <div class="form-row">
+      <label>年度消費（NT$）</label>
+      <input id="edit-spend" type="number" min="0">
+    </div>
+    <div class="modal-btns">
+      <button class="btn" style="background:#aaa" onclick="closeModal()">取消</button>
+      <button class="btn btn-gold" onclick="saveEdit()">儲存</button>
+    </div>
+  </div>
+</div>
+<div id="toast" class="toast"></div>
+
+<script>
+var allMembers = ${membersJson};
+var KEY = '${adminKey}';
+
+function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+function render() {
+  var kw = (document.getElementById('search-box').value||'').trim().toLowerCase();
+  var tier = document.getElementById('filter-tier').value;
+  var list = allMembers.filter(function(m){
+    if (tier && m.tier !== tier) return false;
+    if (!kw) return true;
+    return (m.name||'').toLowerCase().indexOf(kw)>=0
+      || (m.displayName||'').toLowerCase().indexOf(kw)>=0
+      || (m.phone||'').indexOf(kw)>=0;
+  });
+  document.getElementById('summary').textContent = '共 ' + list.length + ' 位會員（總計 ' + allMembers.length + ' 位）';
+  var rows = list.map(function(m){
+    return '<tr>'
+      + '<td><strong>' + esc(m.name) + '</strong></td>'
+      + '<td style="color:#888">' + esc(m.displayName) + '</td>'
+      + '<td style="font-family:monospace">' + esc(m.phone) + '</td>'
+      + '<td><span class="tier-badge tier-' + esc(m.tier) + '">' + esc(m.tier) + '</span></td>'
+      + '<td>NT$' + (m.yearlySpend||0).toLocaleString() + '</td>'
+      + '<td><strong style="color:#c9a98a">' + (m.points||0) + ' 點</strong></td>'
+      + '<td>' + esc(m.birthday||'—') + '</td>'
+      + '<td style="color:#aaa;font-size:12px">' + esc(m.joinDate||'—') + '</td>'
+      + '<td><button class="btn btn-sm btn-gold" onclick="openEdit(' + m.rowIndex + ')">調整</button></td>'
+      + '</tr>';
+  }).join('');
+  document.getElementById('tbody').innerHTML = rows || '<tr><td colspan="9" style="text-align:center;color:#ccc;padding:20px">找不到符合條件的會員</td></tr>';
+}
+
+function openEdit(rowIndex) {
+  var m = allMembers.find(function(x){ return x.rowIndex === rowIndex; });
+  if (!m) return;
+  document.getElementById('edit-row').value = rowIndex;
+  document.getElementById('edit-name').value = m.name + '（' + m.displayName + '）';
+  document.getElementById('edit-tier').value = m.tier;
+  document.getElementById('edit-points').value = m.points || 0;
+  document.getElementById('edit-spend').value = m.yearlySpend || 0;
+  document.getElementById('edit-modal').classList.add('show');
+}
+
+function closeModal() {
+  document.getElementById('edit-modal').classList.remove('show');
+}
+
+async function saveEdit() {
+  var rowIndex = parseInt(document.getElementById('edit-row').value);
+  var tier = document.getElementById('edit-tier').value;
+  var points = parseInt(document.getElementById('edit-points').value) || 0;
+  var yearlySpend = parseFloat(document.getElementById('edit-spend').value) || 0;
+  try {
+    var r = await fetch('/api/admin/member-adjust', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ key: KEY, rowIndex, tier, points, yearlySpend })
+    });
+    var d = await r.json();
+    if (!d.ok) { showToast('❌ ' + d.error); return; }
+    var m = allMembers.find(function(x){ return x.rowIndex === rowIndex; });
+    if (m) { m.tier = tier; m.points = points; m.yearlySpend = yearlySpend; }
+    closeModal();
+    render();
+    showToast('✅ 已更新');
+  } catch(e) { showToast('❌ 網路錯誤'); }
+}
+
+function showToast(msg) {
+  var t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(function(){ t.classList.remove('show'); }, 2500);
+}
+
+render();
+</script>
+</body>
+</html>`);
+});
+
+// ── 管理員 API：調整會員資料 ──────────────────────────────────────────────────
+app.post('/api/admin/member-adjust', express.json(), async (req, res) => {
+  const { key, rowIndex, tier, points, yearlySpend } = req.body;
+  if (key !== ADMIN_KEY) return res.status(401).json({ error: 'Unauthorized' });
+  if (!rowIndex || !tier) return res.status(400).json({ error: 'missing fields' });
+  const VALID_TIERS = ['一般', '銀卡', '金卡', '白金'];
+  if (!VALID_TIERS.includes(tier)) return res.status(400).json({ error: '等級無效' });
+  try {
+    const sheets = getSheetsClient();
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: SHEET_ID,
+      range: `${MEMBER_SHEET}!I${rowIndex}:L${rowIndex}`,
+      valueInputOption: 'RAW',
+      resource: { values: [[parseFloat(yearlySpend)||0, tier, parseInt(points)||0, todayStr()]] },
+    });
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 // ── 管理員 API：取得所有訂單 ──────────────────────────────────────────────────
 app.get('/api/admin/orders', async (req, res) => {
   res.setHeader('Cache-Control', 'no-store, no-cache');
@@ -2431,7 +2661,7 @@ app.get('/admin', async (req, res) => {
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
   res.setHeader('Pragma', 'no-cache');
   const adminKey = ADMIN_KEY;
-  const BUILD_VERSION = 'v2.5';
+  const BUILD_VERSION = 'v2.6';
   // ── 伺服器端直接讀取訂單，嵌入頁面 ──
   let ssrOrders = [];
   let ssrError = '';
@@ -2588,7 +2818,8 @@ details.sec-closed[open] .sec-summary::after{content:'▾';font-size:12px}
     <option value="已發貨(賣貨便出貨)">已發貨(賣貨便)</option>
     <option value="待買家取貨">待買家取貨</option>
   </select>
-  <input class="search-box" id="search-box" placeholder="搜尋買家姓名…" oninput="renderOrders()">
+  <input class="search-box" id="search-box" placeholder="搜尋姓名 / 手機 / 訂單ID…" oninput="renderOrders()">
+  <a href="/admin/members?key=${adminKey}" class="btn-refresh" style="text-decoration:none;background:#7a5c3e">👥 會員管理</a>
 </div>
 <div id="orders"></div>
 <details class="sec-closed">
@@ -2677,7 +2908,7 @@ function renderOrders() {
 
   var list = active;
   if (filter) list = list.filter(function(o){ return o.status === filter; });
-  if (keyword) list = list.filter(function(o){ return (o.buyerName||'').toLowerCase().indexOf(keyword) >= 0 || (o.lineDisplayName||'').toLowerCase().indexOf(keyword) >= 0 || (o.orderId||'').toLowerCase().indexOf(keyword) >= 0; });
+  if (keyword) list = list.filter(function(o){ return (o.buyerName||'').toLowerCase().indexOf(keyword) >= 0 || (o.lineDisplayName||'').toLowerCase().indexOf(keyword) >= 0 || (o.orderId||'').toLowerCase().indexOf(keyword) >= 0 || (o.phone||'').indexOf(keyword) >= 0; });
 
   // header counts
   var pills = '<span class="hdr-pill pill-active">' + active.length + ' 進行中</span>';
