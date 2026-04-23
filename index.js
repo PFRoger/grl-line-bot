@@ -15,7 +15,7 @@ const LIFF_ID = '2009823505-mhQivhxd';
 const MEMBER_LIFF_ID = '2009823505-bwMBpOjU';
 const CART_SHEET = '購物車';
 const ORDER_SHEET = '訂單';
-const ADMIN_KEY = process.env.ADMIN_KEY || 'grl-admin-2026';
+const ADMIN_KEY = process.env.ADMIN_KEY;
 
 // ── Google Sheets 驗證 ────────────────────────────────────────────────────────
 function getSheetsClient() {
@@ -2247,61 +2247,16 @@ app.post('/api/order', express.json(), async (req, res) => {
         text: `🎉 訂單已收到！\n\n訂單編號：${result.orderId}\n下單時間：${result.orderTime}\n━━━━━━━━━━\n${itemsText}\n━━━━━━━━━━\n商品小計：NT$${result.totalTwd}${buyerDiscText}\n\n我們確認後會盡快提供賣貨便下單連結，請耐心等候 🌸`,
       }),
     ]);
-    console.error('[notify]', 'admin:', adminR.status, adminR.reason?.message || '', 'buyer:', buyerR.status, buyerR.reason?.message || '');
-    res.json({ status: 'ok', orderId: result.orderId, _n: { a: adminR.status, ae: adminR.reason?.message, b: buyerR.status, be: buyerR.reason?.message } });
+    if (adminR.status === 'rejected') console.error('[notify admin error]', adminR.reason?.message);
+    if (buyerR.status === 'rejected') console.error('[notify buyer error]', buyerR.reason?.message);
+    res.json({ status: 'ok', orderId: result.orderId });
   } catch (err) {
     console.error('[api/order error]', err.message);
     res.status(500).json({ error: err.message });
   }
 });
 
-// ── 一次性：在工作表1 插入新 J 欄「估算磅數（估算值）」──────────────────────
-// 呼叫方式：GET /admin/insert-weight-column
-// 只需執行一次，之後新增列就會自動填入 J 欄
-app.get('/admin/insert-weight-column', async (req, res) => {
-  try {
-    const sheets = getSheetsClient();
 
-    // 取得工作表1 的 sheetId
-    const meta = await sheets.spreadsheets.get({ spreadsheetId: SHEET_ID });
-    const sheet = meta.data.sheets.find((s) => s.properties.title === '工作表1');
-    if (!sheet) return res.status(404).json({ error: '找不到工作表1' });
-    const sheetId = sheet.properties.sheetId;
-
-    // 在第 9 欄（0-based = index 9 = J欄）插入 1 欄
-    await sheets.spreadsheets.batchUpdate({
-      spreadsheetId: SHEET_ID,
-      resource: {
-        requests: [
-          {
-            insertDimension: {
-              range: {
-                sheetId,
-                dimension: 'COLUMNS',
-                startIndex: 9,  // J 欄（0-based）
-                endIndex: 10,
-              },
-              inheritFromBefore: false,
-            },
-          },
-        ],
-      },
-    });
-
-    // 在新 J1 寫入欄位標題
-    await sheets.spreadsheets.values.update({
-      spreadsheetId: SHEET_ID,
-      range: '工作表1!J1',
-      valueInputOption: 'RAW',
-      resource: { values: [['估算磅數（估算值）']] },
-    });
-
-    res.json({ status: 'ok', message: '已在 J 欄插入「估算磅數（估算值）」，舊有公式已自動更新' });
-  } catch (err) {
-    console.error('[insert-column error]', err.message);
-    res.status(500).json({ error: err.message });
-  }
-});
 
 // ── Debug：測試 LINE push 通知 ────────────────────────────────────────────────
 app.get('/api/debug/notify', async (req, res) => {
