@@ -2536,7 +2536,7 @@ function render() {
       + '<td><strong style="color:#c9a98a">' + (m.points||0) + ' 點</strong></td>'
       + '<td>' + esc(m.birthday||'—') + '</td>'
       + '<td style="color:#aaa;font-size:12px">' + esc(m.joinDate||'—') + '</td>'
-      + '<td style="display:flex;gap:6px"><button class="btn btn-sm btn-gold" onclick="openEdit(' + m.rowIndex + ')">調整</button><button class="btn btn-sm" style="background:#c9a98a" onclick="openCoupons(\'' + esc(m.userId) + '\',\'' + esc(m.name||m.displayName) + '\')">優惠券</button></td>'
+      + '<td><button class="btn btn-sm btn-gold" onclick="openEdit(' + m.rowIndex + ')" style="margin-right:4px">調整</button><button class="btn btn-sm" style="background:#c9a98a" data-uid="' + esc(m.userId) + '" data-name="' + esc(m.name||m.displayName) + '" onclick="openCoupons(this.dataset.uid,this.dataset.name)">優惠券</button></td>'
       + '</tr>';
   }).join('');
   document.getElementById('tbody').innerHTML = rows || '<tr><td colspan="9" style="text-align:center;color:#ccc;padding:20px">找不到符合條件的會員</td></tr>';
