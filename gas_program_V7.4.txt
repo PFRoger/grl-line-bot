@@ -303,6 +303,45 @@ function translateArrival(text) {
     .replace("入荷予定", "到貨");
 }
 
+// ── 品類判斷（供 K 欄學習功能共用）─────────────────────────────────────────
+function getCategory(name) {
+  if (!name) return "clothing";
+  if (/サンダル|スニーカー|ブーツ|パンプス|シューズ|ミュール|ローファー|スリッポン|ウェッジ|ヒール/.test(name)) return "shoes";
+  if (/バッグ|トートバッグ|ショルダーバッグ|ハンドバッグ|リュック|クラッチ|ポーチ/.test(name)) return "bag";
+  if (/ピアス|ネックレス|リング|ブレスレット|ヘアアクセ|ヘアクリップ|バレッタ|アクセサリー/.test(name)) return "accessory";
+  if (/コート|アウター|ダウン|ブルゾン|ムートン/.test(name)) return "outerwear";
+  if (/ジャケット|カーディガン|ボレロ/.test(name)) return "jacket";
+  if (/デニム|ジーンズ/.test(name)) return "denim";
+  if (/ワンピース|ドレス/.test(name)) return "dress";
+  if (/スカート/.test(name)) return "skirt";
+  if (/パンツ|スラックス|ショートパンツ|レギンス/.test(name)) return "pants";
+  if (/ニット|セーター/.test(name)) return "knit";
+  if (/トップス|シャツ|ブラウス|カットソー|Tシャツ|タンク|ノースリーブ/.test(name)) return "top";
+  return "clothing";
+}
+
+// ── K欄學習：掃描已有實際磅數的商品，依品類算平均（需≥3筆才採用）──────────
+function buildLearnedAvgLbs(data, headerIdx, colMap) {
+  var cats = {};
+  for (var i = headerIdx + 1; i < data.length; i++) {
+    var kVal = Number(data[i][colMap["磅數"]]);
+    var itemName = String(data[i][colMap["商品名稱"]] || "");
+    if (!kVal || kVal <= 0 || !itemName) continue;
+    var cat = getCategory(itemName);
+    if (!cats[cat]) cats[cat] = [];
+    cats[cat].push(kVal);
+  }
+  var result = {};
+  for (var c in cats) {
+    if (cats[c].length >= 3) {
+      var sum = 0;
+      for (var j = 0; j < cats[c].length; j++) sum += cats[c][j];
+      result[c] = Math.round(sum / cats[c].length * 100) / 100;
+    }
+  }
+  return result;
+}
+
 // ── [v7.3-1] 商品重量估算：依商品名稱關鍵字判斷品類，回傳估算磅數中間值 ──
 function estimateWeightLbs(productName) {
   if (!productName) return "";
@@ -350,6 +389,27 @@ function estimateWeightLbs(productName) {
 
   // ニット/セーター 材質偏重，額外加 0.5 磅（約227g）
   if (/ニット|セーター/.test(name)) { minG += 227; maxG += 227; }
+
+  // 布料材質加成/減輕（+0.3磅=136g；-0.2磅=91g）
+  if (/ベロア|ツイード|ファー|レザー|PUレザー/.test(name)) {
+    minG += 136; maxG += 136;
+  } else if (/シフォン|レース/.test(name)) {
+    minG = Math.max(50, minG - 91); maxG = Math.max(150, maxG - 91);
+  }
+
+  // 版型大小調整
+  if (/オーバーサイズ|ルーズ/.test(name)) { minG = Math.round(minG * 1.1); maxG = Math.round(maxG * 1.1); }
+  if (/ロング/.test(name) && /ワンピース|スカート|コート|アウター|カーディガン/.test(name)) {
+    minG = Math.round(minG * 1.15); maxG = Math.round(maxG * 1.15);
+  }
+  if (/ミニ/.test(name) && /ワンピース|スカート/.test(name)) {
+    minG = Math.round(minG * 0.9); maxG = Math.round(maxG * 0.9);
+  }
+
+  // 附贈配件加成
+  if (/ティペット付き|ファー付き/.test(name)) { minG += 136; maxG += 136; }
+  else if (/スカーフ付き|ストール付き/.test(name)) { minG += 68; maxG += 68; }
+  else if (/ベルト付き/.test(name)) { minG += 45; maxG += 45; }
 
   var midG   = Math.round((minG + maxG) / 2);
   var midLbs = Math.round(midG / 1000 * 2.20462 * 100) / 100;
@@ -488,6 +548,10 @@ function updateGrlData() {
   data  = range.getValues();
   backgrounds = range.getBackgrounds();
 
+  // K欄學習：掃描現有實際磅數，建立各品類均值（≥3筆才採用）
+  var learnedAvg = buildLearnedAvgLbs(data, headerRowIdx, colMap);
+  Logger.log("學習均值：" + JSON.stringify(learnedAvg));
+
   var colorMap = {
     "オフホワイト":"灰白色", "オフベージュ":"杏色", "ライトブルー":"淺藍色",
     "ライトグレー":"淺灰色", "グレージュ":"藕色", "ワインレッド":"酒紅色",
@@ -520,9 +584,11 @@ function updateGrlData() {
     data[idx][colMap["備註"]]     = statusNote;
     if (colMap["日幣"] !== -1 && price !== "N/A") data[idx][colMap["日幣"]] = Number(price);
     if (itemName && colMap["商品名稱"] !== -1)     data[idx][colMap["商品名稱"]] = itemName;
-    // 自動填入估算磅數（依商品名稱估算，有名稱才更新）
+    // 自動填入估算磅數：若品類已有 K 欄學習均值則優先使用
     if (itemName && colMap["估算磅數"] !== -1) {
       var wLbs = estimateWeightLbs(itemName);
+      var cat = getCategory(itemName);
+      if (learnedAvg[cat]) wLbs = learnedAvg[cat];
       if (wLbs !== "") data[idx][colMap["估算磅數"]] = wLbs;
     }
     for (var c = 0; c < header.length; c++) backgrounds[idx][c] = bgColor;

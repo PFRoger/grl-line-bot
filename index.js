@@ -322,6 +322,27 @@ function estimateWeight(productName) {
   // ニット/セーター 材質偏重，額外加 0.5 磅（約227g）
   if (/ニット|セーター/.test(name)) { minG += 227; maxG += 227; }
 
+  // 布料材質加成/減輕（+0.3磅=136g；-0.2磅=91g）
+  if (/ベロア|ツイード|ファー|レザー|PUレザー/.test(name)) {
+    minG += 136; maxG += 136;
+  } else if (/シフォン|レース/.test(name)) {
+    minG = Math.max(50, minG - 91); maxG = Math.max(150, maxG - 91);
+  }
+
+  // 版型大小調整
+  if (/オーバーサイズ|ルーズ/.test(name)) { minG = Math.round(minG * 1.1); maxG = Math.round(maxG * 1.1); }
+  if (/ロング/.test(name) && /ワンピース|スカート|コート|アウター|カーディガン/.test(name)) {
+    minG = Math.round(minG * 1.15); maxG = Math.round(maxG * 1.15);
+  }
+  if (/ミニ/.test(name) && /ワンピース|スカート/.test(name)) {
+    minG = Math.round(minG * 0.9); maxG = Math.round(maxG * 0.9);
+  }
+
+  // 附贈配件加成
+  if (/ティペット付き|ファー付き/.test(name)) { minG += 136; maxG += 136; }
+  else if (/スカーフ付き|ストール付き/.test(name)) { minG += 68; maxG += 68; }
+  else if (/ベルト付き/.test(name)) { minG += 45; maxG += 45; }
+
   const midG    = Math.round((minG + maxG) / 2);
   const midKg   = parseFloat((midG / 1000).toFixed(2));
   const midLbs  = parseFloat((midKg * 2.20462).toFixed(2));
