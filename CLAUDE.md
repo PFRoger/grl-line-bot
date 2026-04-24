@@ -73,7 +73,7 @@ VERCEL_TOKEN=<token> npx vercel --prod --yes --scope pfrogers-projects
 |--------|------|
 | `查詢紀錄` | 每次商品查詢記錄（userId、商品ID、名稱、日幣、TWD等） |
 | `購物車` | 臨時購物車（**48小時**後過期，J欄標記 deleted/ordered） |
-| `訂單` | 已成立訂單（A~P 欄：訂單ID、時間、userId、商品明細、總金額、買家資訊、狀態、點數、優惠券、折扣、實付、LINE顯示名稱） |
+| `訂單` | 已成立訂單（A~Q 欄：訂單ID、時間、userId、商品明細、總金額、買家資訊、狀態、點數、優惠券、折扣、實付、LINE顯示名稱、內部備註(Q)、倉庫(R)） |
 | `會員` | 會員資料（userId、displayName、加入日、生日、邀請碼、等級、點數、年度消費等，共14欄） |
 | `點數紀錄` | 每筆點數明細（A~H欄：pointId、date、userId、displayName、orderId、points、expiryDate、status） |
 | `優惠券` | 優惠券（couponCode、userId、displayName、type、amount、issueDate、expiryDate、status、usedOrderId） |
@@ -142,6 +142,8 @@ VERCEL_TOKEN=<token> npx vercel --prod --yes --scope pfrogers-projects
 | `/admin` | GET | 管理員後台（?key=...） |
 | `/api/admin/orders` | GET | 取得所有訂單 |
 | `/api/admin/order-status` | POST | 更新訂單狀態 |
+| `/api/admin/order-note` | POST | 更新內部備註（Q欄，不通知買家） |
+| `/api/admin/order-warehouse` | POST | 更新倉庫分類（R欄：茨城倉/千葉倉） |
 | `/api/admin/notify-progress` | POST | 通知買家進度 |
 | `/admin/notify-buyer` | GET | 傳送賣貨便網址給買家 |
 | `/api/debug/notify` | GET | 測試 LINE push 是否正常（?key=...） |
@@ -167,7 +169,7 @@ VERCEL_TOKEN=<token> npx vercel --prod --yes --scope pfrogers-projects
 
 ## GAS 庫存監控系統（獨立於 LINE Bot）
 
-- **檔案**：gas program_V7.2.txt（v7.3.1）
+- **檔案**：`gas_program_V7.4.txt`（v7.4.0）
 - **功能**：定時爬 GRL 商品頁面，偵測價格/庫存變動，推送通知給賣家
 - **觸發**：每6小時（GAS 時間型觸發器）
 - **通知對象**：只有賣家（LINE_USER_ID = `U9fa329e70b89f4ce19089928a824bd29`）
@@ -178,6 +180,34 @@ VERCEL_TOKEN=<token> npx vercel --prod --yes --scope pfrogers-projects
 - **問題**：與主 LINE Bot 共用同一個 Channel Token，共享 200則/月額度
 - **計劃解決方案**：建立 Bot B（Bijin日本正品代購 bot2，@033vkbny），GAS 改用 Bot B 的 token，各自有 200則額度
 - **Bot B 狀態**：OA 已建立，待在電腦上於 LINE Developers Console 啟用 Messaging API 並取得 Token
+
+### GAS v7.4.0 重要改動（2026-04-24）
+
+| 項目 | 說明 |
+|------|------|
+| 重量估算 +200g | 鞋類 500~820→700~1020g，包包 250~620→450~820g，外套 450~950→650~1150g |
+| GRL 運費 195 JPY | 成本公式改為 `rate × (jpy + 195) × 1.075`，getGrlQuote 與 Sheet 公式同步 |
+| ID 解析修正 | 搜尋結果改取所有符合 href 排序後選最短，避免 AI16 抓到 ai1611119 等錯誤商品 |
+| 省頻寬架構 | 先試直接 `/item/{id}/` URL，成功就省略搜尋列表頁；BATCH_SIZE 20→10 |
+| 欄位底色 | 每次更新後 A,B,C,F,H,K,M 欄套 `#ffe3e3` 底色（`colorSpecialCols()`） |
+| 分類誤判修正 | `ショルダー`→`ショルダーバッグ`（避免肩線洋裝誤判），移除 `フラット`（避免平剪裁誤判） |
+
+### 重量估算品類對照（GAS & index.js 一致）
+
+| 品類 | 關鍵字 | 範圍 |
+|------|--------|------|
+| 鞋類 | サンダル/スニーカー/ブーツ/パンプス/シューズ/ミュール/ローファー/スリッポン/ウェッジ/ヒール | 700~1020g |
+| 包包 | バッグ/トートバッグ/ショルダーバッグ/ハンドバッグ/リュック/クラッチ/ポーチ | 450~820g |
+| 配件 | ピアス/ネックレス/リング/ブレスレット/ヘアアクセ/ヘアクリップ/バレッタ/アクセサリー | 60~180g |
+| 外套 | コート/アウター/ダウン/ブルゾン/ムートン | 650~1150g |
+| 外罩衫 | ジャケット/カーディガン/ボレロ | 280~580g |
+| 洋裝 | ワンピース/ドレス | 200~480g |
+| 裙子 | スカート | 170~400g |
+| 牛仔褲 | デニム/ジーンズ | 500~850g |
+| 褲子 | パンツ/スラックス/ショートパンツ/レギンス | 220~520g |
+| 針織 | ニット/セーター | 180~400g |
+| 上衣 | トップス/シャツ/ブラウス/カットソー/Tシャツ/タンク/ノースリーブ | 120~300g |
+| 其他 | （以上均不符合） | 150~450g |
 
 ---
 
@@ -216,4 +246,6 @@ GRL 使用 `alt` 屬性關聯顏色與圖片：
 - **訂單價格未伺服器端驗證**：suggestedPrice 由前端傳入，未重新計算驗證。賣家人工審核訂單通知可發現異常。
 - **購物車過期**：48小時（程式內 EXPIRE_MS = 48h）
 - **LIFF 不能建在 Messaging API Channel**：LINE 2024 年政策變更，LIFF 需另建 LINE Login Channel。
-- **建議售價計算**：`匯率 = JPY→TWD + 0.015`，`成本 = 匯率 × JPY × 1.075 + (150×ceil(lbs) + 20 + 10) + 120利潤`，個位數 ≤4 → 5，≥6 → 9。
+- **建議售價計算**：`匯率 = JPY→TWD + 0.015`，`成本 = 匯率 × (JPY + 195) × 1.075 + (150×ceil(lbs) + 20 + 10) + 120利潤`，個位數 ≤4 → 5，≥6 → 9。（195 = GRL 國內固定運費 JPY）
+- **倉庫分類**：訂單 R 欄存倉庫，空白=未分配；茨城倉 NT$150/lb（約15工作天）；千葉倉 首2磅NT$250之後NT$120/lb（約10工作天）。
+- **貨號格式**：支援中間夾字母，如 `PM870A`（regex 改為 `[a-z]{2}[a-z0-9]+`）。

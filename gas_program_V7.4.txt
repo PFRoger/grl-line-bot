@@ -1,0 +1,889 @@
+/**
+ * @OnlyCurrentDoc
+ * 🌸 日本代購工具 - GRL 價格庫存一鍵更新 (v7.4.0)
+ * 修正項目：
+ *   - [v7.2-1] 預約販售加入到貨日期翻譯：「4月下旬入荷予定」→「預計4月下旬到貨」
+ *   - [v7.2-2] 每次執行完都發 LINE 摘要通知，無論有無異動
+ *   - [v7.3-1] 新增 estimateWeightLbs()：依商品名稱自動估算磅數（中間值）
+ *   - [v7.3-2] updateGrlData 同步更新「估算磅數（估算值）」J 欄
+ *   - [v7.3-3] 修正 ensureCol 硬編碼索引（J 欄插入後位移：17→18, 18→19）
+ *   - [v7.3-4] 修正庫存解析：支援 22.5cm 等數字尺寸、在庫無し（漢字）、在庫無し+予約販売複合狀態
+ *   - [v7.4-1] 重量估算 +200g（鞋類/包包/外套）：鞋 500~820→700~1020，包 250~620→450~820，外套 450~950→650~1150
+ *   - [v7.4-2] 成本計算加入 GRL 國內運費 195 JPY（商品頁公式與 getGrlQuote 報價同步更新）
+ *   - [v7.4-3] ID 爬蟲解析修正：改取所有符合 href 後排序選最短，避免 AI16 抓到 ai1611119
+ *   - [v7.4-4] 省頻寬：先試直接 /item/{id}/ URL，成功省略搜尋頁；BATCH_SIZE 20→10，sleep 300→500ms
+ *   - [v7.4-5] colorSpecialCols()：每次更新後對 A,B,C,F,H,K,M 欄套 #ffe3e3 底色
+ *   - [v7.4-6] 重量分類誤判修正：ショルダー→ショルダーバッグ（避免肩線洋裝誤判），移除フラット（避免平剪裁誤判）
+ */
+
+// ═══════════════════════════════════════════════════
+//  ⚙️ 設定區
+// ═══════════════════════════════════════════════════
+var LINE_TOKEN      = "xUiFiPLLghIjg0Kl9+ZviOFD/IOa3h/tCcEIQhLYA+CSV8UhAvpE24iMjwf+T9KKc+8nj9VZFQtag+9xgaBuWphC7SI5K8S/9A1a9EgOQoJs5eJkcdT4Bv28JKKSTUDdn4P56BrdVpIdrJRUGgAdGgdB04t89/1O/w1cDnyilFU=";
+var LINE_USER_ID    = "U9fa329e70b89f4ce19089928a824bd29";
+var DEFAULT_POUNDS  = 1;    // LINE Bot 報價預設磅數
+var HANDLING_FEE    = 0.06; // Buy&Ship 手續費
+var BANK_FEE        = 0.015;// 銀行海外刷卡手續費
+var SHIPPING_PER_LB = 150;  // 每磅運費
+var PACK_COST       = 20;   // 包材成本
+var TRANSFER_FEE    = 10;   // 跨行提領手續費
+// ═══════════════════════════════════════════════════
+
+// ── onOpen（電腦選單）────────────────────────────────────────────────────
+function onOpen() {
+  SpreadsheetApp.getUi().createMenu('🌸 日本代購工具')
+      .addItem('即時更新 GRL 價格與庫存', 'updateGrlData')
+      .addToUi();
+}
+
+function safeAlert(msg) {
+  try {
+    SpreadsheetApp.getUi().alert(msg);
+  } catch(e) {
+    Logger.log(msg);
+  }
+}
+
+// ── LINE 推播 ─────────────────────────────────────────────────────────────
+function sendLineMessage(userId, message) {
+  try {
+    UrlFetchApp.fetch("https://api.line.me/v2/bot/message/push", {
+      method: "post",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer " + LINE_TOKEN
+      },
+      payload: JSON.stringify({
+        to: userId,
+        messages: [{type: "text", text: message}]
+      }),
+      muteHttpExceptions: true
+    });
+  } catch(e) {
+    Logger.log("LINE 發送失敗: " + e.message);
+  }
+}
+
+// ── LINE 回覆（Webhook 用）────────────────────────────────────────────────
+function replyLineMessage(replyToken, message) {
+  try {
+    UrlFetchApp.fetch("https://api.line.me/v2/bot/message/reply", {
+      method: "post",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer " + LINE_TOKEN
+      },
+      payload: JSON.stringify({
+        replyToken: replyToken,
+        messages: [{type: "text", text: message}]
+      }),
+      muteHttpExceptions: true
+    });
+  } catch(e) {
+    Logger.log("LINE 回覆失敗: " + e.message);
+  }
+}
+
+// ── [v7.0] LINE Bot Webhook ───────────────────────────────────────────────
+function doPost(e) {
+  var output = ContentService.createTextOutput(JSON.stringify({status: "ok"}))
+               .setMimeType(ContentService.MimeType.JSON);
+
+  try {
+    var lock = LockService.getScriptLock();
+    lock.tryLock(10000);
+
+    try {
+      var body   = JSON.parse(e.postData.contents);
+      var events = body.events || [];
+
+      events.forEach(function(event) {
+        if (event.type !== "message" || event.message.type !== "text") return;
+
+        var replyToken = event.replyToken;
+        var userText   = event.message.text.trim();
+
+        if (userText.indexOf("grail.bz/item/") !== -1 ||
+            userText.indexOf("grail.bz/disp/item/") !== -1) {
+          var reply = getGrlQuote(userText);
+          replyLineMessage(replyToken, reply);
+        } else {
+          replyLineMessage(replyToken,
+            "🌸 請傳入 GRL 商品網址\n範例：\nhttps://www.grail.bz/item/at1181113/");
+        }
+      });
+
+    } finally {
+      lock.releaseLock();
+    }
+
+  } catch(err) {
+    Logger.log("Webhook 錯誤: " + err.message);
+  }
+
+  return output;
+}
+
+// ── GRL 商品報價邏輯 ──────────────────────────────────────────────────────
+function getGrlQuote(url) {
+  try {
+    var itemUrl = url.split("?")[0];
+    if (itemUrl.slice(-1) !== "/") itemUrl += "/";
+
+    var html = fetchWithRetry(itemUrl);
+    if (!html) return "❌ 無法讀取商品頁面，請確認網址是否正確。";
+
+    if (html.indexOf("¥") === -1) return "❌ 找不到商品資訊，請確認網址是否正確。";
+
+    var itemName = parseItemName(html);
+    var priceStr = parsePrice(html);
+    if (priceStr === "N/A") return "❌ 無法取得商品價格。";
+    var jpyPrice = Number(priceStr);
+
+    var rate = 0.235;
+    try {
+      var ss = SpreadsheetApp.getActiveSpreadsheet();
+      if (ss) rate = ss.getActiveSheet().getRange("V3").getValue() || 0.235;
+    } catch(e2) {}
+
+    var cost        = (rate * (jpyPrice + 195) * (1 + HANDLING_FEE + BANK_FEE)) +
+                      (SHIPPING_PER_LB * DEFAULT_POUNDS + PACK_COST + TRANSFER_FEE);
+    var costRounded = Math.round(cost);
+
+    var lastDigit = costRounded % 10;
+    var suggested;
+    if (lastDigit <= 4)      suggested = Math.floor(costRounded / 10) * 10 + 5;
+    else if (lastDigit >= 6) suggested = Math.floor(costRounded / 10) * 10 + 9;
+    else                     suggested = costRounded;
+
+    var stockDetails = parseStockForBot(html);
+    var stockText    = stockDetails.length > 0 ? stockDetails.join("\n  ") : "詳細庫存請查看商品頁面";
+
+    var reply = "🌸 GRL 商品報價\n\n" +
+                (itemName ? itemName + "\n" : "") +
+                "💴 日幣：¥" + jpyPrice.toLocaleString() + "\n" +
+                "💵 建議售價：NT$" + suggested + "\n\n" +
+                "📦 庫存：\n  " + stockText + "\n\n" +
+                "⚠️ 以上報價以 " + DEFAULT_POUNDS + " 磅計算\n" +
+                "實際重量若超過 " + DEFAULT_POUNDS + " 磅，運費將增加，售價會有所調整。";
+
+    return reply;
+
+  } catch(e) {
+    Logger.log("報價錯誤: " + e.message);
+    return "❌ 取得報價時發生錯誤，請稍後再試。";
+  }
+}
+
+// ── 庫存解析（Bot 用，精簡版）────────────────────────────────────────────
+function parseStockForBot(html) {
+  var stockDetails = [];
+  var seen = {};
+
+  var colorMap = {
+    "オフホワイト":"灰白色", "オフベージュ":"杏色", "ライトブルー":"淺藍色",
+    "ライトグレー":"淺灰色", "グレージュ":"藕色", "ワインレッド":"酒紅色",
+    "ミントグリーン":"薄荷綠色", "キャメル":"駝色", "オートミール":"燕麥色",
+    "ブラック":"黑色", "ピンク":"粉色", "グレー":"灰色", "アイボリー":"象牙白",
+    "チャコール":"炭灰色", "ホワイト":"米白色", "ブルー":"藍色", "ベージュ":"淺褐色",
+    "グリーン":"綠色", "レッド":"紅色", "イエロー":"黃色", "パープル":"紫色",
+    "ブラウン":"咖啡色", "モカ":"摩卡色", "ボルドー":"酒紅色", "カーキ":"卡其色",
+    "ネイビー":"藏青色", "オレンジ":"橘色", "ミント":"薄荷綠", "ラベンダー":"薰衣草紫",
+    "マスタード":"芥末黃"
+  };
+  var colorKeys = Object.keys(colorMap);
+
+  function hasColor(text) {
+    for (var k = 0; k < colorKeys.length; k++) {
+      if (text.indexOf(colorKeys[k]) !== -1) return true;
+    }
+    return false;
+  }
+
+  function translateColor(text) {
+    for (var jp in colorMap) {
+      if (text.indexOf(jp) !== -1) return colorMap[jp] + "(" + jp + ")";
+    }
+    return text;
+  }
+
+  var liRegex = /<li[^>]*>([\s\S]*?)<\/li>/gi;
+  var liMatch;
+
+  while ((liMatch = liRegex.exec(html)) !== null) {
+    var liText = liMatch[1].replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+
+    var hasStock   = liText.indexOf("在庫あり") !== -1;
+    // [v7.3-4] 同時識別在庫なし（平假名）與在庫無し（漢字）
+    var hasNone    = liText.indexOf("在庫なし") !== -1 || liText.indexOf("在庫無し") !== -1;
+    var hasLimited = liText.indexOf("残りわずか") !== -1 ||
+                     (liText.indexOf("残り") !== -1 && liText.indexOf("残りわずか") === -1);
+    var hasReserve = liText.indexOf("予約販売") !== -1;
+
+    if (!hasStock && !hasNone && !hasLimited && !hasReserve) continue;
+    if (liText.indexOf("アイテム") !== -1 && !hasColor(liText)) continue;
+    if (liText.indexOf("日新着") !== -1)   continue;
+    if (liText.indexOf("日再入荷") !== -1) continue;
+    if (liText.indexOf("日予約") !== -1)   continue;
+    if (liText.indexOf("すべて") !== -1 && !hasColor(liText)) continue;
+    if (!hasColor(liText)) continue;
+    if (seen[liText]) continue;
+    seen[liText] = true;
+
+    var colorName = "";
+    for (var k = 0; k < colorKeys.length; k++) {
+      if (liText.indexOf(colorKeys[k]) !== -1) { colorName = colorKeys[k]; break; }
+    }
+    var displayColor = colorName ? colorMap[colorName] + "(" + colorName + ")" : "";
+
+    // [v7.3-4] 支援 22.5cm / 23.0cm 等數字尺寸，以及在庫無し+予約販売複合狀態
+    var sizeStockRegex = /([\d.]+cm|[A-Z][A-Z0-9]*)\/(在庫あり|在庫なし|在庫無し(?:\s*予約販売(?:《([^》]*)》)?)?|残りわずか|残り\d*|予約販売(?:《([^》]*)》)?)/g;
+    var sizeMatch;
+    var sizeResults = [];
+
+    while ((sizeMatch = sizeStockRegex.exec(liText)) !== null) {
+      var size = sizeMatch[1], st = sizeMatch[2];
+      var arrivalRaw = sizeMatch[3] || sizeMatch[4] || "";
+      var status;
+      if (st === "在庫あり") {
+        status = "✅ 有庫存";
+      } else if (st.indexOf("在庫無し") !== -1 && st.indexOf("予約販売") !== -1) {
+        status = "📅 預約販售" + (arrivalRaw ? "（" + translateArrival(arrivalRaw) + "）" : "");
+      } else if (st === "在庫なし" || st === "在庫無し") {
+        status = "❌ 缺貨";
+      } else if (st.indexOf("残り") !== -1) {
+        status = "⚠️ 剩餘少量";
+      } else if (st.indexOf("予約販売") !== -1) {
+        status = "📅 預約販售" + (arrivalRaw ? "（" + translateArrival(arrivalRaw) + "）" : "");
+      } else {
+        status = "❌ 缺貨";
+      }
+      sizeResults.push(displayColor + " " + size + ": " + status);
+    }
+
+    if (sizeResults.length > 0) {
+      sizeResults.forEach(function(s) {
+        if (!seen[s]) { stockDetails.push(s); seen[s] = true; }
+      });
+    } else {
+      var colorPart = "", sizePart = "";
+      var slashIdx = liText.indexOf("/");
+      if (slashIdx !== -1) {
+        var beforeSlash = liText.substring(0, slashIdx).trim();
+        var spaceIdx    = beforeSlash.lastIndexOf(" ");
+        if (spaceIdx !== -1) {
+          colorPart = beforeSlash.substring(0, spaceIdx).trim();
+          sizePart  = beforeSlash.substring(spaceIdx + 1).trim();
+        } else { colorPart = beforeSlash; }
+      } else { colorPart = liText.split(" ")[0]; }
+
+      var dc    = translateColor(colorPart);
+      var label = sizePart ? dc + " " + sizePart : dc;
+      var status = hasStock ? "✅ 有庫存" :
+                   hasLimited ? "⚠️ 剩餘少量" :
+                   hasReserve ? (function() {
+                     var dm = liText.match(/《([^》]+)》/);
+                     return dm ? "📅 預約販售（" + translateArrival(dm[1]) + "）" : "📅 預約販售";
+                   })() : "❌ 缺貨";
+      stockDetails.push(label + ": " + status);
+    }
+  }
+  return stockDetails;
+}
+
+// ── [v7.2-1] 到貨日期翻譯：「4月下旬入荷予定」→「預計4月下旬到貨」────────
+function translateArrival(text) {
+  return text
+    .replace(/(\d+)月/g, "$1月")
+    .replace("上旬", "上旬")
+    .replace("中旬", "中旬")
+    .replace("下旬", "下旬")
+    .replace("入荷予定", "到貨");
+}
+
+// ── [v7.3-1] 商品重量估算：依商品名稱關鍵字判斷品類，回傳估算磅數中間值 ──
+function estimateWeightLbs(productName) {
+  if (!productName) return "";
+  var name = productName;
+  var minG, maxG;
+
+  if (/サンダル|スニーカー|ブーツ|パンプス|シューズ|ミュール|ローファー|スリッポン|ウェッジ|ヒール/.test(name)) {
+    minG = 700; maxG = 1020;  // 鞋類（含鞋盒，+200g）
+  } else if (/バッグ|トートバッグ|ショルダーバッグ|ハンドバッグ|リュック|クラッチ|ポーチ/.test(name)) {
+    minG = 450; maxG = 820;   // 包包（+200g）
+  } else if (/ピアス|ネックレス|リング|ブレスレット|ヘアアクセ|ヘアクリップ|バレッタ|アクセサリー/.test(name)) {
+    minG = 60;  maxG = 180;   // 配件
+  } else if (/コート|アウター|ダウン|ブルゾン|ムートン/.test(name)) {
+    minG = 650; maxG = 1150;  // 外套（+200g）
+  } else if (/ジャケット|カーディガン|ボレロ/.test(name)) {
+    minG = 280; maxG = 580;   // 外罩衫
+  } else if (/ワンピース|ドレス/.test(name)) {
+    minG = 200; maxG = 480;   // 洋裝
+  } else if (/スカート/.test(name)) {
+    minG = 170; maxG = 400;   // 裙子
+  } else if (/デニム|ジーンズ/.test(name)) {
+    minG = 500; maxG = 850;   // 牛仔褲
+  } else if (/パンツ|スラックス|ショートパンツ|レギンス/.test(name)) {
+    minG = 220; maxG = 520;   // 褲子
+  } else if (/ニット|セーター/.test(name)) {
+    minG = 180; maxG = 400;   // 針織
+  } else if (/トップス|シャツ|ブラウス|カットソー|Tシャツ|タンク|ノースリーブ/.test(name)) {
+    minG = 120; maxG = 300;   // 上衣
+  } else {
+    minG = 150; maxG = 450;   // 其他服飾
+  }
+
+  var midG   = Math.round((minG + maxG) / 2);
+  var midLbs = Math.round(midG / 1000 * 2.20462 * 100) / 100;
+  return midLbs;
+}
+
+// ── 共用解析函式 ──────────────────────────────────────────────────────────
+function fetchWithRetry(url, retries) {
+  retries = retries || 3;
+  for (var r = 0; r < retries; r++) {
+    try {
+      var res = UrlFetchApp.fetch(url, {muteHttpExceptions: true, followRedirects: true});
+      if (res.getResponseCode() === 200) return res.getContentText();
+    } catch(e) { Logger.log("重試 " + (r+1) + "：" + e.message); }
+    if (r < retries - 1) Utilities.sleep(1000);
+  }
+  return null;
+}
+
+function parsePrice(html) {
+  var m = html.match(/class="txt-price">\s*¥([\d,]+)/);
+  if (m) return m[1].replace(/,/g, "");
+  var m2 = html.match(/¥([\d,]+)/);
+  if (m2) return m2[1].replace(/,/g, "");
+  return "N/A";
+}
+
+function parseItemName(html) {
+  var m = html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/);
+  if (m) {
+    var text = m[1].replace(/<[^>]+>/g, "").trim();
+    text = text.replace(/\[[^\]]+\]\s*$/, "").trim();
+    return text.replace(/\s+/g, " ").trim();
+  }
+  return "";
+}
+
+// ── 抓取日幣匯率 ──────────────────────────────────────────────────────────
+function getJpyRate() {
+  try {
+    var res  = UrlFetchApp.fetch("https://api.exchangerate-api.com/v4/latest/JPY", {muteHttpExceptions: true});
+    var rate = JSON.parse(res.getContentText()).rates["TWD"];
+    if (rate) return Math.round(rate * 1000) / 1000;
+  } catch(e) { Logger.log("主要匯率失敗：" + e.message); }
+  try {
+    var res2  = UrlFetchApp.fetch("https://open.er-api.com/v6/latest/JPY", {muteHttpExceptions: true});
+    var rate2 = JSON.parse(res2.getContentText()).rates["TWD"];
+    if (rate2) return Math.round(rate2 * 1000) / 1000;
+  } catch(e2) { Logger.log("備援匯率失敗：" + e2.message); }
+  return null;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+//  主程式
+// ════════════════════════════════════════════════════════════════════════════
+function updateGrlData() {
+  var startTime = new Date();
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+
+  sheet.getRange("U1").setValue("摘要");
+  sheet.getRange("V1").setValue("摘要資料");
+
+  var jpyRateRaw = getJpyRate();
+  var jpyRate;
+  if (jpyRateRaw) {
+    jpyRate = Math.round((jpyRateRaw + 0.015) * 1000) / 1000;
+    sheet.getRange("U2").setValue("今日匯率");
+    sheet.getRange("V2").setValue(jpyRateRaw);
+    sheet.getRange("U3").setValue("今日匯率(含調整)");
+    sheet.getRange("V3").setValue(jpyRate);
+  } else {
+    jpyRate = sheet.getRange("V3").getValue() || 0.235;
+  }
+
+  var range = sheet.getDataRange();
+  var data  = range.getValues();
+  var backgrounds = range.getBackgrounds();
+
+  var headerRowIdx = 0;
+  for (var i = 0; i < data.length; i++) {
+    if (data[i].join("").indexOf("ID") !== -1) { headerRowIdx = i; break; }
+  }
+  var header = data[headerRowIdx];
+
+  function findCol(exactNames, fuzzyKeywords) {
+    for (var i = 0; i < header.length; i++) {
+      var c = header[i].toString().trim();
+      for (var k = 0; k < exactNames.length; k++) { if (c === exactNames[k]) return i; }
+    }
+    if (fuzzyKeywords) {
+      for (var i = 0; i < header.length; i++) {
+        var c = header[i].toString().trim();
+        for (var k = 0; k < fuzzyKeywords.length; k++) { if (c.indexOf(fuzzyKeywords[k]) !== -1) return i; }
+      }
+    }
+    return -1;
+  }
+
+  var colMap = {};
+  colMap["來源ID"]   = findCol(["ID"]);
+  colMap["項目名稱"] = findCol(["項目名稱"]);
+  colMap["日幣"]     = findCol(["日幣"]);
+  colMap["成本價"]   = findCol(["成本價"]);
+  colMap["建議售價"] = findCol(["IG(建議售價)"]);
+  colMap["IG定價"]   = findCol(["IG定價"]);
+  colMap["預估獲利"] = findCol(["預估獲利"]);
+  colMap["磅數"]     = findCol(["磅數"]);
+  colMap["建議收益"] = findCol(["建議收益"]);
+  colMap["磅數進位"] = findCol(["磅數無條件進位"]);
+  colMap["商品名稱"] = findCol(["商品ID"]);
+  colMap["更新日期"] = findCol(["確認日期(更新日期)"], ["更新日期", "確認日期"]);
+  colMap["目前價格"] = findCol(["日幣價格(目前價格)"], ["目前價格", "日幣價格"]);
+  colMap["庫存狀態"] = findCol(["庫存狀態"], ["庫存"]);
+  colMap["備註"]     = findCol(["備註"]);
+  // [v7.3-2] 估算磅數欄位（J欄，依名稱查找，不受欄位順序影響）
+  colMap["估算磅數"] = findCol(["估算磅數（估算值）"], ["估算磅數"]);
+
+  if (colMap["來源ID"] === -1) {
+    safeAlert("❌ 找不到『ID』欄位，請確認標題名稱。");
+    return 0;
+  }
+
+  function ensureCol(colName, colIndex) {
+    if (header.length <= colIndex || header[colIndex].toString().trim() !== colName) {
+      sheet.getRange(headerRowIdx + 1, colIndex + 1).setValue(colName);
+      while (header.length <= colIndex) header.push("");
+      header[colIndex] = colName;
+    }
+    return colIndex;
+  }
+  // [v7.3-3] J欄插入後，上次価格/上次庫存 從 17/18 → 18/19
+  colMap["上次價格"] = ensureCol("上次價格", 18);
+  colMap["上次庫存"] = ensureCol("上次庫存", 19);
+
+  range = sheet.getDataRange();
+  data  = range.getValues();
+  backgrounds = range.getBackgrounds();
+
+  var colorMap = {
+    "オフホワイト":"灰白色", "オフベージュ":"杏色", "ライトブルー":"淺藍色",
+    "ライトグレー":"淺灰色", "グレージュ":"藕色", "ワインレッド":"酒紅色",
+    "ミントグリーン":"薄荷綠色", "キャメル":"駝色", "オートミール":"燕麥色",
+    "ブラック":"黑色", "ピンク":"粉色", "グレー":"灰色", "アイボリー":"象牙白",
+    "チャコール":"炭灰色", "ホワイト":"米白色", "ブルー":"藍色", "ベージュ":"淺褐色",
+    "グリーン":"綠色", "レッド":"紅色", "イエロー":"黃色", "パープル":"紫色",
+    "ブラウン":"咖啡色", "モカ":"摩卡色", "ボルドー":"酒紅色", "カーキ":"卡其色",
+    "ネイビー":"藏青色", "オレンジ":"橘色", "ミント":"薄荷綠", "ラベンダー":"薰衣草紫",
+    "マスタード":"芥末黃"
+  };
+  var colorKeys = Object.keys(colorMap);
+
+  function translateColor(text) {
+    for (var jp in colorMap) { if (text.indexOf(jp) !== -1) return colorMap[jp] + "(" + jp + ")"; }
+    return text;
+  }
+  function hasColorKeyword(text) {
+    for (var k = 0; k < colorKeys.length; k++) { if (text.indexOf(colorKeys[k]) !== -1) return true; }
+    return false;
+  }
+
+  var now = Utilities.formatDate(new Date(), "GMT+8", "yyyy-MM-dd HH:mm");
+
+  // [v7.3-2] setRowData 同步更新「估算磅數（估算值）」
+  function setRowData(idx, itemName, price, stock, statusNote, bgColor) {
+    data[idx][colMap["更新日期"]] = now;
+    data[idx][colMap["目前價格"]] = price;
+    data[idx][colMap["庫存狀態"]] = stock;
+    data[idx][colMap["備註"]]     = statusNote;
+    if (colMap["日幣"] !== -1 && price !== "N/A") data[idx][colMap["日幣"]] = Number(price);
+    if (itemName && colMap["商品名稱"] !== -1)     data[idx][colMap["商品名稱"]] = itemName;
+    // 自動填入估算磅數（依商品名稱估算，有名稱才更新）
+    if (itemName && colMap["估算磅數"] !== -1) {
+      var wLbs = estimateWeightLbs(itemName);
+      if (wLbs !== "") data[idx][colMap["估算磅數"]] = wLbs;
+    }
+    for (var c = 0; c < header.length; c++) backgrounds[idx][c] = bgColor;
+  }
+
+  function saveData() {
+    var dataStartRow = headerRowIdx + 2;
+    var numRows = data.length - headerRowIdx - 1;
+    if (numRows <= 0) return;
+    var dataRange = sheet.getRange(dataStartRow, 1, numRows, data[0].length);
+    dataRange.setValues(data.slice(headerRowIdx + 1));
+    dataRange.setBackgrounds(backgrounds.slice(headerRowIdx + 1));
+  }
+
+  function writeFormulas() {
+    function L(idx) { return String.fromCharCode(65 + idx); }
+    var eCol = L(colMap["成本價"]);
+    var gCol = L(colMap["IG定價"]);
+    var hCol = L(colMap["預估獲利"]);
+    var iCol = L(colMap["磅數"]);
+    var jCol = L(colMap["建議收益"]);
+    var kCol = L(colMap["磅數進位"]);
+    var oCol = L(colMap["目前價格"]);
+
+    for (var i = headerRowIdx + 1; i < data.length; i++) {
+      var rawId = String(data[i][colMap["來源ID"]]).trim();
+      if (!rawId || rawId === "" || rawId === "ID" || rawId === "undefined") continue;
+      var row = i + 1;
+
+      if (colMap["磅數進位"] !== -1 && colMap["磅數"] !== -1)
+        sheet.getRange(row, colMap["磅數進位"] + 1).setFormula("=CEILING(" + iCol + row + ",1)");
+
+      if (colMap["成本價"] !== -1)
+        sheet.getRange(row, colMap["成本價"] + 1)
+             .setFormula("=((V$3*(" + oCol + row + "+195))*(1+0.06+0.015))+(150*" + kCol + row + "+20+10)");
+
+      if (colMap["建議售價"] !== -1)
+        sheet.getRange(row, colMap["建議售價"] + 1)
+             .setFormula("=IF(MOD(ROUND(" + eCol + row + ",0),10)<=4," +
+                         "INT(ROUND(" + eCol + row + ",0)/10)*10+5," +
+                         "IF(MOD(ROUND(" + eCol + row + ",0),10)>=6," +
+                         "INT(ROUND(" + eCol + row + ",0)/10)*10+9," +
+                         "ROUND(" + eCol + row + ",0)))+" + jCol + row);
+
+      if (colMap["預估獲利"] !== -1 && colMap["IG定價"] !== -1)
+        sheet.getRange(row, colMap["預估獲利"] + 1)
+             .setFormula("=" + gCol + row + "-" + eCol + row);
+    }
+  }
+
+  function writeSummary(totalCount, processedCount, notFoundCount,
+                        outOfStockCount, delistedCount, changesCount, elapsed) {
+    var normalCount = processedCount - outOfStockCount - delistedCount - notFoundCount;
+    if (normalCount < 0) normalCount = 0;
+    sheet.getRange("U4").setValue("總商品數");         sheet.getRange("V4").setValue(totalCount);
+    sheet.getRange("U5").setValue("處理商品筆數");     sheet.getRange("V5").setValue(processedCount);
+    sheet.getRange("U6").setValue("在庫正常筆數");     sheet.getRange("V6").setValue(normalCount);
+    sheet.getRange("U7").setValue("缺貨商品筆數");     sheet.getRange("V7").setValue(outOfStockCount);
+    sheet.getRange("U8").setValue("下架商品筆數");     sheet.getRange("V8").setValue(delistedCount);
+    sheet.getRange("U9").setValue("找不到商品筆數");   sheet.getRange("V9").setValue(notFoundCount);
+    sheet.getRange("U10").setValue("變動通知筆數");    sheet.getRange("V10").setValue(changesCount);
+    sheet.getRange("U11").setValue("執行耗時(秒)");    sheet.getRange("V11").setValue(elapsed);
+    sheet.getRange("U12").setValue(""); sheet.getRange("V12").setValue("");
+  }
+
+  function colorSpecialCols() {
+    var dataStartRow = headerRowIdx + 2;
+    var numRows = data.length - headerRowIdx - 1;
+    if (numRows <= 0) return;
+    [1, 2, 3, 6, 8, 11, 13].forEach(function(col) {
+      sheet.getRange(dataStartRow, col, numRows, 1).setBackground("#ffe3e3");
+    });
+  }
+
+  function drawBorders() {
+    var dataStartRow = headerRowIdx + 2;
+    var numRows = data.length - headerRowIdx - 1;
+    if (numRows <= 0) return;
+    for (var r = 0; r < numRows; r++) {
+      var sheetRow = dataStartRow + r;
+      var rawId = String(data[r + headerRowIdx + 1][colMap["來源ID"]]).trim();
+      if (rawId && rawId !== "" && rawId !== "ID" && rawId !== "undefined") {
+        sheet.getRange(sheetRow, 1, 1, header.length)
+             .setBorder(null, null, true, null, null, null, "#aaaaaa", SpreadsheetApp.BorderStyle.SOLID_MEDIUM);
+      }
+    }
+  }
+
+  function parseStockFull(html) {
+    var stockDetails = [];
+    var seen = {};
+    var liRegex = /<li[^>]*>([\s\S]*?)<\/li>/gi;
+    var liMatch;
+
+    while ((liMatch = liRegex.exec(html)) !== null) {
+      var liText = liMatch[1].replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+      var hasStock   = liText.indexOf("在庫あり") !== -1;
+      // [v7.3-4] 同時識別在庫なし與在庫無し
+      var hasNone    = liText.indexOf("在庫なし") !== -1 || liText.indexOf("在庫無し") !== -1;
+      var hasLimited = liText.indexOf("残りわずか") !== -1 ||
+                       (liText.indexOf("残り") !== -1 && liText.indexOf("残りわずか") === -1);
+      var hasReserve = liText.indexOf("予約販売") !== -1;
+
+      if (!hasStock && !hasNone && !hasLimited && !hasReserve) continue;
+      if (liText.indexOf("アイテム") !== -1 && !hasColorKeyword(liText)) continue;
+      if (liText.indexOf("日新着") !== -1)   continue;
+      if (liText.indexOf("日再入荷") !== -1) continue;
+      if (liText.indexOf("日予約") !== -1)   continue;
+      if (liText.indexOf("すべて") !== -1 && !hasColorKeyword(liText)) continue;
+      if (!hasColorKeyword(liText)) continue;
+      if (seen[liText]) continue;
+      seen[liText] = true;
+
+      var colorName = "";
+      for (var k = 0; k < colorKeys.length; k++) {
+        if (liText.indexOf(colorKeys[k]) !== -1) { colorName = colorKeys[k]; break; }
+      }
+      var displayColor = colorName ? colorMap[colorName] + "(" + colorName + ")" : "";
+
+      // [v7.3-4] 支援 22.5cm 等數字尺寸，以及在庫無し+予約販売複合狀態
+      var sizeStockRegex = /([\d.]+cm|[A-Z][A-Z0-9]*)\/(在庫あり|在庫なし|在庫無し(?:\s*予約販売(?:《([^》]*)》)?)?|残りわずか|残り\d*|予約販売(?:《([^》]*)》)?)/g;
+      var sizeMatch, sizeResults = [];
+
+      while ((sizeMatch = sizeStockRegex.exec(liText)) !== null) {
+        var st = sizeMatch[2];
+        var arrivalRaw = sizeMatch[3] || sizeMatch[4] || "";
+        var status;
+        if (st === "在庫あり") {
+          status = "✅ 有庫存";
+        } else if (st.indexOf("在庫無し") !== -1 && st.indexOf("予約販売") !== -1) {
+          status = "📅 預約販售" + (arrivalRaw ? "（" + translateArrival(arrivalRaw) + "）" : "");
+        } else if (st === "在庫なし" || st === "在庫無し") {
+          status = "❌ 缺貨";
+        } else if (st.indexOf("残り") !== -1) {
+          status = "⚠️ 剩餘少量";
+        } else if (st.indexOf("予約販売") !== -1) {
+          status = "📅 預約販售" + (arrivalRaw ? "（" + translateArrival(arrivalRaw) + "）" : "");
+        } else {
+          status = "❌ 缺貨";
+        }
+        sizeResults.push(displayColor + " " + sizeMatch[1] + ": " + status);
+      }
+
+      if (sizeResults.length > 0) {
+        sizeResults.forEach(function(s) { if (!seen[s]) { stockDetails.push(s); seen[s] = true; } });
+      } else {
+        var colorPart = "", sizePart = "";
+        var slashIdx = liText.indexOf("/");
+        if (slashIdx !== -1) {
+          var bs = liText.substring(0, slashIdx).trim();
+          var sp = bs.lastIndexOf(" ");
+          if (sp !== -1) { colorPart = bs.substring(0, sp).trim(); sizePart = bs.substring(sp+1).trim(); }
+          else colorPart = bs;
+        } else colorPart = liText.split(" ")[0];
+
+        var dc = translateColor(colorPart);
+        var label = sizePart ? dc + " " + sizePart : dc;
+        var status = hasStock ? "✅ 有庫存" : hasLimited ? "⚠️ 剩餘少量" :
+                     hasReserve ? (function(){ var dm = liText.match(/《([^》]+)》/);
+                       return dm ? "📅 預約販售（" + translateArrival(dm[1]) + "）" : "📅 預約販售"; })() : "❌ 缺貨";
+        stockDetails.push(label + ": " + status);
+      }
+    }
+    return stockDetails;
+  }
+
+  function detectChanges(idx, newPrice, newStock) {
+    var changes = [];
+    var oldPrice = String(data[idx][colMap["上次價格"]] || "").trim();
+    var oldStock = String(data[idx][colMap["上次庫存"]] || "").trim();
+    if (!oldPrice || oldPrice === "" || oldPrice === "undefined") return changes;
+    if (oldPrice !== "N/A" && newPrice !== "N/A" && oldPrice !== newPrice)
+      changes.push("💴 價格變動：¥" + oldPrice + " → ¥" + newPrice);
+    if (oldStock && newStock !== oldStock) {
+      var newMap = {}, oldMap = {};
+      newStock.split("\n").forEach(function(l) { var i=l.indexOf(": "); if(i!==-1) newMap[l.substring(0,i).trim()]=l.substring(i+2).trim(); });
+      oldStock.split("\n").forEach(function(l) { var i=l.indexOf(": "); if(i!==-1) oldMap[l.substring(0,i).trim()]=l.substring(i+2).trim(); });
+      Object.keys(newMap).forEach(function(key) {
+        var ov = oldMap[key] || "", nv = newMap[key];
+        if (!ov || ov === nv) return;
+        if (ov.indexOf("❌") !== -1 && (nv.indexOf("✅") !== -1 || nv.indexOf("⚠️") !== -1))
+          changes.push("✅ 補貨：" + key + "\n   " + ov + " → " + nv);
+        else if ((ov.indexOf("✅") !== -1 || ov.indexOf("⚠️") !== -1) && nv.indexOf("❌") !== -1)
+          changes.push("❌ 售完：" + key + "\n   " + ov + " → " + nv);
+      });
+    }
+    return changes;
+  }
+
+  function getDisplayName(idx) {
+    var id = String(data[idx][colMap["來源ID"]] || "").trim().toUpperCase();
+    var n  = colMap["項目名稱"] !== -1 ? String(data[idx][colMap["項目名稱"]] || "").trim() : "";
+    if (n.length > 20) n = n.substring(0, 20) + "...";
+    return n ? id + " " + n : id;
+  }
+
+  // ── 主迴圈 ───────────────────────────────────────────────────────────
+  var BATCH_SIZE = 10;
+  var rows = [];
+  for (var i = headerRowIdx + 1; i < data.length; i++) {
+    var rawId = String(data[i][colMap["來源ID"]]).trim();
+    if (!rawId || rawId === "" || rawId === "ID" || rawId === "undefined") continue;
+    var itemId = rawId.replace(/[^a-zA-Z0-9\-_]/g, "").toLowerCase();
+    if (!itemId) continue;
+    rows.push({dataIdx: i, itemId: itemId});
+  }
+
+  var totalCount     = rows.length;
+  var processedCount = 0;
+  var notFoundCount  = 0;
+  var outOfStockCount = 0;
+  var timedOut       = false;
+  var allChanges     = [];
+  var delistedItems  = [];
+  var newItems       = [];
+
+  for (var batchStart = 0; batchStart < rows.length; batchStart += BATCH_SIZE) {
+    if (new Date() - startTime > 300000) {
+      saveData(); writeFormulas(); drawBorders(); colorSpecialCols();
+      var el = Math.round((new Date() - startTime) / 1000);
+      writeSummary(totalCount, processedCount, notFoundCount, outOfStockCount,
+                   delistedItems.length, allChanges.length, el);
+      safeAlert("⚠️ 時間接近上限，已處理 " + processedCount + " 筆");
+      timedOut = true;
+      return processedCount;
+    }
+
+    var batch = rows.slice(batchStart, batchStart + BATCH_SIZE);
+
+    // 先嘗試直接商品頁 /item/{id}/，避免多爬一次搜尋列表頁（省頻寬）
+    var directResps = UrlFetchApp.fetchAll(batch.map(function(r) {
+      return {url: "https://www.grail.bz/item/" + r.itemId + "/", muteHttpExceptions: true, followRedirects: true};
+    }));
+
+    var readyHtml  = {};  // dataIdx → html（直接 URL 成功）
+    var needSearch = [];  // 需要走搜尋的 row
+
+    for (var j = 0; j < batch.length; j++) {
+      var row = batch[j];
+      var dHtml = directResps[j].getResponseCode() === 200 ? directResps[j].getContentText() : "";
+      if (dHtml.indexOf("¥") !== -1) {
+        readyHtml[row.dataIdx] = dHtml;
+      } else {
+        needSearch.push(row);
+      }
+    }
+
+    // 對直接 URL 失敗的走搜尋→取得精確商品頁 URL→再抓商品頁
+    if (needSearch.length > 0) {
+      var searchResps = UrlFetchApp.fetchAll(needSearch.map(function(r) {
+        return {url: "https://www.grail.bz/disp/itemlist/?q=" + r.itemId, muteHttpExceptions: true, followRedirects: true};
+      }));
+
+      var itemPageReqs = [], itemPageIdxs = [];
+
+      for (var j2 = 0; j2 < needSearch.length; j2++) {
+        var row2 = needSearch[j2];
+        var sHtml = searchResps[j2].getResponseCode() === 200 ? searchResps[j2].getContentText() : "";
+        if (!sHtml) { var rh = fetchWithRetry("https://www.grail.bz/disp/itemlist/?q=" + row2.itemId); if (rh) sHtml = rh; }
+        if (!sHtml || sHtml.indexOf("商品が存在しません") !== -1 || sHtml.indexOf("Total:0件") !== -1) {
+          setRowData(row2.dataIdx, "", "N/A", "已下架", "已下架", "#e0e0e0");
+          delistedItems.push(getDisplayName(row2.dataIdx));
+          processedCount++;
+          continue;
+        }
+        var relRegex = new RegExp('href="(/item/' + row2.itemId + '\\d*/)[^"]*"', 'gi');
+        var allHrefs = [], hm;
+        while ((hm = relRegex.exec(sHtml)) !== null) {
+          if (allHrefs.indexOf(hm[1]) === -1) allHrefs.push(hm[1]);
+        }
+        allHrefs.sort(function(a, b) { return a.length - b.length; });
+        var itemUrl = allHrefs.length > 0 ? "https://www.grail.bz" + allHrefs[0]
+                                          : "https://www.grail.bz/disp/item/" + row2.itemId + "/";
+        itemPageReqs.push({url: itemUrl, muteHttpExceptions: true, followRedirects: true});
+        itemPageIdxs.push(row2.dataIdx);
+      }
+
+      if (itemPageReqs.length > 0) {
+        var itemResps = UrlFetchApp.fetchAll(itemPageReqs);
+        for (var k2 = 0; k2 < itemResps.length; k2++) {
+          var ih = itemResps[k2].getResponseCode() === 200 ? itemResps[k2].getContentText() : "";
+          if (!ih) { var ri = fetchWithRetry(itemPageReqs[k2].url); if (ri) ih = ri; }
+          readyHtml[itemPageIdxs[k2]] = ih;
+        }
+      }
+    }
+
+    // 統一處理本批次所有已取得的 HTML
+    for (var di in readyHtml) {
+      var dataIdx = parseInt(di);
+      var itemHtml = readyHtml[di];
+      if (!itemHtml || itemHtml.indexOf("¥") === -1) {
+        setRowData(dataIdx, "", "N/A", "找不到商品連結", "警告: 請確認 ID", "#ffe0e0");
+        notFoundCount++;
+        continue;
+      }
+      try {
+        var itemName     = parseItemName(itemHtml);
+        var price        = parsePrice(itemHtml);
+        var stockDetails = parseStockFull(itemHtml);
+        var allOut       = stockDetails.length > 0 && stockDetails.every(function(s){ return s.indexOf("❌") !== -1; });
+        var allRes       = stockDetails.length > 0 && stockDetails.every(function(s){ return s.indexOf("📅") !== -1; });
+        var stockText    = stockDetails.length > 0 ? stockDetails.join("\n") : "有庫存（詳細不明）";
+
+        if (allOut) outOfStockCount++;
+
+        var oldPrice = String(data[dataIdx][colMap["上次價格"]] || "").trim();
+        if (!oldPrice || oldPrice === "") newItems.push(getDisplayName(dataIdx) + " ¥" + price);
+
+        var changes = detectChanges(dataIdx, price, stockText);
+        if (changes.length > 0) allChanges.push("📦 " + getDisplayName(dataIdx) + "\n" + changes.join("\n"));
+
+        data[dataIdx][colMap["上次價格"]] = price;
+        data[dataIdx][colMap["上次庫存"]] = stockText;
+
+        if (allOut)      setRowData(dataIdx, itemName, price, stockText, "缺貨", "#fff176");
+        else if (allRes) setRowData(dataIdx, itemName, price, stockText, "預約", "#e3f2fd");
+        else             setRowData(dataIdx, itemName, price, stockText, "", "#ffffff");
+        processedCount++;
+
+      } catch(e) { data[dataIdx][colMap["備註"]] = "錯誤: " + e.message; }
+    }
+    Utilities.sleep(500);
+  }
+
+  saveData();
+  writeFormulas();
+  drawBorders();
+  colorSpecialCols();
+
+  if (allChanges.length > 0)
+    sendLineMessage(LINE_USER_ID, "🌸 GRL 庫存變動通知\n" + now + "\n\n" + allChanges.join("\n\n─────────────\n\n"));
+  if (delistedItems.length > 0)
+    sendLineMessage(LINE_USER_ID, "⚠️ GRL 下架通知\n" + now + "\n\n" + delistedItems.map(function(n){ return "🚫 " + n; }).join("\n"));
+  if (newItems.length > 0)
+    sendLineMessage(LINE_USER_ID, "🆕 新商品加入追蹤\n" + now + "\n\n" + newItems.map(function(n){ return "✨ " + n; }).join("\n"));
+
+  var elapsed = Math.round((new Date() - startTime) / 1000);
+  writeSummary(totalCount, processedCount, notFoundCount, outOfStockCount,
+               delistedItems.length, allChanges.length, elapsed);
+
+  // [v7.2-2] 每次執行都發 LINE 摘要通知
+  var normalCount = processedCount - outOfStockCount - delistedItems.length - notFoundCount;
+  if (normalCount < 0) normalCount = 0;
+  var lineSum = "🌸 GRL 更新完成\n" + now + "\n\n" +
+                "📦 總商品數：" + totalCount + " 筆\n" +
+                "✅ 處理完成：" + processedCount + " 筆\n" +
+                "✅ 在庫正常：" + normalCount + " 筆\n" +
+                "❌ 缺貨：" + outOfStockCount + " 筆\n" +
+                "🚫 下架：" + delistedItems.length + " 筆\n" +
+                "💴 今日匯率：1 JPY = " + jpyRate + " TWD\n" +
+                "⏱️ 耗時：" + elapsed + " 秒";
+  if (notFoundCount > 0)        lineSum += "\n⚠️ 找不到商品：" + notFoundCount + " 筆";
+  if (allChanges.length > 0)    lineSum += "\n📲 變動通知：" + allChanges.length + " 筆";
+  if (newItems.length > 0)      lineSum += "\n🆕 新商品：" + newItems.length + " 筆";
+  sendLineMessage(LINE_USER_ID, lineSum);
+
+  if (!timedOut) {
+    var summary = "🌸 更新完成！\n📦 總商品數：" + totalCount + " 筆\n✅ 處理完成：" + processedCount + " 筆\n💴 今日匯率：1 JPY = " + jpyRate + " TWD\n⏱️ 耗時：" + elapsed + " 秒";
+    if (notFoundCount > 0)        summary += "\n⚠️ 找不到商品：" + notFoundCount + " 筆";
+    if (outOfStockCount > 0)      summary += "\n❌ 缺貨：" + outOfStockCount + " 筆";
+    if (delistedItems.length > 0) summary += "\n🚫 下架：" + delistedItems.length + " 筆";
+    if (allChanges.length > 0)    summary += "\n📲 變動通知：" + allChanges.length + " 筆";
+    if (newItems.length > 0)      summary += "\n🆕 新商品：" + newItems.length + " 筆";
+    safeAlert(summary);
+  }
+
+  return processedCount;
+}
+
+function testLine() {
+  try {
+    var response = UrlFetchApp.fetch("https://api.line.me/v2/bot/message/push", {
+      method: "post",
+      headers: {"Content-Type": "application/json", "Authorization": "Bearer " + LINE_TOKEN},
+      payload: JSON.stringify({to: LINE_USER_ID, messages: [{type: "text", text: "🌸 測試通知！LINE 設定正確。"}]}),
+      muteHttpExceptions: true
+    });
+    Logger.log("狀態碼: " + response.getResponseCode());
+    Logger.log("回傳: " + response.getContentText());
+  } catch(e) { Logger.log("錯誤: " + e.message); }
+}
