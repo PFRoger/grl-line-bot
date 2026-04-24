@@ -229,12 +229,14 @@ function estimateWeight(productName) {
 
   let category, label, minG, maxG, confidence, packagingNote;
 
+  // フラット 不納入：GRL 平底鞋名稱一定會有其他鞋類關鍵字；フラット 單獨出現在「フラットシルエット洋裝」等服飾名稱，會誤判為鞋
   if (/サンダル|スニーカー|ブーツ|パンプス|シューズ|ミュール|ローファー|スリッポン|ウェッジ|ヒール/.test(name)) {
     category = 'shoes';
     label = '鞋類';
     minG = 700; maxG = 1020;
     packagingNote = '含鞋盒紙箱（約200~280g）';
     confidence = 'medium';
+  // ショルダー 不納入：「ショルダーオープン/ショルダーリボン」等服飾設計名稱很常見，需用 ショルダーバッグ 才精確
   } else if (/バッグ|トートバッグ|ショルダーバッグ|ハンドバッグ|リュック|クラッチ|ポーチ/.test(name)) {
     category = 'bag';
     label = '包包';
