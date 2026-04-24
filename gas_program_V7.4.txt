@@ -546,14 +546,20 @@ function updateGrlData() {
     var jCol = L(colMap["建議收益"]);
     var kCol = L(colMap["磅數進位"]);
     var oCol = L(colMap["目前價格"]);
+    var wCol = colMap["估算磅數"] !== -1 ? L(colMap["估算磅數"]) : "";
 
     for (var i = headerRowIdx + 1; i < data.length; i++) {
       var rawId = String(data[i][colMap["來源ID"]]).trim();
       if (!rawId || rawId === "" || rawId === "ID" || rawId === "undefined") continue;
       var row = i + 1;
 
-      if (colMap["磅數進位"] !== -1 && colMap["磅數"] !== -1)
-        sheet.getRange(row, colMap["磅數進位"] + 1).setFormula("=CEILING(" + iCol + row + ",1)");
+      // K 有手key值就用 K，K 空就用 J（估算磅數）做進位基準
+      if (colMap["磅數進位"] !== -1 && colMap["磅數"] !== -1) {
+        var ceilSrc = (wCol !== "")
+          ? "IF(" + iCol + row + "=\"\"," + wCol + row + "," + iCol + row + ")"
+          : iCol + row;
+        sheet.getRange(row, colMap["磅數進位"] + 1).setFormula("=CEILING(" + ceilSrc + ",1)");
+      }
 
       if (colMap["成本價"] !== -1)
         sheet.getRange(row, colMap["成本價"] + 1)
