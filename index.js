@@ -62,7 +62,7 @@ function translateArrival(text) {
 const PROFIT = 120;
 
 function calcSuggestedPrice(rate, jpy, lbs = 1) {
-  const cost = rate * jpy * 1.075 + (150 * Math.ceil(lbs) + 20 + 10);
+  const cost = rate * (jpy + 195) * 1.075 + (150 * Math.ceil(lbs) + 20 + 10);
   const base = Math.round(cost + PROFIT);
   const last = base % 10;
   if (last <= 4) return base - last + 5;
@@ -232,13 +232,13 @@ function estimateWeight(productName) {
   if (/サンダル|スニーカー|ブーツ|パンプス|シューズ|ミュール|ローファー|スリッポン|ウェッジ|フラット|ヒール/.test(name)) {
     category = 'shoes';
     label = '鞋類';
-    minG = 500; maxG = 820;
+    minG = 700; maxG = 1020;
     packagingNote = '含鞋盒紙箱（約200~280g）';
     confidence = 'medium';
   } else if (/バッグ|トートバッグ|ショルダー|ハンドバッグ|リュック|クラッチ|ポーチ/.test(name)) {
     category = 'bag';
     label = '包包';
-    minG = 250; maxG = 620;
+    minG = 450; maxG = 820;
     packagingNote = '含塑膠包裝袋（約20g）';
     confidence = 'medium';
   } else if (/ピアス|ネックレス|リング|ブレスレット|ヘアアクセ|ヘアクリップ|バレッタ|アクセサリー/.test(name)) {
@@ -250,7 +250,7 @@ function estimateWeight(productName) {
   } else if (/コート|アウター|ダウン|ブルゾン|ムートン/.test(name)) {
     category = 'outerwear';
     label = '外套';
-    minG = 450; maxG = 950;
+    minG = 650; maxG = 1150;
     packagingNote = '含塑膠包裝袋（約20g）';
     confidence = 'medium';
   } else if (/ジャケット|カーディガン|ボレロ/.test(name)) {
