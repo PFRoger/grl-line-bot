@@ -99,14 +99,14 @@ async function fetchRate() {
   return rate + 0.015;
 }
 
-// ── 從網址擷取商品 ID（去掉顏色後綴 4 碼，例如 ru14381119→ru1438）────────────
-// 只有去掉後仍保有數字（即 ru\d+）才執行截短，避免把 ru1197 截成 ru
+// ── 從網址擷取商品 ID（去掉顏色後綴 4 碼，例如 ru14381119→ru1438、pm870a1119→pm870a）
+// 支援 ID 中間夾字母的格式（如 pm870a）
 function extractProductId(url) {
-  const m = url.match(/\/item\/([a-z]{2}\d+)/i);
+  const m = url.match(/\/item\/([a-z]{2}[a-z0-9]+)/i);
   if (!m) return null;
   const raw = m[1];
   const stripped = raw.replace(/\d{4}$/, '');
-  const result = /^[a-z]{2}\d+$/i.test(stripped) ? stripped : raw;
+  const result = /^[a-z]{2}[a-z0-9]+$/i.test(stripped) && stripped.length >= 3 ? stripped : raw;
   return result.toUpperCase();
 }
 
@@ -1852,7 +1852,7 @@ async function handleEvent(event, client) {
   const replyToken = event.replyToken;
 
   const isGRL = /https?:\/\/(www\.)?grail\.bz\//i.test(userText);
-  const isProductCode = /^[a-z]{2}\d{3,6}$/i.test(userText);
+  const isProductCode = /^[a-z]{2}[a-z0-9]{2,7}$/i.test(userText);
 
   if (!isGRL && !isProductCode) {
     await client.replyMessage(replyToken, { type: 'text', text: '請傳入 GRL 商品網址或貨號（例：RU1197）' });
