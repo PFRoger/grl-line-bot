@@ -261,6 +261,13 @@ function estimateWeight(productName) {
     minG = 280; maxG = 580;
     packagingNote = '含塑膠包裝袋（約20g）';
     confidence = 'high';
+  // デニム 先於 ワンピース/スカート：牛仔布料偏重，需用牛仔範圍而非洋裝範圍
+  } else if (/デニム|ジーンズ/.test(name)) {
+    category = 'denim';
+    label = '牛仔褲';
+    minG = 500; maxG = 850;
+    packagingNote = '含塑膠包裝袋（約20g）';
+    confidence = 'high';
   } else if (/ワンピース|ドレス/.test(name)) {
     category = 'dress';
     label = '洋裝';
@@ -271,12 +278,6 @@ function estimateWeight(productName) {
     category = 'skirt';
     label = '裙子';
     minG = 170; maxG = 400;
-    packagingNote = '含塑膠包裝袋（約20g）';
-    confidence = 'high';
-  } else if (/デニム|ジーンズ/.test(name)) {
-    category = 'denim';
-    label = '牛仔褲';
-    minG = 500; maxG = 850;
     packagingNote = '含塑膠包裝袋（約20g）';
     confidence = 'high';
   } else if (/パンツ|スラックス|ショートパンツ|レギンス/.test(name)) {
@@ -317,6 +318,9 @@ function estimateWeight(productName) {
     : (category === 'outerwear' || category === 'bag') ? 150 : 80;
   minG += pkgG; maxG += pkgG;
   packagingNote = `含包裝約${pkgG}g`;
+
+  // ニット/セーター 材質偏重，額外加 0.5 磅（約227g）
+  if (/ニット|セーター/.test(name)) { minG += 227; maxG += 227; }
 
   const midG    = Math.round((minG + maxG) / 2);
   const midKg   = parseFloat((midG / 1000).toFixed(2));

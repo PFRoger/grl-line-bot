@@ -319,12 +319,12 @@ function estimateWeightLbs(productName) {
     minG = 650; maxG = 1150;  // 外套（+200g）
   } else if (/ジャケット|カーディガン|ボレロ/.test(name)) {
     minG = 280; maxG = 580;   // 外罩衫
+  } else if (/デニム|ジーンズ/.test(name)) {
+    minG = 500; maxG = 850;   // 牛仔（先於洋裝：牛仔布料偏重）
   } else if (/ワンピース|ドレス/.test(name)) {
     minG = 200; maxG = 480;   // 洋裝
   } else if (/スカート/.test(name)) {
     minG = 170; maxG = 400;   // 裙子
-  } else if (/デニム|ジーンズ/.test(name)) {
-    minG = 500; maxG = 850;   // 牛仔褲
   } else if (/パンツ|スラックス|ショートパンツ|レギンス/.test(name)) {
     minG = 220; maxG = 520;   // 褲子
   } else if (/ニット|セーター/.test(name)) {
@@ -347,6 +347,9 @@ function estimateWeightLbs(productName) {
     : /ピアス|ネックレス|リング|ブレスレット|ヘアアクセ|ヘアクリップ|バレッタ|アクセサリー/.test(name) ? 30
     : /コート|アウター|ダウン|ブルゾン|ムートン|バッグ|トートバッグ|ショルダーバッグ|ハンドバッグ|リュック|クラッチ|ポーチ/.test(name) ? 150 : 80;
   minG += pkgG; maxG += pkgG;
+
+  // ニット/セーター 材質偏重，額外加 0.5 磅（約227g）
+  if (/ニット|セーター/.test(name)) { minG += 227; maxG += 227; }
 
   var midG   = Math.round((minG + maxG) / 2);
   var midLbs = Math.round(midG / 1000 * 2.20462 * 100) / 100;
