@@ -235,7 +235,7 @@ function estimateWeight(productName) {
     minG = 700; maxG = 1020;
     packagingNote = '含鞋盒紙箱（約200~280g）';
     confidence = 'medium';
-  } else if (/バッグ|トートバッグ|ショルダー|ハンドバッグ|リュック|クラッチ|ポーチ/.test(name)) {
+  } else if (/バッグ|トートバッグ|ショルダーバッグ|ハンドバッグ|リュック|クラッチ|ポーチ/.test(name)) {
     category = 'bag';
     label = '包包';
     minG = 450; maxG = 820;
