@@ -305,6 +305,19 @@ function estimateWeight(productName) {
     confidence = 'medium';
   }
 
+  // 多件式套裝乘數（セットアップ × 1.8，セット / アンサンブル × 1.6）
+  if (/セットアップ/.test(name)) {
+    minG = Math.round(minG * 1.8); maxG = Math.round(maxG * 1.8);
+  } else if (/セット|アンサンブル/.test(name)) {
+    minG = Math.round(minG * 1.6); maxG = Math.round(maxG * 1.6);
+  }
+
+  // 包裝重量納入估算
+  const pkgG = category === 'shoes' ? 200 : category === 'accessory' ? 30
+    : (category === 'outerwear' || category === 'bag') ? 150 : 80;
+  minG += pkgG; maxG += pkgG;
+  packagingNote = `含包裝約${pkgG}g`;
+
   const midG    = Math.round((minG + maxG) / 2);
   const midKg   = parseFloat((midG / 1000).toFixed(2));
   const midLbs  = parseFloat((midKg * 2.20462).toFixed(2));
