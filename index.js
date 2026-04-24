@@ -1852,17 +1852,21 @@ async function handleEvent(event, client) {
   const replyToken = event.replyToken;
 
   const isGRL = /https?:\/\/(www\.)?grail\.bz\//i.test(userText);
+  const isProductCode = /^[a-z]{2}\d{3,6}$/i.test(userText);
 
-  if (!isGRL) {
-    await client.replyMessage(replyToken, { type: 'text', text: '請傳入 GRL 商品網址' });
+  if (!isGRL && !isProductCode) {
+    await client.replyMessage(replyToken, { type: 'text', text: '請傳入 GRL 商品網址或貨號（例：RU1197）' });
     return;
   }
 
-  const productId = extractProductId(userText) || '';
+  const queryUrl = isProductCode
+    ? `https://www.grail.bz/item/${userText.toLowerCase()}/`
+    : userText;
+  const productId = extractProductId(queryUrl) || '';
 
   let productData, rate;
   try {
-    [productData, rate] = await Promise.all([scrapeGRL(userText), fetchRate()]);
+    [productData, rate] = await Promise.all([scrapeGRL(queryUrl), fetchRate()]);
   } catch (err) {
     console.error('[scrape error]', err.message);
     await client.replyMessage(replyToken, {
@@ -1884,8 +1888,8 @@ async function handleEvent(event, client) {
   const qStatus     = calcQStatus(stockLines);
 
   // 先回覆，不等 getProfile（省 200~500ms）
-  const flexMsg = buildFlexMessage(userText, productName, jpy, suggested, stockLines, imageUrl, weightInfo);
-  const cartFlex = buildAddToCartFlex(stockLines, productId, jpy, suggested, userText, imageUrl, productName, colorImages);
+  const flexMsg = buildFlexMessage(queryUrl, productName, jpy, suggested, stockLines, imageUrl, weightInfo);
+  const cartFlex = buildAddToCartFlex(stockLines, productId, jpy, suggested, queryUrl, imageUrl, productName, colorImages);
   await client.replyMessage(replyToken, cartFlex ? [flexMsg, cartFlex] : [flexMsg]);
 
   // 背景任務：getProfile + 寫 Sheet（不阻塞回覆）
@@ -1904,7 +1908,7 @@ async function handleEvent(event, client) {
       .then((profile) => profile.displayName)
       .catch(() => userId)
       .then((displayName) =>
-        logQueryToSheet(userId, displayName, productId, productName, jpy, weightInfo, imageUrl, suggested, userText)
+        logQueryToSheet(userId, displayName, productId, productName, jpy, weightInfo, imageUrl, suggested, queryUrl)
       )
       .catch((e) => console.error('[sheets log error]', e.message))
   );
