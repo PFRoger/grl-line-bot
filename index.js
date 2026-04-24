@@ -229,7 +229,7 @@ function estimateWeight(productName) {
 
   let category, label, minG, maxG, confidence, packagingNote;
 
-  if (/サンダル|スニーカー|ブーツ|パンプス|シューズ|ミュール|ローファー|スリッポン|ウェッジ|フラット|ヒール/.test(name)) {
+  if (/サンダル|スニーカー|ブーツ|パンプス|シューズ|ミュール|ローファー|スリッポン|ウェッジ|ヒール/.test(name)) {
     category = 'shoes';
     label = '鞋類';
     minG = 700; maxG = 1020;
