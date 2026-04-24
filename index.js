@@ -2746,7 +2746,7 @@ app.get('/api/admin/orders', async (req, res) => {
   try {
     const sheets = getSheetsClient();
     const resp = await Promise.race([
-      sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${ORDER_SHEET}!A:Q` }),
+      sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${ORDER_SHEET}!A:R` }),
       new Promise((_, reject) => setTimeout(() => reject(new Error('Sheets API timeout')), 8000)),
     ]);
     const rows = (resp.data.values || []).slice(1);
@@ -2769,6 +2769,7 @@ app.get('/api/admin/orders', async (req, res) => {
       finalAmount:     parseInt(row[14]) || parseInt(row[4]) || 0,
       lineDisplayName: row[15] || '',
       adminNote:       row[16] || '',
+      warehouse:       row[17] || '',
     })).reverse();
     res.json({ orders });
   } catch (err) {
@@ -2833,6 +2834,23 @@ app.post('/api/admin/order-note', express.json(), async (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── 管理員 API：更新倉庫分類（R欄） ───────────────────────────────────────────
+app.post('/api/admin/order-warehouse', express.json(), async (req, res) => {
+  const { key, rowIndex, warehouse } = req.body;
+  if (key !== ADMIN_KEY) return res.status(401).json({ error: 'Unauthorized' });
+  if (!rowIndex) return res.status(400).json({ error: 'rowIndex required' });
+  try {
+    const sheets = getSheetsClient();
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: SHEET_ID,
+      range: `${ORDER_SHEET}!R${rowIndex}`,
+      valueInputOption: 'RAW',
+      resource: { values: [[warehouse || '']] },
+    });
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 // ── 管理員頁面 ────────────────────────────────────────────────────────────────
 app.get('/admin', async (req, res) => {
   const { key } = req.query;
@@ -2848,7 +2866,7 @@ app.get('/admin', async (req, res) => {
   try {
     const sheets = getSheetsClient();
     const resp = await Promise.race([
-      sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${ORDER_SHEET}!A:Q` }),
+      sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${ORDER_SHEET}!A:R` }),
       new Promise((_, reject) => setTimeout(() => reject(new Error('Sheets timeout')), 25000)),
     ]);
     const rows = (resp.data.values || []).slice(1);
@@ -2871,6 +2889,7 @@ app.get('/admin', async (req, res) => {
       finalAmount:     parseInt(row[14]) || parseInt(row[4]) || 0,
       lineDisplayName: row[15] || '',
       adminNote:       row[16] || '',
+      warehouse:       row[17] || '',
     })).reverse();
   } catch (e) {
     ssrError = e.message;
@@ -2980,6 +2999,13 @@ details.sec-closed[open] .sec-summary::after{content:'▾';font-size:12px}
 .note-area-btns{display:flex;gap:6px;margin-top:6px}
 .btn-note-save{background:#c9a98a;color:#fff;border:none;border-radius:7px;padding:6px 14px;font-size:13px;font-weight:700;cursor:pointer}
 .btn-note-cancel{background:#f0ebe4;color:#7a5c3e;border:none;border-radius:7px;padding:6px 12px;font-size:13px;cursor:pointer}
+/* ── Warehouse ── */
+.wh-row{padding:6px 12px;background:#fcfaf8;border-top:1px solid #f0ebe4;display:flex;align-items:center;gap:8px}
+.wh-label{font-size:11px;color:#aaa;font-weight:600;white-space:nowrap}
+.wh-select{border:1px solid #ddd;border-radius:8px;padding:5px 8px;font-size:12px;background:#fff;outline:none;cursor:pointer;flex:1}
+.wh-select:focus{border-color:#c9a98a}
+.wh-badge-ibaraki{display:inline-block;background:#e8f5e9;color:#2e7d32;border-radius:10px;font-size:11px;font-weight:700;padding:1px 7px;margin-left:4px}
+.wh-badge-chiba{display:inline-block;background:#e3f2fd;color:#1565c0;border-radius:10px;font-size:11px;font-weight:700;padding:1px 7px;margin-left:4px}
 /* ── Empty state ── */
 .empty-state{grid-column:1/-1;text-align:center;padding:60px 20px;color:#ccc;font-size:14px}
 /* ── Toast ── */
@@ -3020,6 +3046,12 @@ details.sec-closed[open] .sec-summary::after{content:'▾';font-size:12px}
     <option value="已發貨(已達台灣海關作業)">已發貨(台灣海關)</option>
     <option value="已發貨(賣貨便出貨)">已發貨(賣貨便)</option>
     <option value="待買家取貨">待買家取貨</option>
+  </select>
+  <select id="filter-wh" onchange="renderOrders()">
+    <option value="">全部倉庫</option>
+    <option value="茨城倉">茨城倉</option>
+    <option value="千葉倉">千葉倉</option>
+    <option value="__none__">未分配</option>
   </select>
   <input class="search-box" id="search-box" placeholder="搜尋姓名 / 手機 / 訂單ID…" oninput="renderOrders()">
   <a href="/admin/members?key=${adminKey}" class="btn-refresh" style="text-decoration:none;background:#7a5c3e">👥 會員管理</a>
@@ -3116,8 +3148,11 @@ function renderOrders() {
   var returns = allOrders.filter(function(o){ return o.status === '退單'; });
   var cancelled = allOrders.filter(function(o){ return o.status === '已取消'; });
 
+  var filterWh = document.getElementById('filter-wh').value;
   var list = active;
   if (filter) list = list.filter(function(o){ return o.status === filter; });
+  if (filterWh === '__none__') list = list.filter(function(o){ return !(o.warehouse||''); });
+  else if (filterWh) list = list.filter(function(o){ return o.warehouse === filterWh; });
   if (keyword) list = list.filter(function(o){ return (o.buyerName||'').toLowerCase().indexOf(keyword) >= 0 || (o.lineDisplayName||'').toLowerCase().indexOf(keyword) >= 0 || (o.orderId||'').toLowerCase().indexOf(keyword) >= 0 || (o.phone||'').indexOf(keyword) >= 0; });
 
   // header counts
@@ -3172,10 +3207,24 @@ function esc(s) {
   return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
+function whBorderStyle(wh) {
+  if (wh === '茨城倉') return 'border-top:3px solid #66bb6a';
+  if (wh === '千葉倉') return 'border-top:3px solid #42a5f5';
+  return '';
+}
+function whBadgeHtml(wh) {
+  if (wh === '茨城倉') return '<span class="wh-badge-ibaraki">★茨城倉</span>';
+  if (wh === '千葉倉') return '<span class="wh-badge-chiba">★千葉倉</span>';
+  return '';
+}
 function createCard(o) {
   var ri = o.rowIndex;
+  var wh = o.warehouse || '';
   var opts = STATUSES.map(function(s){
     return '<option value="' + esc(s) + '"' + (o.status === s ? ' selected' : '') + '>' + esc(s) + '</option>';
+  }).join('');
+  var whOpts = ['', '茨城倉', '千葉倉'].map(function(w){
+    return '<option value="' + w + '"' + (wh === w ? ' selected' : '') + '>' + (w || '未分配') + '</option>';
   }).join('');
 
   var itemsHtml = (o.items||'').split('\\n').map(function(l){
@@ -3207,9 +3256,9 @@ function createCard(o) {
       + '</div>';
   }
 
-  return '<div class="order-card" id="card-' + ri + '">'
+  return '<div class="order-card" id="card-' + ri + '" style="' + whBorderStyle(wh) + '">'
     + '<div class="card-top">'
-    + '<div class="card-id">' + esc(o.orderId) + '</div>'
+    + '<div class="card-id">' + esc(o.orderId) + whBadgeHtml(wh) + '</div>'
     + '<div class="card-time">' + esc(o.orderTime) + '</div>'
     + '</div>'
     + '<div class="card-status">' + sbadge(o.status||'待確認') + '</div>'
@@ -3221,6 +3270,7 @@ function createCard(o) {
     + contactHtml
     + '</div>'
     + '<hr class="card-divider">'
+    + '<div class="wh-row"><span class="wh-label">🏭 倉庫</span><select class="wh-select" id="wsel-' + ri + '" onchange="saveWarehouse(' + ri + ')">' + whOpts + '</select></div>'
     + '<div class="card-footer">'
     + '<select class="status-select" id="sel-' + ri + '">' + opts + '</select>'
     + '<button class="btn-save" onclick="saveStatus(' + ri + ',\\'' + esc(o.orderId) + '\\')">儲存</button>'
@@ -3273,6 +3323,29 @@ async function saveStatus(rowIndex, orderId) {
       var d = await r.json();
       toast('❌ ' + (d.error || '更新失敗'));
     }
+  } catch(e) { toast('❌ 網路錯誤'); }
+}
+
+async function saveWarehouse(rowIndex) {
+  var wh = document.getElementById('wsel-' + rowIndex).value;
+  try {
+    var r = await fetch('/api/admin/order-warehouse', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ key: KEY, rowIndex: rowIndex, warehouse: wh }),
+    });
+    if (r.ok) {
+      var o = allOrders.find(function(x){ return x.rowIndex === rowIndex; });
+      if (o) o.warehouse = wh;
+      var card = document.getElementById('card-' + rowIndex);
+      if (card) {
+        card.style.borderTop = wh === '茨城倉' ? '3px solid #66bb6a' : wh === '千葉倉' ? '3px solid #42a5f5' : '';
+        var badge = card.querySelector('.card-id');
+        if (badge) {
+          badge.innerHTML = badge.innerHTML.replace(/<span class="wh-badge[^"]*"[^>]*>.*?<\\/span>/g, '') + whBadgeHtml(wh);
+        }
+      }
+      toast('✅ 倉庫：' + (wh || '未分配'));
+    } else { toast('❌ 儲存失敗'); }
   } catch(e) { toast('❌ 網路錯誤'); }
 }
 
