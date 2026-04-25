@@ -471,7 +471,7 @@ async function appendProductToSheet(productId, productName, jpy, stockLines, qSt
   const row = new Array(18).fill('');
   row[0]  = productId;                                           // A: 商品 ID
   row[3]  = `=P${r}`;                                           // D: 日幣（同 P）
-  row[4]  = `=((V$3*P${r})*(1+0.06+0.015))+(150*L${r}+20+10)`; // E: 成本價（匯率 V$3，磅數 L）
+  row[4]  = `=((V$3*(P${r}+195))*(1+0.06+0.015))+(150*L${r}+20+10)`;// E: 成本價（匯率 V$3，磅數 L）
   row[6]  = `=IF(MOD(ROUND(E${r},0),10)<=4,INT(ROUND(E${r},0)/10)*10+5,IF(MOD(ROUND(E${r},0),10)>=6,INT(ROUND(E${r},0)/10)*10+9,ROUND(E${r},0)))+F${r}`; // G: 建議售價
   row[8]  = `=H${r}-E${r}`;                                     // I: 預估獲利
   row[9]  = weightInfo ? weightInfo.midLbs : '';                 // J: 估算磅數（估算值）← 新增
