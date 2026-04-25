@@ -1912,11 +1912,18 @@ async function handleEvent(event, client) {
   }
   if (event.type !== 'message' || event.message.type !== 'text') return;
 
-  console.log('userId:', event.source.userId);
+  const src = event.source || {};
+  console.log('source:', JSON.stringify(src));
 
   const userId    = event.source.userId;
   const userText  = event.message.text.trim();
   const replyToken = event.replyToken;
+
+  if (userText === '/groupid') {
+    const groupId = src.groupId || src.roomId || '（非群組訊息）';
+    await client.replyMessage(replyToken, { type: 'text', text: `Group ID：${groupId}` });
+    return;
+  }
 
   const isGRL = /https?:\/\/(www\.)?grail\.bz\//i.test(userText);
   const isProductCode = /^[a-z]{1,2}[a-z0-9]{2,8}$/i.test(userText);
