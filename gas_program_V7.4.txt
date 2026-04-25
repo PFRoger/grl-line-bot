@@ -661,18 +661,7 @@ function updateGrlData() {
   }
 
   function colorSpecialCols() {
-    var dataStartRow = headerRowIdx + 2;
-    var numRows = data.length - headerRowIdx - 1;
-    if (numRows <= 0) return;
-    // 有狀態色（缺貨黃/預約藍等）的行保留原色（null=不覆蓋），只有白底行套 #ffe3e3
-    [1, 2, 3, 6, 8, 11, 13].forEach(function(col) {
-      var colBgs = [];
-      for (var r = 0; r < numRows; r++) {
-        var rowBg = backgrounds[r + headerRowIdx + 1][0];
-        colBgs.push([(!rowBg || rowBg === "#ffffff") ? "#ffe3e3" : null]);
-      }
-      sheet.getRange(dataStartRow, col, numRows, 1).setBackgrounds(colBgs);
-    });
+    // 移除欄位底色：資料列只用整行狀態色（缺貨黃/預約藍），不做欄位分色
   }
 
   function drawBorders() {
