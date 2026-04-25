@@ -1919,12 +1919,6 @@ async function handleEvent(event, client) {
   const userText  = event.message.text.trim();
   const replyToken = event.replyToken;
 
-  if (userText === '/groupid') {
-    const groupId = src.groupId || src.roomId || '（非群組訊息）';
-    await client.replyMessage(replyToken, { type: 'text', text: `Group ID：${groupId}` });
-    return;
-  }
-
   const isGRL = /https?:\/\/(www\.)?grail\.bz\//i.test(userText);
   const isProductCode = /^[a-z]{1,2}[a-z0-9]{2,8}$/i.test(userText);
 
@@ -2337,34 +2331,6 @@ app.post('/api/order', express.json(), async (req, res) => {
 
 
 
-// ── 捕捉 Group ID（供 @033vkbny webhook 使用）────────────────────────────────
-// 不驗簽名；將 groupId 寫進 Sheet「查詢紀錄」備用欄位，GET 時直接回傳
-const capturedGroupIds = [];
-app.post('/api/groupid-capture', express.json(), async (req, res) => {
-  res.sendStatus(200);
-  try {
-    const body = req.body || {};
-    console.log('[groupid-capture] body:', JSON.stringify(body).substring(0, 300));
-    const events = body.events || [];
-    for (const ev of events) {
-      const src = ev.source || {};
-      const groupId = src.groupId || src.roomId;
-      if (!groupId) continue;
-      console.log('[groupid-capture] groupId:', groupId);
-      capturedGroupIds.push(groupId);
-      const sheets = getSheetsClient();
-      await sheets.spreadsheets.values.append({
-        spreadsheetId: SHEET_ID,
-        range: '查詢紀錄!A:B',
-        valueInputOption: 'RAW',
-        resource: { values: [['[GROUP_ID_CAPTURE]', groupId]] },
-      });
-    }
-  } catch(e) { console.error('[groupid-capture error]', e.message); }
-});
-app.get('/api/groupid-capture', (req, res) => {
-  res.json({ captured: capturedGroupIds });
-});
 
 // ── Debug：測試 LINE push 通知 ────────────────────────────────────────────────
 app.get('/api/debug/notify', async (req, res) => {
