@@ -6,6 +6,8 @@ const axios = require('axios');
 const cheerio = require('cheerio');
 const { google } = require('googleapis');
 
+const resolvedUrlCache = new Map();
+
 const app = express();
 app.use('/public', express.static(require('path').join(__dirname, 'public')));
 
@@ -331,7 +333,7 @@ function estimateWeight(productName) {
 
   // 版型大小調整
   if (/オーバーサイズ|ルーズ/.test(name)) { minG = Math.round(minG * 1.1); maxG = Math.round(maxG * 1.1); }
-  if (/ロング/.test(name) && /ワンピース|スカート|コート|アウター|カーディガン/.test(name)) {
+  if (/ロング/.test(name) && /ワンピース|スカート|コート|アウター|カーディガン|パンツ|ジャケット/.test(name)) {
     minG = Math.round(minG * 1.15); maxG = Math.round(maxG * 1.15);
   }
   if (/ミニ/.test(name) && /ワンピース|スカート/.test(name)) {
@@ -359,7 +361,9 @@ function estimateWeight(productName) {
 
 // ── 爬取 GRL 商品資訊 ─────────────────────────────────────────────────────────
 // GRL 部分商品只有 /disp/item/ 路徑，/item/ 會 404；自動 fallback
-async function scrapeGRL(url) {
+async function scrapeGRL(inputUrl) {
+  const url = resolvedUrlCache.get(inputUrl) || inputUrl;
+  let resolvedUrl = url;
   const headers = {
     'User-Agent':
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
@@ -370,13 +374,13 @@ async function scrapeGRL(url) {
   };
   let html;
   try {
-    ({ data: html } = await axios.get(url, { timeout: 12000, headers }));
+    ({ data: html } = await axios.get(url, { timeout: 8000, headers }));
   } catch (err) {
     if (err.response && err.response.status === 404) {
       const dispUrl = url.replace(/\/(item\/)/, '/disp/item/');
       try {
         if (dispUrl !== url) {
-          ({ data: html } = await axios.get(dispUrl, { timeout: 12000, headers }));
+          ({ data: html } = await axios.get(dispUrl, { timeout: 8000, headers }));
         } else throw err;
       } catch (err2) {
         // 搜尋頁 fallback：適用於 k9086d 等需帶色號後綴才有效的商品
@@ -386,7 +390,7 @@ async function scrapeGRL(url) {
           const searchId = idMatch[1].replace(/\d{4}$/, '').toLowerCase();
           const { data: searchHtml } = await axios.get(
             `https://www.grail.bz/disp/itemlist/?q=${searchId}`,
-            { timeout: 12000, headers }
+            { timeout: 8000, headers }
           );
           const relRegex = /href="(\/(?:disp\/)?item\/[a-z]{1,2}[a-z0-9]+\/)"/gi;
           const allHrefs = [];
@@ -396,10 +400,9 @@ async function scrapeGRL(url) {
           }
           if (allHrefs.length === 0) throw err2;
           allHrefs.sort((a, b) => a.length - b.length);
-          ({ data: html } = await axios.get(
-            `https://www.grail.bz${allHrefs[0]}`,
-            { timeout: 12000, headers }
-          ));
+          resolvedUrl = `https://www.grail.bz${allHrefs[0]}`;
+          resolvedUrlCache.set(inputUrl, resolvedUrl);
+          ({ data: html } = await axios.get(resolvedUrl, { timeout: 8000, headers }));
         } else throw err2;
       }
     } else throw err;
@@ -444,7 +447,7 @@ async function scrapeGRL(url) {
     }
   });
 
-  return { productName, jpy, stockLines, imageUrl, colorImages };
+  return { productName, jpy, stockLines, imageUrl, colorImages, resolvedUrl };
 }
 
 // ── 新增商品到 Google Sheet（管理員功能）─────────────────────────────────────
@@ -1946,14 +1949,15 @@ async function handleEvent(event, client) {
     return;
   }
 
-  const { productName, jpy, stockLines, imageUrl, colorImages } = productData;
+  const { productName, jpy, stockLines, imageUrl, colorImages, resolvedUrl } = productData;
+  const effectiveUrl = resolvedUrl || queryUrl;
   const weightInfo  = estimateWeight(productName);
   const suggested   = calcSuggestedPrice(rate, jpy, weightInfo ? weightInfo.midLbs : 1);
   const qStatus     = calcQStatus(stockLines);
 
   // 先回覆，不等 getProfile（省 200~500ms）
-  const flexMsg = buildFlexMessage(queryUrl, productName, jpy, suggested, stockLines, imageUrl, weightInfo);
-  const cartFlex = buildAddToCartFlex(stockLines, productId, jpy, suggested, queryUrl, imageUrl, productName, colorImages);
+  const flexMsg = buildFlexMessage(effectiveUrl, productName, jpy, suggested, stockLines, imageUrl, weightInfo);
+  const cartFlex = buildAddToCartFlex(stockLines, productId, jpy, suggested, effectiveUrl, imageUrl, productName, colorImages);
   await client.replyMessage(replyToken, cartFlex ? [flexMsg, cartFlex] : [flexMsg]);
 
   // 背景任務：getProfile + 寫 Sheet（不阻塞回覆）
