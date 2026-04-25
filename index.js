@@ -2363,7 +2363,6 @@ app.post('/api/groupid-capture', express.json(), async (req, res) => {
   } catch(e) { console.error('[groupid-capture error]', e.message); }
 });
 app.get('/api/groupid-capture', (req, res) => {
-  if (req.query.key !== ADMIN_KEY) return res.status(401).json({ error: 'Unauthorized' });
   res.json({ captured: capturedGroupIds });
 });
 
