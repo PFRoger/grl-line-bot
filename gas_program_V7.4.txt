@@ -661,7 +661,17 @@ function updateGrlData() {
   }
 
   function colorSpecialCols() {
-    // 移除欄位底色：資料列只用整行狀態色（缺貨黃/預約藍），不做欄位分色
+    // K欄（磅數，手key欄位）套淺黃底色；有狀態色的行用 null 保留整行狀態色
+    var dataStartRow = headerRowIdx + 2;
+    var numRows = data.length - headerRowIdx - 1;
+    if (numRows <= 0 || colMap["磅數"] === -1) return;
+    var kColIdx = colMap["磅數"] + 1;
+    var colBgs = [];
+    for (var r = 0; r < numRows; r++) {
+      var rowBg = backgrounds[r + headerRowIdx + 1][0];
+      colBgs.push([(!rowBg || rowBg === "#ffffff") ? "#fff9c4" : null]);
+    }
+    sheet.getRange(dataStartRow, kColIdx, numRows, 1).setBackgrounds(colBgs);
   }
 
   function drawBorders() {
