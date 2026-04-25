@@ -320,20 +320,24 @@ function getCategory(name) {
   return "clothing";
 }
 
-// ── K欄學習：掃描已有實際磅數的商品，依品類算平均（需≥3筆才採用）──────────
-function buildLearnedAvgLbs(data, headerIdx, colMap) {
+// ── K欄學習：計算各品類的系統性誤差（K實際 - J公式），≥2筆才採用 ────────────
+// 學到的是「偏差修正值」，而非取代公式：下次估算 = 公式值 + 平均誤差
+function buildLearnedCorrections(data, headerIdx, colMap) {
   var cats = {};
   for (var i = headerIdx + 1; i < data.length; i++) {
     var kVal = Number(data[i][colMap["磅數"]]);
     var itemName = String(data[i][colMap["商品名稱"]] || "");
     if (!kVal || kVal <= 0 || !itemName) continue;
+    var formula = estimateWeightLbs(itemName);
+    if (!formula) continue;
+    var diff = kVal - formula;  // 正值=公式低估，負值=公式高估
     var cat = getCategory(itemName);
     if (!cats[cat]) cats[cat] = [];
-    cats[cat].push(kVal);
+    cats[cat].push(diff);
   }
   var result = {};
   for (var c in cats) {
-    if (cats[c].length >= 3) {
+    if (cats[c].length >= 2) {
       var sum = 0;
       for (var j = 0; j < cats[c].length; j++) sum += cats[c][j];
       result[c] = Math.round(sum / cats[c].length * 100) / 100;
@@ -548,9 +552,9 @@ function updateGrlData() {
   data  = range.getValues();
   backgrounds = range.getBackgrounds();
 
-  // K欄學習：掃描現有實際磅數，建立各品類均值（≥3筆才採用）
-  var learnedAvg = buildLearnedAvgLbs(data, headerRowIdx, colMap);
-  Logger.log("學習均值：" + JSON.stringify(learnedAvg));
+  // K欄學習：計算各品類的公式偏差（K實際 - 公式估算），≥2筆才採用
+  var learnedCorrections = buildLearnedCorrections(data, headerRowIdx, colMap);
+  Logger.log("學習偏差修正：" + JSON.stringify(learnedCorrections));
 
   var colorMap = {
     "オフホワイト":"灰白色", "オフベージュ":"杏色", "ライトブルー":"淺藍色",
@@ -587,9 +591,14 @@ function updateGrlData() {
     // 自動填入估算磅數：若品類已有 K 欄學習均值則優先使用
     if (itemName && colMap["估算磅數"] !== -1) {
       var wLbs = estimateWeightLbs(itemName);
-      var cat = getCategory(itemName);
-      if (learnedAvg[cat]) wLbs = learnedAvg[cat];
-      if (wLbs !== "") data[idx][colMap["估算磅數"]] = wLbs;
+      if (wLbs !== "") {
+        var cat = getCategory(itemName);
+        if (learnedCorrections[cat] !== undefined) {
+          // 公式值 + 學習到的平均誤差 = 修正後估算
+          wLbs = Math.max(0.1, Math.round((wLbs + learnedCorrections[cat]) * 100) / 100);
+        }
+        data[idx][colMap["估算磅數"]] = wLbs;
+      }
     }
     for (var c = 0; c < header.length; c++) backgrounds[idx][c] = bgColor;
   }
