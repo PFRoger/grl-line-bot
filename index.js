@@ -2339,15 +2339,19 @@ app.post('/api/order', express.json(), async (req, res) => {
 
 // ── 捕捉 Group ID（供 @033vkbny webhook 使用）────────────────────────────────
 // 不驗簽名；將 groupId 寫進 Sheet「查詢紀錄」備用欄位，GET 時直接回傳
+const capturedGroupIds = [];
 app.post('/api/groupid-capture', express.json(), async (req, res) => {
   res.sendStatus(200);
   try {
-    const events = (req.body || {}).events || [];
+    const body = req.body || {};
+    console.log('[groupid-capture] body:', JSON.stringify(body).substring(0, 300));
+    const events = body.events || [];
     for (const ev of events) {
       const src = ev.source || {};
       const groupId = src.groupId || src.roomId;
       if (!groupId) continue;
-      console.log('[groupid-capture] groupId:', groupId, 'type:', src.type);
+      console.log('[groupid-capture] groupId:', groupId);
+      capturedGroupIds.push(groupId);
       const sheets = getSheetsClient();
       await sheets.spreadsheets.values.append({
         spreadsheetId: SHEET_ID,
@@ -2356,7 +2360,11 @@ app.post('/api/groupid-capture', express.json(), async (req, res) => {
         resource: { values: [['[GROUP_ID_CAPTURE]', groupId]] },
       });
     }
-  } catch(e) { console.error('[groupid-capture]', e.message); }
+  } catch(e) { console.error('[groupid-capture error]', e.message); }
+});
+app.get('/api/groupid-capture', (req, res) => {
+  if (req.query.key !== ADMIN_KEY) return res.status(401).json({ error: 'Unauthorized' });
+  res.json({ captured: capturedGroupIds });
 });
 
 // ── Debug：測試 LINE push 通知 ────────────────────────────────────────────────
