@@ -102,11 +102,11 @@ async function fetchRate() {
 // ── 從網址擷取商品 ID（去掉顏色後綴 4 碼，例如 ru14381119→ru1438、pm870a1119→pm870a）
 // 支援 ID 中間夾字母的格式（如 pm870a）
 function extractProductId(url) {
-  const m = url.match(/\/item\/([a-z]{2}[a-z0-9]+)/i);
+  const m = url.match(/\/item\/([a-z]{1,2}[a-z0-9]+)/i);
   if (!m) return null;
   const raw = m[1];
   const stripped = raw.replace(/\d{4}$/, '');
-  const result = /^[a-z]{2}[a-z0-9]+$/i.test(stripped) && stripped.length >= 3 ? stripped : raw;
+  const result = /^[a-z]{1,2}[a-z0-9]+$/i.test(stripped) && stripped.length >= 3 ? stripped : raw;
   return result.toUpperCase();
 }
 
@@ -372,12 +372,36 @@ async function scrapeGRL(url) {
   try {
     ({ data: html } = await axios.get(url, { timeout: 12000, headers }));
   } catch (err) {
-    // 若 /item/ 路徑 404，改用 /disp/item/ 重試
     if (err.response && err.response.status === 404) {
       const dispUrl = url.replace(/\/(item\/)/, '/disp/item/');
-      if (dispUrl !== url) {
-        ({ data: html } = await axios.get(dispUrl, { timeout: 12000, headers }));
-      } else throw err;
+      try {
+        if (dispUrl !== url) {
+          ({ data: html } = await axios.get(dispUrl, { timeout: 12000, headers }));
+        } else throw err;
+      } catch (err2) {
+        // 搜尋頁 fallback：適用於 k9086d 等需帶色號後綴才有效的商品
+        if (err2.response && err2.response.status === 404) {
+          const idMatch = url.match(/\/(?:disp\/)?item\/([a-z]{1,2}[a-z0-9]+)/i);
+          if (!idMatch) throw err2;
+          const searchId = idMatch[1].replace(/\d{4}$/, '').toLowerCase();
+          const { data: searchHtml } = await axios.get(
+            `https://www.grail.bz/disp/itemlist/?q=${searchId}`,
+            { timeout: 12000, headers }
+          );
+          const relRegex = /href="(\/(?:disp\/)?item\/[a-z]{1,2}[a-z0-9]+\/)"/gi;
+          const allHrefs = [];
+          let m2;
+          while ((m2 = relRegex.exec(searchHtml)) !== null) {
+            if (m2[1].toLowerCase().includes(searchId)) allHrefs.push(m2[1]);
+          }
+          if (allHrefs.length === 0) throw err2;
+          allHrefs.sort((a, b) => a.length - b.length);
+          ({ data: html } = await axios.get(
+            `https://www.grail.bz${allHrefs[0]}`,
+            { timeout: 12000, headers }
+          ));
+        } else throw err2;
+      }
     } else throw err;
   }
 
@@ -1892,7 +1916,7 @@ async function handleEvent(event, client) {
   const replyToken = event.replyToken;
 
   const isGRL = /https?:\/\/(www\.)?grail\.bz\//i.test(userText);
-  const isProductCode = /^[a-z]{2}[a-z0-9]{2,7}$/i.test(userText);
+  const isProductCode = /^[a-z]{1,2}[a-z0-9]{2,8}$/i.test(userText);
 
   if (!isGRL && !isProductCode) {
     await client.replyMessage(replyToken, { type: 'text', text: '請傳入 GRL 商品網址或貨號（例：RU1197）' });
