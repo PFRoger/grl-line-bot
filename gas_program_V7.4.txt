@@ -661,17 +661,19 @@ function updateGrlData() {
   }
 
   function colorSpecialCols() {
-    // K欄（磅數，手key欄位）：正常行套淺黃 #fff9c4，狀態色行直接用整行狀態色
+    // A,B,C,F,H,K,M 欄（手key欄位）：正常行套淺黃 #fff9c4，狀態色行用整行狀態色
     var dataStartRow = headerRowIdx + 2;
     var numRows = data.length - headerRowIdx - 1;
-    if (numRows <= 0 || colMap["磅數"] === -1) return;
-    var kColIdx = colMap["磅數"] + 1;
-    var colBgs = [];
-    for (var r = 0; r < numRows; r++) {
-      var rowBg = backgrounds[r + headerRowIdx + 1][0];
-      colBgs.push([(!rowBg || rowBg === "#ffffff") ? "#fff9c4" : rowBg]);
-    }
-    sheet.getRange(dataStartRow, kColIdx, numRows, 1).setBackgrounds(colBgs);
+    if (numRows <= 0) return;
+    var specialCols = [1, 2, 3, 6, 8, 11, 13];
+    specialCols.forEach(function(col) {
+      var colBgs = [];
+      for (var r = 0; r < numRows; r++) {
+        var rowBg = backgrounds[r + headerRowIdx + 1][0];
+        colBgs.push([(!rowBg || rowBg === "#ffffff") ? "#fff9c4" : rowBg]);
+      }
+      sheet.getRange(dataStartRow, col, numRows, 1).setBackgrounds(colBgs);
+    });
   }
 
   function drawBorders() {
