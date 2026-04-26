@@ -479,6 +479,26 @@ async function scrapeGRL(inputUrl) {
 //   J:估算磅數(估算值)  K:磅數raw(手填)  L:=CEILING(K,1)
 //   N:商品名稱  O:確認日期  P:日幣  Q:庫存狀態  R:備註
 //   V$3: 匯率（原 U$3，因新增 J 欄後 U→V）
+// 查 Sheet 是否有該商品的手填磅數（K 欄），有則回傳數值，無則回傳 null
+async function lookupProductKWeight(productId) {
+  if (!productId) return null;
+  try {
+    const sheets = getSheetsClient();
+    const res = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: 'A:K' });
+    const rows = res.data.values || [];
+    for (let i = rows.length - 1; i >= 0; i--) {
+      if ((rows[i][0] || '').toUpperCase() === productId.toUpperCase()) {
+        const k = parseFloat(rows[i][10]);
+        if (k > 0) return k;
+      }
+    }
+    return null;
+  } catch (e) {
+    console.warn('[lookupProductKWeight]', e.message);
+    return null;
+  }
+}
+
 async function appendProductToSheet(productId, productName, jpy, stockLines, qStatus, weightInfo) {
   const sheets = getSheetsClient();
   const stockSummary = stockLines.join(' | ');
@@ -1955,9 +1975,9 @@ async function handleEvent(event, client) {
     : userText;
   const productId = extractProductId(queryUrl) || '';
 
-  let productData, rate;
+  let productData, rate, kWeight;
   try {
-    [productData, rate] = await Promise.all([scrapeGRL(queryUrl), fetchRate()]);
+    [productData, rate, kWeight] = await Promise.all([scrapeGRL(queryUrl), fetchRate(), lookupProductKWeight(productId)]);
   } catch (err) {
     console.error('[scrape error]', err.message);
     await client.replyMessage(replyToken, {
@@ -1976,7 +1996,8 @@ async function handleEvent(event, client) {
   const { productName, jpy, stockLines, imageUrl, colorImages, resolvedUrl } = productData;
   const effectiveUrl = resolvedUrl || queryUrl;
   const weightInfo  = estimateWeight(productName);
-  const suggested   = calcSuggestedPrice(rate, jpy, weightInfo ? weightInfo.midLbs : 1);
+  const lbsForPrice = kWeight || (weightInfo ? weightInfo.midLbs : 1);
+  const suggested   = calcSuggestedPrice(rate, jpy, lbsForPrice);
   const qStatus     = calcQStatus(stockLines);
 
   // 先回覆，不等 getProfile（省 200~500ms）
