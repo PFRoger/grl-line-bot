@@ -374,13 +374,25 @@ async function scrapeGRL(inputUrl) {
   };
   let html;
   try {
-    ({ data: html } = await axios.get(url, { timeout: 8000, headers }));
+    const resp = await axios.get(url, { timeout: 8000, headers });
+    html = resp.data;
+    const finalUrl = resp.request?.res?.responseUrl;
+    if (finalUrl && finalUrl !== url) {
+      resolvedUrl = finalUrl;
+      resolvedUrlCache.set(inputUrl, resolvedUrl);
+    }
   } catch (err) {
     if (err.response && err.response.status === 404) {
       const dispUrl = url.replace(/\/(item\/)/, '/disp/item/');
       try {
         if (dispUrl !== url) {
-          ({ data: html } = await axios.get(dispUrl, { timeout: 8000, headers }));
+          const resp2 = await axios.get(dispUrl, { timeout: 8000, headers });
+          html = resp2.data;
+          const finalUrl2 = resp2.request?.res?.responseUrl;
+          if (finalUrl2 && finalUrl2 !== dispUrl) {
+            resolvedUrl = finalUrl2;
+            resolvedUrlCache.set(inputUrl, resolvedUrl);
+          }
         } else throw err;
       } catch (err2) {
         // 搜尋頁 fallback：適用於 k9086d 等需帶色號後綴才有效的商品
@@ -1959,7 +1971,7 @@ async function handleEvent(event, client) {
   // 先回覆，不等 getProfile（省 200~500ms）
   const flexMsg = buildFlexMessage(effectiveUrl, productName, jpy, suggested, stockLines, imageUrl, weightInfo);
   const cartFlex = buildAddToCartFlex(stockLines, productId, jpy, suggested, effectiveUrl, imageUrl, productName, colorImages);
-  await client.replyMessage(replyToken, cartFlex ? [flexMsg, cartFlex] : [flexMsg]);
+  await client.replyMessage(replyToken, cartFlex ? [cartFlex] : [flexMsg]);
 
   // 背景任務：getProfile + 寫 Sheet（不阻塞回覆）
   const bgTasks = [];
