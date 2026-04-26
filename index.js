@@ -1969,7 +1969,7 @@ async function handleEvent(event, client) {
   const qStatus     = calcQStatus(stockLines);
 
   // 先回覆，不等 getProfile（省 200~500ms）
-  const flexMsg = buildFlexMessage(effectiveUrl, productName, jpy, suggested, stockLines, imageUrl, weightInfo);
+  const flexMsg = buildFlexMessage(effectiveUrl, productName, jpy, suggested, stockLines, imageUrl, null);
   const cartFlex = buildAddToCartFlex(stockLines, productId, jpy, suggested, effectiveUrl, imageUrl, productName, colorImages);
   await client.replyMessage(replyToken, cartFlex ? [cartFlex] : [flexMsg]);
 
