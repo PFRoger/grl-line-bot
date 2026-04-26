@@ -78,7 +78,13 @@ function fmtJPY(n) {
 }
 
 // ── 抓取即時匯率 JPY → TWD ────────────────────────────────────────────────────
+let _cachedRate = null;
+let _rateExpiry = 0;
+
 async function fetchRate() {
+  const now = Date.now();
+  if (_cachedRate && now < _rateExpiry) return _cachedRate;
+
   const PRIMARY = 'https://api.exchangerate-api.com/v4/latest/JPY';
   const FALLBACK = 'https://open.er-api.com/v6/latest/JPY';
 
@@ -98,7 +104,9 @@ async function fetchRate() {
     rate = await tryFetch(FALLBACK);
   }
 
-  return rate + 0.015;
+  _cachedRate = rate + 0.015;
+  _rateExpiry = now + 30 * 60 * 1000;
+  return _cachedRate;
 }
 
 // ── 從網址擷取商品 ID（去掉顏色後綴 4 碼，例如 ru14381119→ru1438、pm870a1119→pm870a）
@@ -3903,6 +3911,18 @@ async function issueCoupons(sheets, userId, displayName, type, amount, qty, expi
 async function processOrderCompletion(sheets, userId, displayName, orderId, orderAmountTwd) {
   const member = await getMember(sheets, userId);
   if (!member) return; // 未註冊會員，不計點數
+
+  // 防重複：若此 orderId 已有點數紀錄，跳過（避免管理員重複標記已完成）
+  try {
+    const pCheck = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${POINTS_SHEET}!A:E` });
+    const pRows = pCheck.data.values || [];
+    const alreadyRecorded = pRows.slice(1).some(r => r[4] === orderId);
+    if (alreadyRecorded) {
+      console.warn('[processOrderCompletion] orderId already processed, skipping:', orderId);
+      return;
+    }
+  } catch (e) { console.warn('[processOrderCompletion] dup check error:', e.message); }
+
   const pts = calcPoints(member.tier, orderAmountTwd);
   const today = todayStr();
   const expiry = calcPointsExpiry(today);
