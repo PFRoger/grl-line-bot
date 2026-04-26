@@ -422,6 +422,17 @@ async function scrapeGRL(inputUrl) {
 
   const $ = cheerio.load(html);
 
+  // 從頁面取得 canonical URL → 修正 ze782→ze7821119 類的連結（GRL 用 JS 路由非 HTTP redirect）
+  const canonRaw = $('link[rel="canonical"]').attr('href') || $('meta[property="og:url"]').attr('content');
+  if (canonRaw && /\/(?:disp\/)?item\/[a-z]/i.test(canonRaw)) {
+    const canon = (canonRaw.startsWith('http') ? canonRaw : `https://www.grail.bz${canonRaw}`)
+      .replace(/\?.*$/, '').replace(/([^/])$/, '$1/');
+    if (canon !== resolvedUrl) {
+      resolvedUrl = canon;
+      resolvedUrlCache.set(inputUrl, resolvedUrl);
+    }
+  }
+
   // 商品名稱：去除結尾 [id] 或 【id】
   const rawName = $('h1').first().text().trim();
   const productName = rawName
