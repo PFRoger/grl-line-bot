@@ -804,6 +804,7 @@ function buildHistoryFlexMessage(history) {
         paddingAll: '12px',
         contents: [
           { type: 'text', text: prodName, size: 'sm', weight: 'bold', wrap: true, maxLines: 2, color: '#222222' },
+          ...(prodId ? [{ type: 'text', text: prodId.toUpperCase(), size: 'xxs', color: '#aaaaaa' }] : []),
           ...priceContents,
         ],
       },
@@ -1097,7 +1098,7 @@ async function handlePostback(event, client) {
     const colorDisplay = translateColorWithJp(colorJp);
     await client.replyMessage(replyToken, {
       type: 'text',
-      text: `✅ 已加入購物車\n商品：${isPreorder ? '【預購】' : ''}${productName || productId}\n\n顏色：${colorDisplay}\n尺寸：${size}\n\n售價：NT$${suggested}\n\n請按下方主選單「購物車」查看內容\n════════════\n購物車每 48 小時自動清空`,
+      text: `✅ 已加入購物車\n商品：${isPreorder ? '【預購】' : ''}${productName || productId}\n貨號：${productId.toUpperCase()}\n\n顏色：${colorDisplay}\n尺寸：${size}\n\n售價：NT$${suggested}\n\n請按下方主選單「購物車」查看內容\n════════════\n購物車每 48 小時自動清空`,
     });
 
   } else if (action === 'view_cart') {
@@ -1544,7 +1545,7 @@ function updateTotals() {
         activeCoupons.forEach(c => {
           const el = document.createElement('div');
           el.className = 'cpn-item' + (selectedCouponCode === c.couponCode ? ' selected' : '');
-          el.innerHTML = \`<span class="cpn-tag">折扣</span><span style="flex:1;color:#333">NT\$\${c.amount} 折扣券</span><span style="font-size:11px;color:#aaa">到期：\${c.expiryDate}</span>\`;
+          el.innerHTML = \`<span class="cpn-tag">折扣</span><span style="flex:1;color:#333">NT\$\${c.amount}\${c.type ? '　' + c.type : ' 折扣券'}</span><span style="font-size:11px;color:#aaa">到期：\${c.expiryDate}</span>\`;
           el.onclick = () => { selectedCouponCode = (selectedCouponCode === c.couponCode ? '' : c.couponCode); updateTotals(); };
           cpnList.appendChild(el);
         });
