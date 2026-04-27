@@ -1,9 +1,8 @@
-importScripts('config.js');
+const ADMIN_KEY = 'grl-admin-2026';
+const API_BASE = 'https://pfroger-linebot-2.vercel.app';
+const POLL_MINUTES = 10 / 60;
 
-chrome.alarms.create('pollZOZO', {
-  delayInMinutes: 0,
-  periodInMinutes: CONFIG.pollIntervalSeconds / 60,
-});
+chrome.alarms.create('pollZOZO', { delayInMinutes: POLL_MINUTES, periodInMinutes: POLL_MINUTES });
 
 chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === 'pollZOZO') pollAndProcess();
@@ -12,56 +11,94 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 async function pollAndProcess() {
   let task;
   try {
-    const res = await fetch(`${CONFIG.apiBase}/api/zozo-queue?key=${CONFIG.adminKey}`);
+    const res = await fetch(`${API_BASE}/api/zozo-queue?key=${ADMIN_KEY}`);
+    if (!res.ok) return;
     task = await res.json();
   } catch (e) {
-    console.warn('[ZOZO ext] poll error:', e.message);
+    console.warn('[ZOZO] poll error:', e.message);
     return;
   }
 
-  if (!task || !task.taskId) return; // 沒有待處理任務
-
-  console.log('[ZOZO ext] 處理任務:', task.taskId, task.url);
+  if (!task || !task.taskId) return;
+  console.log('[ZOZO] 處理任務:', task.taskId, task.url);
 
   let html;
   try {
-    const zozoRes = await fetch(task.url, {
-      credentials: 'include',
-      headers: {
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        'Accept-Language': 'ja-JP,ja;q=0.9,en-US;q=0.8',
-        'Cache-Control': 'no-cache',
-      },
-    });
-    if (!zozoRes.ok) {
-      await submitResult(task.taskId, null, `HTTP ${zozoRes.status}`);
-      return;
-    }
-    html = await zozoRes.text();
+    html = await fetchViaTab(task.url);
   } catch (e) {
+    console.error('[ZOZO] Tab fetch 失敗:', e.message);
     await submitResult(task.taskId, null, e.message);
     return;
   }
 
   const result = parseZOZO(html, task.url);
   if (!result) {
-    await submitResult(task.taskId, null, '無法解析商品資料（可能需要登入或頁面結構改變）');
+    console.warn('[ZOZO] 無法解析商品資料');
+    await submitResult(task.taskId, null, '無法解析商品資料（頁面結構可能改變）');
     return;
   }
 
+  console.log('[ZOZO] 解析成功:', result.name, result.price);
   await submitResult(task.taskId, result, null);
+}
+
+// 開啟背景 Tab → 等頁面載入完成 → 取 HTML → 關閉 Tab
+function fetchViaTab(url) {
+  return new Promise((resolve, reject) => {
+    let tabId;
+
+    const cleanup = (fn) => {
+      if (tabId) chrome.tabs.remove(tabId, () => {});
+      fn();
+    };
+
+    const timer = setTimeout(() => cleanup(() => reject(new Error('Timeout（30秒）'))), 30000);
+
+    chrome.tabs.create({ url, active: false }, (tab) => {
+      if (chrome.runtime.lastError) {
+        clearTimeout(timer);
+        return reject(new Error(chrome.runtime.lastError.message));
+      }
+      tabId = tab.id;
+
+      function onUpdated(id, info) {
+        if (id !== tabId || info.status !== 'complete') return;
+        chrome.tabs.onUpdated.removeListener(onUpdated);
+
+        chrome.scripting.executeScript(
+          { target: { tabId }, func: () => document.documentElement.outerHTML },
+          (results) => {
+            clearTimeout(timer);
+            if (chrome.runtime.lastError) {
+              cleanup(() => reject(new Error(chrome.runtime.lastError.message)));
+              return;
+            }
+            const html = results && results[0] && results[0].result;
+            cleanup(() => html ? resolve(html) : reject(new Error('空白頁面')));
+          }
+        );
+      }
+
+      chrome.tabs.onUpdated.addListener(onUpdated);
+    });
+  });
 }
 
 async function submitResult(taskId, result, error) {
   try {
-    await fetch(`${CONFIG.apiBase}/api/zozo-queue`, {
+    const res = await fetch(`${API_BASE}/api/zozo-queue`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ key: CONFIG.adminKey, taskId, result, error }),
+      body: JSON.stringify({ key: ADMIN_KEY, taskId, result, error }),
     });
-    console.log('[ZOZO ext] 任務完成:', taskId, error ? `錯誤: ${error}` : '成功');
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok || body.pushError) {
+      console.error('[ZOZO] 伺服器錯誤:', res.status, JSON.stringify(body));
+    } else {
+      console.log('[ZOZO] 完成:', taskId, error ? `錯誤: ${error}` : 'OK');
+    }
   } catch (e) {
-    console.error('[ZOZO ext] 回傳失敗:', e.message);
+    console.error('[ZOZO] 回傳失敗:', e.message);
   }
 }
 
@@ -69,15 +106,15 @@ function parseZOZO(html, url) {
   if (!html.includes('data-goods-id') && !html.includes('data-item-price')) return null;
 
   const titleRaw = (html.match(/<title[^>]*>([^<]+)<\/title>/i) || [])[1] || '';
-  const titleParts = titleRaw.split('|').map(s => s.trim()).filter(Boolean);
+  const titleParts = titleRaw.split(/[|｜]/).map(s => s.trim()).filter(Boolean);
   const brand = titleParts.length >= 3 ? titleParts[0] : null;
   const name  = titleParts.length >= 2 ? titleParts.slice(0, -1).join(' ').trim() : titleRaw;
 
-  const price    = parseInt((html.match(/data-item-price="(\d+)"/) || [])[1]) || null;
-  const isOnSale = /data-has-double-price="true"/.test(html);
-  const origPrice= isOnSale ? parseInt((html.match(/data-proper-price="(\d+)"/) || [])[1]) || null : null;
-  const goodsId  = (html.match(/data-goods-id="(\d+)"/) || [])[1] || null;
-  const goodsCode= (html.match(/data-goods-code="(\d+)"/) || [])[1] || null;
+  const price     = parseInt((html.match(/data-item-price="(\d+)"/)    || [])[1]) || null;
+  const isOnSale  = /data-has-double-price="true"/.test(html);
+  const origPrice = isOnSale ? parseInt((html.match(/data-proper-price="(\d+)"/) || [])[1]) || null : null;
+  const goodsId   = (html.match(/data-goods-id="(\d+)"/)   || [])[1] || null;
+  const goodsCode = (html.match(/data-goods-code="(\d+)"/) || [])[1] || null;
 
   const shelfItems = [];
   const tagRegex = /<[^>]+data-shelf-color-id="[^"]*"[^>]*>/g;

@@ -4922,7 +4922,7 @@ app.post('/api/zozo-queue', express.json(), async (req, res) => {
     const url    = rows[rowIdx][2];
     const now    = new Date().toISOString();
 
-    // 更新狀態
+    // 更新狀態（先寫 done，G欄留給 push 錯誤）
     await sheets.spreadsheets.values.update({
       spreadsheetId: SHEET_ID,
       range: `${ZOZO_SHEET}!D${rowIdx + 1}:G${rowIdx + 1}`,
@@ -4932,16 +4932,29 @@ app.post('/api/zozo-queue', express.json(), async (req, res) => {
 
     // 發 LINE push
     const lineClient = new line.Client({ channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN });
-    if (result && !error) {
-      const flexMsg = buildZOZOFlexMessage(result, url);
-      await lineClient.pushMessage(userId, [flexMsg]);
-    } else {
-      await lineClient.pushMessage(userId, {
-        type: 'text',
-        text: 'ZOZO 商品查詢失敗，請重新傳送網址，或聯絡我們人工報價',
-      });
+    let pushError = null;
+    try {
+      if (result && !error) {
+        const flexMsg = buildZOZOFlexMessage(result, url);
+        await lineClient.pushMessage(userId, flexMsg);
+      } else {
+        await lineClient.pushMessage(userId, {
+          type: 'text',
+          text: 'ZOZO 商品查詢失敗，請重新傳送網址，或聯絡我們人工報價',
+        });
+      }
+    } catch (pushErr) {
+      pushError = pushErr.message;
+      console.error('[zozo-queue PUSH]', pushErr.message);
+      // 將 push 錯誤寫入 G 欄，方便診斷
+      await sheets.spreadsheets.values.update({
+        spreadsheetId: SHEET_ID,
+        range: `${ZOZO_SHEET}!G${rowIdx + 1}`,
+        valueInputOption: 'RAW',
+        resource: { values: [[`push_error: ${pushErr.message}`]] },
+      }).catch(() => {});
     }
-    return res.json({ ok: true });
+    return res.json({ ok: !pushError, pushError: pushError || undefined });
   } catch (e) {
     console.error('[zozo-queue POST]', e.message);
     return res.status(500).json({ error: e.message });
