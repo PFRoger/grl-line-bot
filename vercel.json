@@ -4,9 +4,17 @@
     {
       "src": "index.js",
       "use": "@vercel/node"
+    },
+    {
+      "src": "api/zozo.js",
+      "use": "@vercel/node"
     }
   ],
   "routes": [
+    {
+      "src": "/api/zozo",
+      "dest": "/api/zozo.js"
+    },
     {
       "src": "/(.*)",
       "dest": "/index.js"

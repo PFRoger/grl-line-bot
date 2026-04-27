@@ -481,6 +481,106 @@ async function scrapeGRL(inputUrl) {
   return { productName, jpy, stockLines, imageUrl, colorImages, resolvedUrl };
 }
 
+// ── ZOZO 商品爬蟲（透過 Edge Runtime /api/zozo 繞過 TLS 指紋阻擋）────────────
+const ZOZO_EDGE_URL = 'https://pfroger-linebot-2.vercel.app/api/zozo';
+
+async function scrapeZOZO(url) {
+  const { data } = await axios.get(ZOZO_EDGE_URL, {
+    params: { url },
+    timeout: 12000,
+  });
+  if (data.error) throw new Error(data.error);
+  return data;
+}
+
+// ── 建立 ZOZO Flex Message ────────────────────────────────────────────────────
+function buildZOZOFlexMessage(data, url) {
+  const { name, brand, price, isOnSale, originalPrice, colors } = data;
+
+  const stockContents = colors.length > 0
+    ? colors.map(c => {
+        const inStockSizes  = c.sizes.filter(s => s.inStock).map(s => s.name);
+        const outStockSizes = c.sizes.filter(s => !s.inStock).map(s => s.name);
+        let stockText;
+        if (c.sizes.length <= 1) {
+          stockText = inStockSizes.length > 0 ? '✅ 有庫存' : '❌ 缺貨';
+        } else {
+          const parts = [];
+          if (inStockSizes.length)  parts.push(`✅ ${inStockSizes.join('/')}`);
+          if (outStockSizes.length) parts.push(`❌ ${outStockSizes.join('/')}`);
+          stockText = parts.join('  ');
+        }
+        return { type: 'text', text: `${c.name}: ${stockText}`, size: 'sm', color: '#555555', wrap: true };
+      })
+    : [{ type: 'text', text: '（無庫存資訊）', size: 'sm', color: '#aaaaaa' }];
+
+  return {
+    type: 'flex',
+    altText: `ZOZO商品: ${name}`,
+    contents: {
+      type: 'bubble',
+      size: 'kilo',
+      header: {
+        type: 'box',
+        layout: 'vertical',
+        backgroundColor: '#1D1D1D',
+        paddingAll: '14px',
+        contents: [{ type: 'text', text: '🛍 ZOZOTOWN 商品', color: '#ffffff', size: 'md', weight: 'bold' }],
+      },
+      body: {
+        type: 'box',
+        layout: 'vertical',
+        spacing: 'md',
+        paddingAll: '14px',
+        contents: [
+          ...(brand ? [{ type: 'text', text: brand, size: 'xs', color: '#888888', weight: 'bold' }] : []),
+          { type: 'text', text: name || '（未知商品名）', weight: 'bold', size: 'md', wrap: true, color: '#222222' },
+          { type: 'separator' },
+          {
+            type: 'box',
+            layout: 'horizontal',
+            contents: [
+              { type: 'text', text: '💴 日幣', size: 'sm', color: '#888888', flex: 2 },
+              {
+                type: 'text',
+                text: price ? `¥${price.toLocaleString('ja-JP')}` : '—',
+                size: 'sm',
+                color: isOnSale ? '#E53935' : '#222222',
+                weight: isOnSale ? 'bold' : 'regular',
+                flex: 3,
+                align: 'end',
+              },
+            ],
+          },
+          ...(isOnSale && originalPrice ? [{
+            type: 'box',
+            layout: 'horizontal',
+            contents: [
+              { type: 'text', text: '原價', size: 'xs', color: '#888888', flex: 2 },
+              { type: 'text', text: `¥${originalPrice.toLocaleString('ja-JP')}`, size: 'xs', color: '#aaaaaa', flex: 3, align: 'end', decoration: 'line-through' },
+            ],
+          }] : []),
+          { type: 'separator' },
+          { type: 'text', text: '📦 庫存', size: 'sm', weight: 'bold', color: '#444444' },
+          { type: 'box', layout: 'vertical', spacing: 'xs', contents: stockContents },
+        ],
+      },
+      footer: {
+        type: 'box',
+        layout: 'vertical',
+        paddingAll: '10px',
+        contents: [{
+          type: 'button',
+          style: 'primary',
+          color: '#1D1D1D',
+          height: 'sm',
+          action: { type: 'uri', label: '查看商品頁面', uri: url },
+        }],
+      },
+    },
+  };
+}
+
 // ── 新增商品到 Google Sheet（管理員功能）─────────────────────────────────────
 // 欄位配置（插入新 J 欄後，共 A~R = 18 欄）：
 //   A: 商品ID  D:=P  E:成本  F:利潤  G:建議售價  H:售價  I:預估獲利
@@ -1972,10 +2072,29 @@ async function handleEvent(event, client) {
   const replyToken = event.replyToken;
 
   const isGRL = /https?:\/\/(www\.)?grail\.bz\//i.test(userText);
+  const isZOZO = /https?:\/\/(?:www\.)?zozo\.jp\//i.test(userText);
   const isProductCode = /^[a-z]{1,2}[a-z0-9]{2,8}$/i.test(userText);
 
-  if (!isGRL && !isProductCode) {
+  if (!isGRL && !isZOZO && !isProductCode) {
     await client.replyMessage(replyToken, { type: 'text', text: '請傳入 GRL 商品網址或貨號（例：RU1197）' });
+    return;
+  }
+
+  // ── ZOZO 查詢 ──────────────────────────────────────────────────────────────
+  if (isZOZO) {
+    let zozoData;
+    try {
+      zozoData = await scrapeZOZO(userText);
+    } catch (err) {
+      console.error('[zozo error]', err.message);
+      await client.replyMessage(replyToken, {
+        type: 'text',
+        text: 'ZOZOTOWN 商品查詢失敗，請稍後再試\n（若持續出現請通知管理員）',
+      });
+      return;
+    }
+    const flexMsg = buildZOZOFlexMessage(zozoData, userText);
+    await client.replyMessage(replyToken, [flexMsg]);
     return;
   }
 
