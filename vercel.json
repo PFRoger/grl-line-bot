@@ -7,7 +7,7 @@
     },
     {
       "src": "api/zozo.js",
-      "use": "@vercel/node"
+      "use": "@vercel/edge"
     }
   ],
   "routes": [
