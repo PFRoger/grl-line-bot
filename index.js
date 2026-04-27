@@ -484,13 +484,13 @@ async function scrapeGRL(inputUrl) {
 // ── ZOZO 任務佇列（Chrome Extension 負責爬蟲，Bot 負責發 push）────────────────
 const ZOZO_SHEET = 'ZOZO任務';
 
-async function addZOZOTask(sheets, userId, url) {
+async function addZOZOTask(sheets, userId, url, replyToken) {
   const taskId = Date.now().toString();
   await sheets.spreadsheets.values.append({
     spreadsheetId: SHEET_ID,
-    range: `${ZOZO_SHEET}!A:G`,
+    range: `${ZOZO_SHEET}!A:H`,
     valueInputOption: 'RAW',
-    resource: { values: [[taskId, userId, url, 'pending', '', new Date().toISOString(), '']] },
+    resource: { values: [[taskId, userId, url, 'pending', '', new Date().toISOString(), '', replyToken || '']] },
   });
   return taskId;
 }
@@ -2086,7 +2086,7 @@ async function handleEvent(event, client) {
   if (isZOZO) {
     try {
       const sheets = getSheetsClient();
-      await addZOZOTask(sheets, userId, userText);
+      await addZOZOTask(sheets, userId, userText, replyToken);
     } catch (err) {
       console.error('[zozo queue error]', err.message);
       await client.replyMessage(replyToken, {
@@ -2095,10 +2095,7 @@ async function handleEvent(event, client) {
       });
       return;
     }
-    await client.replyMessage(replyToken, {
-      type: 'text',
-      text: '🔍 ZOZO 查詢中，約10~20秒後自動回覆報價！',
-    });
+    // 不立刻回覆，等 Extension 在 30 秒內抓完後用 replyToken 直接回覆（免費）
     return;
   }
 
@@ -4918,11 +4915,12 @@ app.post('/api/zozo-queue', express.json(), async (req, res) => {
     const rowIdx = rows.findIndex((r, i) => i > 0 && r[0] === taskId);
     if (rowIdx < 0) return res.status(404).json({ error: 'Task not found' });
 
-    const userId = rows[rowIdx][1];
-    const url    = rows[rowIdx][2];
-    const now    = new Date().toISOString();
+    const userId     = rows[rowIdx][1];
+    const url        = rows[rowIdx][2];
+    const replyToken = rows[rowIdx][7] || null; // H欄：30秒有效的 replyToken
+    const now        = new Date().toISOString();
 
-    // 更新狀態（先寫 done，G欄留給 push 錯誤）
+    // 更新狀態（G欄留給錯誤訊息）
     await sheets.spreadsheets.values.update({
       spreadsheetId: SHEET_ID,
       range: `${ZOZO_SHEET}!D${rowIdx + 1}:G${rowIdx + 1}`,
@@ -4930,31 +4928,30 @@ app.post('/api/zozo-queue', express.json(), async (req, res) => {
       resource: { values: [[error ? 'error' : 'done', JSON.stringify(result || { error }), '', now]] },
     });
 
-    // 發 LINE push
+    // 發 LINE 訊息：優先用 replyMessage（免費），過期則 fallback pushMessage
     const lineClient = new line.Client({ channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN });
-    let pushError = null;
+    let sendError = null;
     try {
-      if (result && !error) {
-        const flexMsg = buildZOZOFlexMessage(result, url);
-        await lineClient.pushMessage(userId, flexMsg);
+      const msg = (result && !error)
+        ? buildZOZOFlexMessage(result, url)
+        : { type: 'text', text: 'ZOZO 商品查詢失敗，請重新傳送網址，或聯絡我們人工報價' };
+
+      if (replyToken) {
+        await lineClient.replyMessage(replyToken, msg);
       } else {
-        await lineClient.pushMessage(userId, {
-          type: 'text',
-          text: 'ZOZO 商品查詢失敗，請重新傳送網址，或聯絡我們人工報價',
-        });
+        await lineClient.pushMessage(userId, msg);
       }
-    } catch (pushErr) {
-      pushError = pushErr.message;
-      console.error('[zozo-queue PUSH]', pushErr.message);
-      // 將 push 錯誤寫入 G 欄，方便診斷
+    } catch (sendErr) {
+      sendError = sendErr.message;
+      console.error('[zozo-queue SEND]', sendErr.message);
       await sheets.spreadsheets.values.update({
         spreadsheetId: SHEET_ID,
         range: `${ZOZO_SHEET}!G${rowIdx + 1}`,
         valueInputOption: 'RAW',
-        resource: { values: [[`push_error: ${pushErr.message}`]] },
+        resource: { values: [[`send_error: ${sendErr.message}`]] },
       }).catch(() => {});
     }
-    return res.json({ ok: !pushError, pushError: pushError || undefined });
+    return res.json({ ok: !sendError, sendError: sendError || undefined });
   } catch (e) {
     console.error('[zozo-queue POST]', e.message);
     return res.status(500).json({ error: e.message });
