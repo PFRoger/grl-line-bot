@@ -28,7 +28,12 @@ module.exports = async (req, res) => {
   }
 
   if (!html.includes('data-goods-id') && !html.includes('data-item-price')) {
-    return res.json({ error: 'Not a ZOZO product page (may be blocked or redirected)' });
+    const titleMatch2 = html.match(/<title>([^<]+)<\/title>/);
+    return res.json({
+      error: 'Not a ZOZO product page (may be blocked or redirected)',
+      pageTitle: titleMatch2 ? titleMatch2[1] : null,
+      htmlSnippet: html.slice(0, 300),
+    });
   }
 
   // Product name + brand: "<title>ブランド | 商品名 | ZOZOTOWN</title>"
