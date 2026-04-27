@@ -1,5 +1,4 @@
-// ZOZO product scraper — Node.js serverless function
-// Called from index.js scrapeZOZO() as an internal HTTP request
+// ZOZO product scraper — uses got-scraping for TLS fingerprint spoofing
 module.exports = async (req, res) => {
   const productUrl = req.query && req.query.url;
 
@@ -7,30 +6,24 @@ module.exports = async (req, res) => {
     return res.status(400).json({ error: 'Valid ZOZO URL required' });
   }
 
-  const headers = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-    'Accept-Language': 'ja-JP,ja;q=0.9,en-US;q=0.8,en;q=0.7',
-    'Cache-Control': 'no-cache',
-    'Pragma': 'no-cache',
-    'Sec-Ch-Ua': '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',
-    'Sec-Ch-Ua-Mobile': '?0',
-    'Sec-Ch-Ua-Platform': '"Windows"',
-    'Sec-Fetch-Dest': 'document',
-    'Sec-Fetch-Mode': 'navigate',
-    'Sec-Fetch-Site': 'none',
-    'Sec-Fetch-User': '?1',
-    'Upgrade-Insecure-Requests': '1',
-  };
-
   let html;
   try {
-    const response = await fetch(productUrl, { headers, redirect: 'follow' });
-    if (!response.ok) {
-      return res.json({ error: `ZOZO HTTP ${response.status}`, blocked: response.status === 403 });
-    }
-    html = await response.text();
+    const { gotScraping } = await import('got-scraping');
+    const response = await gotScraping({
+      url: productUrl,
+      timeout: { request: 12000 },
+      headerGeneratorOptions: {
+        browsers: [{ name: 'chrome', minVersion: 120 }],
+        devices: ['desktop'],
+        locales: ['ja-JP', 'en-US'],
+        operatingSystems: ['windows'],
+      },
+    });
+    html = response.body;
   } catch (e) {
+    if (e.response) {
+      return res.json({ error: `ZOZO HTTP ${e.response.statusCode}`, blocked: e.response.statusCode === 403 });
+    }
     return res.json({ error: e.message });
   }
 
