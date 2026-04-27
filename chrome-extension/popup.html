@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body { width: 340px; padding: 16px; font-family: sans-serif; font-size: 14px; }
+    h3 { margin: 0 0 12px; font-size: 15px; }
+    input { width: 100%; box-sizing: border-box; padding: 7px; margin-bottom: 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; }
+    button { width: 100%; padding: 10px; font-size: 14px; cursor: pointer; background: #1d1d1d; color: #fff; border: none; border-radius: 4px; }
+    button:active { opacity: 0.8; }
+    #result { margin-top: 14px; font-size: 13px; white-space: pre-wrap; word-break: break-all; line-height: 1.6; }
+    .ok { color: #2a7a2a; }
+    .err { color: #c0392b; }
+    .loading { color: #888; }
+  </style>
+</head>
+<body>
+  <h3>🛍 ZOZO 報價測試</h3>
+  <input id="url" type="text" placeholder="貼入 ZOZO 商品網址">
+  <button id="btn">抓取商品資料</button>
+  <div id="result" class="loading">（貼入網址後按按鈕）</div>
+  <script src="popup.js"></script>
+</body>
+</html>

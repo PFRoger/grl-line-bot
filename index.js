@@ -481,16 +481,18 @@ async function scrapeGRL(inputUrl) {
   return { productName, jpy, stockLines, imageUrl, colorImages, resolvedUrl };
 }
 
-// ── ZOZO 商品爬蟲（透過 Edge Runtime /api/zozo 繞過 TLS 指紋阻擋）────────────
-const ZOZO_EDGE_URL = 'https://pfroger-linebot-2.vercel.app/api/zozo';
+// ── ZOZO 任務佇列（Chrome Extension 負責爬蟲，Bot 負責發 push）────────────────
+const ZOZO_SHEET = 'ZOZO任務';
 
-async function scrapeZOZO(url) {
-  const { data } = await axios.get(ZOZO_EDGE_URL, {
-    params: { url },
-    timeout: 12000,
+async function addZOZOTask(sheets, userId, url) {
+  const taskId = Date.now().toString();
+  await sheets.spreadsheets.values.append({
+    spreadsheetId: SHEET_ID,
+    range: `${ZOZO_SHEET}!A:G`,
+    valueInputOption: 'RAW',
+    resource: { values: [[taskId, userId, url, 'pending', '', new Date().toISOString(), '']] },
   });
-  if (data.error) throw new Error(data.error);
-  return data;
+  return taskId;
 }
 
 // ── 建立 ZOZO Flex Message ────────────────────────────────────────────────────
@@ -2080,21 +2082,23 @@ async function handleEvent(event, client) {
     return;
   }
 
-  // ── ZOZO 查詢 ──────────────────────────────────────────────────────────────
+  // ── ZOZO 查詢（佇列模式：由 Chrome Extension 在背景爬蟲，完成後 push 回覆）──
   if (isZOZO) {
-    let zozoData;
     try {
-      zozoData = await scrapeZOZO(userText);
+      const sheets = getSheetsClient();
+      await addZOZOTask(sheets, userId, userText);
     } catch (err) {
-      console.error('[zozo error]', err.message);
+      console.error('[zozo queue error]', err.message);
       await client.replyMessage(replyToken, {
         type: 'text',
-        text: 'ZOZOTOWN 商品查詢失敗，請稍後再試\n（若持續出現請通知管理員）',
+        text: 'ZOZO 查詢暫時無法使用，請稍後再試',
       });
       return;
     }
-    const flexMsg = buildZOZOFlexMessage(zozoData, userText);
-    await client.replyMessage(replyToken, [flexMsg]);
+    await client.replyMessage(replyToken, {
+      type: 'text',
+      text: '🔍 ZOZO 查詢中，約10~20秒後自動回覆報價！',
+    });
     return;
   }
 
@@ -4866,6 +4870,82 @@ app.post('/api/admin/complete-order-points', express.json(), async (req, res) =>
     const result = await processOrderCompletion(sheets, userId, displayName, orderId, totalTwd);
     res.json({ ok: true, ...result });
   } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── ZOZO 任務佇列 API（供 Chrome Extension 使用）────────────────────────────
+
+// GET /api/zozo-queue — Extension 輪詢：取得最舊的 pending 任務
+app.get('/api/zozo-queue', async (req, res) => {
+  if (req.query.key !== ADMIN_KEY) return res.status(401).json({ error: 'Unauthorized' });
+  try {
+    const sheets = getSheetsClient();
+    const result = await sheets.spreadsheets.values.get({
+      spreadsheetId: SHEET_ID,
+      range: `${ZOZO_SHEET}!A:G`,
+    });
+    const rows = result.data.values || [];
+    for (let i = 1; i < rows.length; i++) {
+      if (rows[i][3] === 'pending') {
+        // 標記為 processing
+        await sheets.spreadsheets.values.update({
+          spreadsheetId: SHEET_ID,
+          range: `${ZOZO_SHEET}!D${i + 1}`,
+          valueInputOption: 'RAW',
+          resource: { values: [['processing']] },
+        });
+        return res.json({ taskId: rows[i][0], userId: rows[i][1], url: rows[i][2] });
+      }
+    }
+    return res.json({ taskId: null });
+  } catch (e) {
+    return res.status(500).json({ error: e.message });
+  }
+});
+
+// POST /api/zozo-queue — Extension 回傳結果，Bot 發 LINE push
+app.post('/api/zozo-queue', express.json(), async (req, res) => {
+  if (req.body.key !== ADMIN_KEY) return res.status(401).json({ error: 'Unauthorized' });
+  const { taskId, result, error } = req.body;
+  if (!taskId) return res.status(400).json({ error: 'taskId required' });
+
+  try {
+    const sheets = getSheetsClient();
+    const existing = await sheets.spreadsheets.values.get({
+      spreadsheetId: SHEET_ID,
+      range: `${ZOZO_SHEET}!A:G`,
+    });
+    const rows = existing.data.values || [];
+    const rowIdx = rows.findIndex((r, i) => i > 0 && r[0] === taskId);
+    if (rowIdx < 0) return res.status(404).json({ error: 'Task not found' });
+
+    const userId = rows[rowIdx][1];
+    const url    = rows[rowIdx][2];
+    const now    = new Date().toISOString();
+
+    // 更新狀態
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: SHEET_ID,
+      range: `${ZOZO_SHEET}!D${rowIdx + 1}:G${rowIdx + 1}`,
+      valueInputOption: 'RAW',
+      resource: { values: [[error ? 'error' : 'done', JSON.stringify(result || { error }), '', now]] },
+    });
+
+    // 發 LINE push
+    const lineClient = new line.Client({ channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN });
+    if (result && !error) {
+      const flexMsg = buildZOZOFlexMessage(result, url);
+      await lineClient.pushMessage(userId, [flexMsg]);
+    } else {
+      await lineClient.pushMessage(userId, {
+        type: 'text',
+        text: 'ZOZO 商品查詢失敗，請重新傳送網址，或聯絡我們人工報價',
+      });
+    }
+    return res.json({ ok: true });
+  } catch (e) {
+    console.error('[zozo-queue POST]', e.message);
+    return res.status(500).json({ error: e.message });
+  }
 });
 
 // ── Cron：每月1號自動發送生日禮 ──────────────────────────────────────────────
