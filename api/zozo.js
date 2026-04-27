@@ -1,4 +1,4 @@
-// ZOZO product scraper — uses got-scraping for TLS fingerprint spoofing
+// ZOZO product scraper — uses got-scraping for TLS spoofing + ZOZO_COOKIE for session auth
 module.exports = async (req, res) => {
   const productUrl = req.query && req.query.url;
 
@@ -6,12 +6,15 @@ module.exports = async (req, res) => {
     return res.status(400).json({ error: 'Valid ZOZO URL required' });
   }
 
+  const zozoCookie = process.env.ZOZO_COOKIE || '';
+
   let html;
   try {
     const { gotScraping } = await import('got-scraping');
     const response = await gotScraping({
       url: productUrl,
       timeout: { request: 12000 },
+      headers: zozoCookie ? { cookie: zozoCookie } : {},
       headerGeneratorOptions: {
         browsers: [{ name: 'chrome', minVersion: 120 }],
         devices: ['desktop'],
@@ -28,16 +31,15 @@ module.exports = async (req, res) => {
   }
 
   if (!html.includes('data-goods-id') && !html.includes('data-item-price')) {
-    const titleMatch2 = html.match(/<title>([^<]+)<\/title>/);
+    const titleMatch2 = html.match(/<title[^>]*>([^<]+)<\/title>/i);
     return res.json({
       error: 'Not a ZOZO product page (may be blocked or redirected)',
-      pageTitle: titleMatch2 ? titleMatch2[1] : null,
-      htmlSnippet: html.slice(0, 300),
+      pageTitle: titleMatch2 ? titleMatch2[1].trim() : null,
     });
   }
 
   // Product name + brand: "<title>ブランド | 商品名 | ZOZOTOWN</title>"
-  const titleMatch = html.match(/<title>([^<]+)<\/title>/);
+  const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
   const titleParts = titleMatch ? titleMatch[1].split('|').map(s => s.trim()).filter(Boolean) : [];
   const brand = titleParts.length >= 3 ? titleParts[0] : null;
   const productName = titleParts.length >= 2
