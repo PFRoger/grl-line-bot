@@ -482,7 +482,19 @@ async function scrapeGRL(inputUrl) {
 }
 
 // ── ZOZO 任務佇列（Chrome Extension 負責爬蟲，Bot 負責發 push）────────────────
-const ZOZO_SHEET = 'ZOZO任務';
+const ZOZO_SHEET    = 'ZOZO任務';
+const SETTINGS_SHEET = '設定';
+
+async function getZOZOEnabled(sheets) {
+  try {
+    const res = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${SETTINGS_SHEET}!A:B` });
+    const rows = res.data.values || [];
+    for (const row of rows.slice(1)) {
+      if (row[0] === 'zozo_enabled') return row[1] !== 'false';
+    }
+    return true;
+  } catch (e) { return true; }
+}
 
 async function addZOZOTask(sheets, userId, url) {
   const taskId = Date.now().toString();
@@ -2141,7 +2153,7 @@ async function handleEvent(event, client) {
   const isProductCode = /^[a-z]{1,2}[a-z0-9]{2,8}$/i.test(userText);
 
   if (!isGRL && !isZOZO && !isProductCode) {
-    await client.replyMessage(replyToken, { type: 'text', text: '請傳入 GRL 商品網址或貨號（例：RU1197）' });
+    await client.replyMessage(replyToken, { type: 'text', text: '請傳入 GRL 或 ZOZO 商品網址，或 GRL 貨號（例：RU1197）' });
     return;
   }
 
@@ -2150,6 +2162,10 @@ async function handleEvent(event, client) {
     let taskId;
     try {
       const sheets = getSheetsClient();
+      if (!await getZOZOEnabled(sheets)) {
+        await client.replyMessage(replyToken, { type: 'text', text: 'ZOZO爬蟲伺服器維護中，如造成不便還請見諒.ᐟ' });
+        return;
+      }
       taskId = await addZOZOTask(sheets, userId, userText);
     } catch (err) {
       console.error('[zozo queue error]', err.message);
@@ -3011,6 +3027,31 @@ render();
 </html>`);
 });
 
+// ── 管理員 API：系統設定（ZOZO 開關等）────────────────────────────────────────
+app.post('/api/admin/settings', express.json(), async (req, res) => {
+  const { key, setting, value } = req.body;
+  if (key !== ADMIN_KEY) return res.status(401).json({ error: 'Unauthorized' });
+  if (!setting) return res.status(400).json({ error: 'setting required' });
+  try {
+    const sheets = getSheetsClient();
+    const existing = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${SETTINGS_SHEET}!A:B` });
+    const rows = existing.data.values || [];
+    const rowIdx = rows.findIndex((r, i) => i > 0 && r[0] === setting);
+    if (rowIdx >= 0) {
+      await sheets.spreadsheets.values.update({
+        spreadsheetId: SHEET_ID, range: `${SETTINGS_SHEET}!B${rowIdx + 1}`,
+        valueInputOption: 'RAW', resource: { values: [[value]] },
+      });
+    } else {
+      await sheets.spreadsheets.values.append({
+        spreadsheetId: SHEET_ID, range: `${SETTINGS_SHEET}!A:B`,
+        valueInputOption: 'RAW', resource: { values: [[setting, value]] },
+      });
+    }
+    return res.json({ ok: true });
+  } catch (e) { return res.status(500).json({ error: e.message }); }
+});
+
 // ── 管理員 API：調整會員資料 ──────────────────────────────────────────────────
 app.post('/api/admin/member-adjust', express.json(), async (req, res) => {
   const { key, rowIndex, tier, points, yearlySpend } = req.body;
@@ -3235,6 +3276,12 @@ app.get('/admin', async (req, res) => {
     const mResp = await sheets2.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${MEMBER_SHEET}!A:A` });
     ssrMemberCount = Math.max(0, ((mResp.data.values || []).length - 1));
   } catch(e) { /* ignore */ }
+  // 取 ZOZO 開關狀態
+  let zozoEnabled = true;
+  try {
+    const sheets3 = getSheetsClient();
+    zozoEnabled = await getZOZOEnabled(sheets3);
+  } catch(e) { /* ignore */ }
   const ssrOrdersJson = JSON.stringify(ssrOrders).replace(/<\/script>/gi, '<\\/script>');
   res.send(`<!DOCTYPE html>
 <html lang="zh-TW">
@@ -3396,6 +3443,14 @@ details.sec-closed[open] .sec-summary::after{content:'▾';font-size:12px}
   <div class="stat-card"><div class="stat-label">本月營收</div><div class="stat-value" id="stat-revenue" style="font-size:18px">—<span class="stat-unit">NT$</span></div></div>
   <div class="stat-card"><div class="stat-label">總會員數</div><div class="stat-value" id="stat-members">—</div></div>
 </div>
+<div style="background:#fff;border-bottom:1px solid #ede8e2;padding:10px 24px;display:flex;align-items:center;gap:16px;font-size:13px">
+  <span style="font-weight:600;color:#555">⚙️ 系統設定</span>
+  <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+    <span style="color:#555">🤖 ZOZO 爬蟲</span>
+    <input type="checkbox" id="zozo-toggle" ${zozoEnabled ? 'checked' : ''} onchange="toggleZOZO(this)" style="width:36px;height:20px;cursor:pointer;accent-color:#FF6B9D">
+    <span id="zozo-status" style="font-weight:600;color:${zozoEnabled ? '#2e7d32' : '#c62828'}">${zozoEnabled ? '開啟 ✅' : '關閉 ❌'}</span>
+  </label>
+</div>
 <div id="orders"></div>
 <details class="sec-closed">
   <summary class="sec-summary">✅ 已完成訂單 <span id="cnt-done" style="margin-left:4px;font-size:12px;font-weight:400;color:#c9a98a"></span></summary>
@@ -3435,6 +3490,24 @@ var allOrders = ${ssrOrdersJson};
 var SSR_ERROR = '${ssrError.replace(/'/g, "\\'")}';
 var KEY = '${adminKey}';
 var MEMBER_COUNT = ${ssrMemberCount};
+
+function toggleZOZO(cb) {
+  var val = cb.checked ? 'true' : 'false';
+  fetch('/api/admin/settings', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ key: KEY, setting: 'zozo_enabled', value: val }),
+  }).then(function(r) { return r.json(); }).then(function(d) {
+    var el = document.getElementById('zozo-status');
+    if (d.ok) {
+      el.textContent = cb.checked ? '開啟 ✅' : '關閉 ❌';
+      el.style.color  = cb.checked ? '#2e7d32' : '#c62828';
+    } else {
+      cb.checked = !cb.checked;
+      showErr('設定更新失敗: ' + (d.error || ''));
+    }
+  }).catch(function() { cb.checked = !cb.checked; showErr('網路錯誤'); });
+}
 
 function showErr(msg) {
   var bar = document.getElementById('err-bar');
