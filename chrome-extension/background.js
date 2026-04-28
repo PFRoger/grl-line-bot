@@ -138,20 +138,24 @@ function parseZOZO(html, url) {
   const shelfItems = [];
   const tagRegex = /<[^>]+data-shelf-color-id="[^"]*"[^>]*>/g;
   let m;
+  let firstTagLogged = false;
   while ((m = tagRegex.exec(html)) !== null) {
     const tag = m[0];
-    const colorId   = (tag.match(/data-shelf-color-id="([^"]+)"/)   || [])[1] || '';
-    const colorName = (tag.match(/data-shelf-color-name="([^"]+)"/) || [])[1] || '';
-    const sizeName  = (tag.match(/data-shelf-size-name="([^"]+)"/)  || [])[1] || '';
-    const stockQty  = (tag.match(/data-shelf-stock-quantity="([^"]+)"/) || [])[1] || '0';
-    if (colorId) shelfItems.push({ colorId, colorName, sizeName, inStock: parseInt(stockQty) > 0 });
+    if (!firstTagLogged) { console.log('[ZOZO] 第一個shelf tag:', tag.substring(0, 300)); firstTagLogged = true; }
+    const colorId    = (tag.match(/data-shelf-color-id="([^"]+)"/)    || [])[1] || '';
+    const colorName  = (tag.match(/data-shelf-color-name="([^"]+)"/)  || [])[1] || '';
+    const sizeName   = (tag.match(/data-shelf-size-name="([^"]+)"/)   || [])[1] || '';
+    const stockQty   = (tag.match(/data-shelf-stock-quantity="([^"]+)"/) || [])[1] || '0';
+    const colorImage = (tag.match(/data-shelf-color-image-url="([^"]+)"/) || tag.match(/data-color-image="([^"]+)"/) || [])[1] || '';
+    if (colorId) shelfItems.push({ colorId, colorName, sizeName, inStock: parseInt(stockQty) > 0, colorImage });
   }
 
   const colorsMap = {};
   for (const item of shelfItems) {
     if (!colorsMap[item.colorId]) {
-      colorsMap[item.colorId] = { id: item.colorId, name: item.colorName || item.colorId, sizes: [] };
+      colorsMap[item.colorId] = { id: item.colorId, name: item.colorName || item.colorId, sizes: [], colorImage: item.colorImage || '' };
     }
+    if (item.colorImage && !colorsMap[item.colorId].colorImage) colorsMap[item.colorId].colorImage = item.colorImage;
     if (item.sizeName) colorsMap[item.colorId].sizes.push({ name: item.sizeName, inStock: item.inStock });
   }
 
@@ -161,8 +165,11 @@ function parseZOZO(html, url) {
 
   const imgSuffix = goodsCode ? goodsCode.slice(-3) : '';
   const colors = Object.values(colorsMap).map(c => {
+    // 優先用 shelf tag 裡的顏色圖、次選 CDN 組合、最後 fallback OG image
     const cdnUrl = goodsCode ? `https://o.imgz.jp/${imgSuffix}/${goodsCode}/${goodsCode}_${c.id}_d.jpg` : null;
-    return { ...c, imageUrl: cdnUrl || ogImage };
+    const imageUrl = c.colorImage || cdnUrl || ogImage || null;
+    const { colorImage, ...rest } = c;
+    return { ...rest, imageUrl };
   });
 
   console.log('[ZOZO] goodsCode:', goodsCode, '| ogImage:', ogImage ? ogImage.substring(0, 60) : 'null', '| colors:', colors.length, '| firstImg:', colors[0]?.imageUrl?.substring(0, 60) || 'null');
