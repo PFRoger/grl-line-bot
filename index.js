@@ -484,13 +484,13 @@ async function scrapeGRL(inputUrl) {
 // ── ZOZO 任務佇列（Chrome Extension 負責爬蟲，Bot 負責發 push）────────────────
 const ZOZO_SHEET = 'ZOZO任務';
 
-async function addZOZOTask(sheets, userId, url, replyToken) {
+async function addZOZOTask(sheets, userId, url) {
   const taskId = Date.now().toString();
   await sheets.spreadsheets.values.append({
     spreadsheetId: SHEET_ID,
     range: `${ZOZO_SHEET}!A:H`,
     valueInputOption: 'RAW',
-    resource: { values: [[taskId, userId, url, 'pending', '', new Date().toISOString(), '', replyToken || '']] },
+    resource: { values: [[taskId, userId, url, 'awaiting_confirm', '', new Date().toISOString(), '', '']] },
   });
   return taskId;
 }
@@ -1220,6 +1220,31 @@ async function handlePostback(event, client) {
       type: 'text',
       text: `🛒 前往購物車結帳：\nhttps://liff.line.me/${LIFF_ID}`,
     });
+
+  } else if (action === 'zozo_confirm') {
+    const taskId = params.get('taskId');
+    if (!taskId) return;
+    try {
+      const sheets = getSheetsClient();
+      const res = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${ZOZO_SHEET}!A:H` });
+      const rows = res.data.values || [];
+      const rowIdx = rows.findIndex((r, i) => i > 0 && r[0] === taskId);
+      if (rowIdx < 0) {
+        await client.replyMessage(replyToken, { type: 'text', text: '查詢任務已過期，請重新傳送網址。' });
+        return;
+      }
+      // 將 postback 的 replyToken 寫入 H 欄，狀態改 pending
+      await sheets.spreadsheets.values.update({
+        spreadsheetId: SHEET_ID,
+        range: `${ZOZO_SHEET}!D${rowIdx + 1}:H${rowIdx + 1}`,
+        valueInputOption: 'RAW',
+        resource: { values: [['pending', '', '', '', replyToken]] },
+      });
+      // 不 reply，保留 replyToken 給 Extension 完成後使用
+    } catch (err) {
+      console.error('[zozo_confirm error]', err.message);
+      await client.replyMessage(replyToken, { type: 'text', text: 'ZOZO 查詢暫時無法使用，請稍後再試。' });
+    }
   }
 }
 
@@ -2088,18 +2113,46 @@ async function handleEvent(event, client) {
 
   // ── ZOZO 查詢（佇列模式：由 Chrome Extension 在背景爬蟲，完成後 push 回覆）──
   if (isZOZO) {
+    let taskId;
     try {
       const sheets = getSheetsClient();
-      await addZOZOTask(sheets, userId, userText, replyToken);
+      taskId = await addZOZOTask(sheets, userId, userText);
     } catch (err) {
       console.error('[zozo queue error]', err.message);
-      await client.replyMessage(replyToken, {
-        type: 'text',
-        text: 'ZOZO 查詢暫時無法使用，請稍後再試',
-      });
+      await client.replyMessage(replyToken, { type: 'text', text: 'ZOZO 查詢暫時無法使用，請稍後再試' });
       return;
     }
-    // 不立刻回覆，等 Extension 在 30 秒內抓完後用 replyToken 直接回覆（免費）
+    // 第一步：用 replyToken_1 回確認按鈕，URL 已存 Sheet，taskId 放進 postback data
+    await client.replyMessage(replyToken, {
+      type: 'flex',
+      altText: '收到 ZOZO 商品連結，點確認開始查詢',
+      contents: {
+        type: 'bubble',
+        size: 'kilo',
+        body: {
+          type: 'box',
+          layout: 'vertical',
+          spacing: 'md',
+          paddingAll: '16px',
+          contents: [
+            { type: 'text', text: '🛍 ZOZO 商品查詢', weight: 'bold', size: 'md', color: '#3d2c1e' },
+            { type: 'text', text: '查詢需要約 10~20 秒，確認後請稍等回覆。', size: 'sm', color: '#888888', wrap: true },
+          ],
+        },
+        footer: {
+          type: 'box',
+          layout: 'vertical',
+          paddingAll: '10px',
+          contents: [{
+            type: 'button',
+            style: 'primary',
+            color: '#FF6B9D',
+            height: 'sm',
+            action: { type: 'postback', label: '確認查詢', data: `action=zozo_confirm&taskId=${taskId}`, displayText: '確認查詢 ZOZO 商品' },
+          }],
+        },
+      },
+    });
     return;
   }
 
