@@ -4909,7 +4909,7 @@ app.post('/api/zozo-queue', express.json(), async (req, res) => {
     const sheets = getSheetsClient();
     const existing = await sheets.spreadsheets.values.get({
       spreadsheetId: SHEET_ID,
-      range: `${ZOZO_SHEET}!A:G`,
+      range: `${ZOZO_SHEET}!A:H`,
     });
     const rows = existing.data.values || [];
     const rowIdx = rows.findIndex((r, i) => i > 0 && r[0] === taskId);
