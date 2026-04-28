@@ -163,16 +163,27 @@ function parseZOZO(html, url) {
   const ogImage = (html.match(/<meta[^>]+property="og:image"[^>]+content="([^"]+)"/i) ||
                    html.match(/<meta[^>]+content="([^"]+)"[^>]+property="og:image"/i) || [])[1] || null;
 
+  // 從 <img alt="カラー名" src="...imgz.jp..."> 抓各顏色圖 URL（顏色名 → URL）
+  const swatchByName = {};
+  const swatchRegex = /<img[^>]+src="(https?:\/\/[^"]*imgz\.jp[^"]*\.jpg)"[^>]*alt="([^"]+)"|<img[^>]+alt="([^"]+)"[^>]+src="(https?:\/\/[^"]*imgz\.jp[^"]*\.jpg)"/g;
+  let sw;
+  while ((sw = swatchRegex.exec(html)) !== null) {
+    const imgUrl  = sw[1] || sw[4];
+    const altText = sw[2] || sw[3];
+    if (altText && imgUrl && !swatchByName[altText]) swatchByName[altText] = imgUrl;
+  }
+  console.log('[ZOZO] swatch 顏色數:', Object.keys(swatchByName).length, Object.entries(swatchByName).slice(0, 3).map(([k,v]) => `${k}:${v.substring(0,50)}`).join(', '));
+
   const imgSuffix = goodsCode ? goodsCode.slice(-3) : '';
   const colors = Object.values(colorsMap).map(c => {
-    // 優先用 shelf tag 裡的顏色圖、次選 CDN 組合、最後 fallback OG image
-    const cdnUrl = goodsCode ? `https://o.imgz.jp/${imgSuffix}/${goodsCode}/${goodsCode}_${c.id}_d.jpg` : null;
-    const imageUrl = c.colorImage || cdnUrl || ogImage || null;
+    const swatchUrl = swatchByName[c.name] || null;
+    const cdnUrl    = goodsCode ? `https://c.imgz.jp/${imgSuffix}/${goodsCode}/${goodsCode}b_${c.id}_d_500.jpg` : null;
+    const imageUrl  = swatchUrl || cdnUrl || ogImage || null;
     const { colorImage, ...rest } = c;
     return { ...rest, imageUrl };
   });
 
-  console.log('[ZOZO] goodsCode:', goodsCode, '| ogImage:', ogImage ? ogImage.substring(0, 60) : 'null', '| colors:', colors.length, '| firstImg:', colors[0]?.imageUrl?.substring(0, 60) || 'null');
+  console.log('[ZOZO] goodsCode:', goodsCode, '| colors:', colors.length, '| firstImg:', colors[0]?.imageUrl?.substring(0, 70) || 'null');
 
   return {
     name, brand, price, isOnSale, originalPrice: origPrice,
