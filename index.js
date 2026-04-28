@@ -3034,8 +3034,25 @@ app.post('/api/admin/settings', express.json(), async (req, res) => {
   if (!setting) return res.status(400).json({ error: 'setting required' });
   try {
     const sheets = getSheetsClient();
-    const existing = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${SETTINGS_SHEET}!A:B` });
-    const rows = existing.data.values || [];
+
+    // 若「設定」工作表不存在，自動建立並加入標題列
+    let rows = [];
+    try {
+      const existing = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${SETTINGS_SHEET}!A:B` });
+      rows = existing.data.values || [];
+    } catch (e) {
+      if (e.message && e.message.includes('Unable to parse range')) {
+        await sheets.spreadsheets.batchUpdate({
+          spreadsheetId: SHEET_ID,
+          resource: { requests: [{ addSheet: { properties: { title: SETTINGS_SHEET } } }] },
+        });
+        await sheets.spreadsheets.values.append({
+          spreadsheetId: SHEET_ID, range: `${SETTINGS_SHEET}!A:B`,
+          valueInputOption: 'RAW', resource: { values: [['key', 'value']] },
+        });
+      } else throw e;
+    }
+
     const rowIdx = rows.findIndex((r, i) => i > 0 && r[0] === setting);
     if (rowIdx >= 0) {
       await sheets.spreadsheets.values.update({
