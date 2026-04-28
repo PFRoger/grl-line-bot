@@ -499,98 +499,92 @@ async function addZOZOTask(sheets, userId, url, replyToken) {
 function buildZOZOFlexMessage(data, url) {
   const { name, brand, price, isOnSale, originalPrice, colors } = data;
 
-  // 將 ZOZO colors 轉成跟 GRL stockLines 相同的字串格式
-  const stockLines = colors.length > 0
-    ? colors.map(c => {
-        if (c.sizes.length === 0) return `${c.name}: ❌ 缺貨`;
-        const inStock  = c.sizes.filter(s => s.inStock).map(s => s.name);
-        const outStock = c.sizes.filter(s => !s.inStock).map(s => s.name);
-        const parts = [];
-        if (inStock.length)  parts.push(`✅ ${inStock.join('/')}`);
-        if (outStock.length) parts.push(`❌ ${outStock.join('/')}`);
-        return `${c.name}: ${parts.join('  ')}`;
-      })
-    : [];
+  const jpyLine = isOnSale && originalPrice
+    ? `¥${originalPrice.toLocaleString('ja-JP')} → ¥${price.toLocaleString('ja-JP')} 🔥`
+    : price ? `¥${price.toLocaleString('ja-JP')}` : '—';
 
-  const stockContents = stockLines.length > 0
-    ? stockLines.map(line => ({ type: 'text', text: line, size: 'sm', color: '#555555', wrap: true }))
-    : [{ type: 'text', text: '（無庫存資訊）', size: 'sm', color: '#aaaaaa' }];
+  const nameShort = (name || '').substring(0, 30);
 
-  // 使用第一個有圖的顏色作為 hero 圖片
-  const heroImageUrl = (colors.find(c => c.imageUrl) || {}).imageUrl || null;
+  const bubbles = colors.slice(0, 10).map(c => {
+    const sizeRows = c.sizes.length > 0
+      ? c.sizes.map(s => {
+          const label = Array.from(`${s.inStock ? '✅' : '❌'} ${s.name}${s.inStock ? '' : ' 缺貨'}`).slice(0, 20).join('');
+          return {
+            type: 'button',
+            height: 'sm',
+            style: 'primary',
+            color: s.inStock ? '#b8895a' : '#c8bbb0',
+            margin: 'xs',
+            action: { type: 'uri', label, uri: url },
+          };
+        })
+      : [{ type: 'button', height: 'sm', style: 'primary', color: '#c8bbb0', margin: 'xs',
+           action: { type: 'uri', label: '❌ 缺貨', uri: url } }];
 
-  const jpyText = price ? `¥${price.toLocaleString('ja-JP')}` : '—';
-
-  const bubble = {
-    type: 'bubble',
-    size: 'kilo',
-    header: {
-      type: 'box',
-      layout: 'vertical',
-      backgroundColor: '#FF6B9D',
-      paddingAll: '14px',
-      contents: [{ type: 'text', text: '🛍 ZOZO 商品報價', color: '#ffffff', size: 'md', weight: 'bold' }],
-    },
-    body: {
-      type: 'box',
-      layout: 'vertical',
-      spacing: 'md',
-      paddingAll: '14px',
-      contents: [
-        ...(brand ? [{ type: 'text', text: brand, size: 'xs', color: '#888888', weight: 'bold' }] : []),
-        { type: 'text', text: name || '（未知商品名）', weight: 'bold', size: 'md', wrap: true, color: '#222222' },
-        { type: 'separator' },
-        {
-          type: 'box',
-          layout: 'horizontal',
-          contents: [
-            { type: 'text', text: '💴 日幣', size: 'sm', color: '#888888', flex: 2 },
-            { type: 'text', text: isOnSale && originalPrice ? `¥${originalPrice.toLocaleString('ja-JP')}` : jpyText, size: 'sm', color: '#888888', flex: 3, align: 'end',
-              ...(isOnSale && originalPrice ? { decoration: 'line-through' } : {}) },
-          ],
-        },
-        ...(isOnSale && price ? [{
-          type: 'box',
-          layout: 'horizontal',
-          contents: [
-            { type: 'text', text: '🔥 特價', size: 'sm', color: '#888888', flex: 2 },
-            { type: 'text', text: jpyText, size: 'sm', color: '#E53935', weight: 'bold', flex: 3, align: 'end' },
-          ],
-        }] : []),
-        { type: 'separator' },
-        { type: 'text', text: '📦 庫存', size: 'sm', weight: 'bold', color: '#444444' },
-        { type: 'box', layout: 'vertical', spacing: 'xs', contents: stockContents },
-      ],
-    },
-    footer: {
-      type: 'box',
-      layout: 'vertical',
-      paddingAll: '10px',
-      contents: [{
-        type: 'button',
-        style: 'primary',
-        color: '#FF6B9D',
-        height: 'sm',
-        action: { type: 'uri', label: '查看商品頁面', uri: url },
-      }],
-    },
-  };
-
-  if (heroImageUrl) {
-    bubble.hero = {
-      type: 'image',
-      url: heroImageUrl,
-      size: 'full',
-      aspectRatio: '1:1',
-      aspectMode: 'cover',
+    const bubble = {
+      type: 'bubble',
+      size: 'mega',
+      body: {
+        type: 'box',
+        layout: 'vertical',
+        paddingAll: '12px',
+        paddingBottom: '8px',
+        spacing: 'none',
+        backgroundColor: '#f5ede0',
+        contents: [
+          ...(brand ? [{ type: 'text', text: brand, size: 'xxs', color: '#b8a090' }] : []),
+          { type: 'text', text: nameShort, size: 'xs', color: '#a08060', wrap: true, margin: 'xs' },
+          { type: 'text', text: c.name, weight: 'bold', size: 'md', color: '#3d2c1e', wrap: true, margin: 'xs' },
+          { type: 'text', text: jpyLine, size: 'xs', color: '#a08060', margin: 'xs' },
+          { type: 'separator', margin: 'md', color: '#ddd0bc' },
+          { type: 'box', layout: 'vertical', margin: 'md', spacing: 'none', contents: sizeRows },
+        ],
+      },
+      footer: {
+        type: 'box',
+        layout: 'vertical',
+        paddingAll: '8px',
+        backgroundColor: '#f5ede0',
+        contents: [{
+          type: 'button',
+          height: 'sm',
+          style: 'link',
+          color: '#a08060',
+          action: { type: 'uri', label: '回官方商品頁', uri: url },
+        }],
+      },
     };
+
+    if (c.imageUrl) {
+      bubble.hero = { type: 'image', url: c.imageUrl, size: 'full', aspectRatio: '3:4', aspectMode: 'cover' };
+    }
+
+    return bubble;
+  });
+
+  // 沒有顏色資料，fallback 單一 bubble
+  if (bubbles.length === 0) {
+    bubbles.push({
+      type: 'bubble',
+      size: 'kilo',
+      body: {
+        type: 'box', layout: 'vertical', spacing: 'md', paddingAll: '14px',
+        contents: [
+          { type: 'text', text: nameShort || '（未知商品名）', weight: 'bold', size: 'md', wrap: true },
+          { type: 'text', text: jpyLine, size: 'sm', color: '#a08060' },
+          { type: 'text', text: '（無庫存資訊）', size: 'sm', color: '#aaaaaa' },
+        ],
+      },
+      footer: {
+        type: 'box', layout: 'vertical', paddingAll: '8px',
+        contents: [{ type: 'button', height: 'sm', style: 'link', color: '#a08060',
+          action: { type: 'uri', label: '回官方商品頁', uri: url } }],
+      },
+    });
   }
 
-  return {
-    type: 'flex',
-    altText: `ZOZO 商品報價｜${name}`,
-    contents: bubble,
-  };
+  const contents = bubbles.length === 1 ? bubbles[0] : { type: 'carousel', contents: bubbles };
+  return { type: 'flex', altText: `ZOZO 商品報價｜${name}`, contents };
 }
 
 // ── 新增商品到 Google Sheet（管理員功能）─────────────────────────────────────
