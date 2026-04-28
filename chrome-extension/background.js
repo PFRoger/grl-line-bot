@@ -155,11 +155,17 @@ function parseZOZO(html, url) {
     if (item.sizeName) colorsMap[item.colorId].sizes.push({ name: item.sizeName, inStock: item.inStock });
   }
 
+  // OG image 作為 fallback（全商品都有，但不分顏色）
+  const ogImage = (html.match(/<meta[^>]+property="og:image"[^>]+content="([^"]+)"/i) ||
+                   html.match(/<meta[^>]+content="([^"]+)"[^>]+property="og:image"/i) || [])[1] || null;
+
   const imgSuffix = goodsCode ? goodsCode.slice(-3) : '';
-  const colors = Object.values(colorsMap).map(c => ({
-    ...c,
-    imageUrl: goodsCode ? `https://o.imgz.jp/${imgSuffix}/${goodsCode}/${goodsCode}_${c.id}_d.jpg` : null,
-  }));
+  const colors = Object.values(colorsMap).map(c => {
+    const cdnUrl = goodsCode ? `https://o.imgz.jp/${imgSuffix}/${goodsCode}/${goodsCode}_${c.id}_d.jpg` : null;
+    return { ...c, imageUrl: cdnUrl || ogImage };
+  });
+
+  console.log('[ZOZO] goodsCode:', goodsCode, '| ogImage:', ogImage ? ogImage.substring(0, 60) : 'null', '| colors:', colors.length, '| firstImg:', colors[0]?.imageUrl?.substring(0, 60) || 'null');
 
   return {
     name, brand, price, isOnSale, originalPrice: origPrice,
