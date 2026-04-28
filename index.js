@@ -496,6 +496,36 @@ async function addZOZOTask(sheets, userId, url) {
 }
 
 // ── 建立 ZOZO Flex Message ────────────────────────────────────────────────────
+const ZOZO_COLOR_MAP = {
+  'ブラック': '黒色', 'ホワイト': '白色', 'ネイビー': '深藍', 'ベージュ': '米色',
+  'グレー': '灰色', 'ライトグレー': '淺灰', 'ダークグレー': '深灰',
+  'ブラウン': '棕色', 'ダークブラウン': '深棕', 'モカ': '摩卡', 'モカブラウン': '摩卡棕',
+  'ピンク': '粉色', 'レッド': '紅色', 'グリーン': '綠色', 'カーキ': '卡其色',
+  'パープル': '紫色', 'ラベンダー': '薰衣草', 'イエロー': '黃色', 'オレンジ': '橘色',
+  'ブルー': '藍色', 'ライトブルー': '淺藍', 'ダークブルー': '深藍',
+  'アイボリー': '象牙色', 'オフホワイト': '米白', 'テラコッタ': '磚紅',
+  'ミント': '薄荷', 'ミントグリーン': '薄荷綠', 'オリーブ': '橄欖綠',
+  'レオパード': '豹紋', 'チェック': '格紋', 'ストライプ': '條紋', 'カモフラージュ': '迷彩',
+  'シルバー': '銀色', 'ゴールド': '金色',
+};
+const ZOZO_SIZE_ABBR = {
+  'X-SMALL': 'XS', 'XSMALL': 'XS', 'X SMALL': 'XS',
+  'SMALL': 'S',
+  'MEDIUM': 'M',
+  'LARGE': 'L',
+  'X-LARGE': 'XL', 'XLARGE': 'XL', 'X LARGE': 'XL',
+  'XX-LARGE': 'XXL', 'XXLARGE': 'XXL', 'XX LARGE': 'XXL',
+  'FREE': 'F', 'FREESIZE': 'F', 'FREE SIZE': 'F',
+};
+function zozoColorLabel(jpName) {
+  if (!jpName) return jpName;
+  const zh = ZOZO_COLOR_MAP[jpName] || Object.entries(ZOZO_COLOR_MAP).find(([jp]) => jpName.includes(jp))?.[1] || '';
+  return zh ? `${zh}（${jpName}）` : jpName;
+}
+function zozoSizeName(s) {
+  return ZOZO_SIZE_ABBR[s.trim().toUpperCase()] || s;
+}
+
 function buildZOZOFlexMessage(data, url) {
   const { name, brand, price, isOnSale, originalPrice, colors } = data;
 
@@ -506,9 +536,13 @@ function buildZOZOFlexMessage(data, url) {
   const nameShort = (name || '').substring(0, 30);
 
   const bubbles = colors.slice(0, 10).map(c => {
+    const colorLabel = zozoColorLabel(c.name);
     const sizeRows = c.sizes.length > 0
       ? c.sizes.map(s => {
-          const label = Array.from(`${s.inStock ? '✅' : '❌'} ${s.name}${s.inStock ? '' : ' 缺貨'}`).slice(0, 20).join('');
+          const sizeName = zozoSizeName(s.name);
+          const label = s.inStock
+            ? Array.from(`🛒 加入購物車｜${sizeName} 有庫存`).slice(0, 20).join('')
+            : Array.from(`❌ ${sizeName} 缺貨`).slice(0, 20).join('');
           return {
             type: 'button',
             height: 'sm',
@@ -534,7 +568,7 @@ function buildZOZOFlexMessage(data, url) {
         contents: [
           ...(brand ? [{ type: 'text', text: brand, size: 'xxs', color: '#b8a090' }] : []),
           { type: 'text', text: nameShort, size: 'xs', color: '#a08060', wrap: true, margin: 'xs' },
-          { type: 'text', text: c.name, weight: 'bold', size: 'md', color: '#3d2c1e', wrap: true, margin: 'xs' },
+          { type: 'text', text: colorLabel, weight: 'bold', size: 'md', color: '#3d2c1e', wrap: true, margin: 'xs' },
           { type: 'text', text: jpyLine, size: 'xs', color: '#a08060', margin: 'xs' },
           { type: 'separator', margin: 'md', color: '#ddd0bc' },
           { type: 'box', layout: 'vertical', margin: 'md', spacing: 'none', contents: sizeRows },
@@ -2136,7 +2170,7 @@ async function handleEvent(event, client) {
           paddingAll: '16px',
           contents: [
             { type: 'text', text: '🛍 ZOZO 商品查詢', weight: 'bold', size: 'md', color: '#3d2c1e' },
-            { type: 'text', text: '查詢需要約 10~20 秒，確認後請稍等回覆。', size: 'sm', color: '#888888', wrap: true },
+            { type: 'text', text: 'zozo解析商品會需要約10-20秒.ᐟ\n如確認執行請協助點選確認查詢按鈕.ᐟ\n並請您稍後.ᐟ\n結果馬上到.ᐟ.', size: 'sm', color: '#888888', wrap: true },
           ],
         },
         footer: {
