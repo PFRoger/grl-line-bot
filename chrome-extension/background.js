@@ -42,43 +42,61 @@ async function pollAndProcess() {
   await submitResult(task.taskId, result, null);
 }
 
-// 開啟背景 Tab → 等頁面載入完成 → 取 HTML → 關閉 Tab
+// 開啟背景 Tab → 等頁面穩定（處理 Akamai redirect）→ 取 HTML → 關閉 Tab
 function fetchViaTab(url) {
   return new Promise((resolve, reject) => {
     let tabId;
+    let settled = false;
+    let stableTimer = null;
 
-    const cleanup = (fn) => {
+    const done = (fn) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(globalTimer);
+      clearTimeout(stableTimer);
+      chrome.tabs.onUpdated.removeListener(onUpdated);
       if (tabId) chrome.tabs.remove(tabId, () => {});
       fn();
     };
 
-    const timer = setTimeout(() => cleanup(() => reject(new Error('Timeout（30秒）'))), 30000);
+    const globalTimer = setTimeout(() => done(() => reject(new Error('Timeout（25秒）'))), 25000);
+
+    const tryExtract = () => {
+      chrome.scripting.executeScript(
+        { target: { tabId }, func: () => document.documentElement.outerHTML },
+        (results) => {
+          if (settled) return;
+          if (chrome.runtime.lastError) {
+            // tab 還在跳轉，再等一下
+            stableTimer = setTimeout(tryExtract, 1500);
+            return;
+          }
+          const html = results && results[0] && results[0].result;
+          if (!html || html.length < 10000) {
+            // 太小 → Akamai challenge 頁，等 JS 執行完再試
+            console.log('[ZOZO] 小頁面', html ? html.length : 0, 'bytes，等待...');
+            stableTimer = setTimeout(tryExtract, 2000);
+            return;
+          }
+          done(() => resolve(html));
+        }
+      );
+    };
+
+    function onUpdated(id, info) {
+      if (id !== tabId) return;
+      if (info.status === 'complete') {
+        clearTimeout(stableTimer);
+        stableTimer = setTimeout(tryExtract, 1500);
+      }
+    }
 
     chrome.tabs.create({ url, active: false }, (tab) => {
       if (chrome.runtime.lastError) {
-        clearTimeout(timer);
-        return reject(new Error(chrome.runtime.lastError.message));
+        done(() => reject(new Error(chrome.runtime.lastError.message)));
+        return;
       }
       tabId = tab.id;
-
-      function onUpdated(id, info) {
-        if (id !== tabId || info.status !== 'complete') return;
-        chrome.tabs.onUpdated.removeListener(onUpdated);
-
-        chrome.scripting.executeScript(
-          { target: { tabId }, func: () => document.documentElement.outerHTML },
-          (results) => {
-            clearTimeout(timer);
-            if (chrome.runtime.lastError) {
-              cleanup(() => reject(new Error(chrome.runtime.lastError.message)));
-              return;
-            }
-            const html = results && results[0] && results[0].result;
-            cleanup(() => html ? resolve(html) : reject(new Error('空白頁面')));
-          }
-        );
-      }
-
       chrome.tabs.onUpdated.addListener(onUpdated);
     });
   });
@@ -103,6 +121,7 @@ async function submitResult(taskId, result, error) {
 }
 
 function parseZOZO(html, url) {
+  console.log('[ZOZO] HTML大小:', html.length, '| goods-id:', html.includes('data-goods-id'), '| item-price:', html.includes('data-item-price'), '| goodsCode:', (html.match(/data-goods-code="([^"]+)"/)||[])[1]||'null', '| title:', (html.match(/<title[^>]*>([^<]{0,80})/i)||[])[1]||'');
   if (!html.includes('data-goods-id') && !html.includes('data-item-price')) return null;
 
   const titleRaw = (html.match(/<title[^>]*>([^<]+)<\/title>/i) || [])[1] || '';
@@ -113,8 +132,8 @@ function parseZOZO(html, url) {
   const price     = parseInt((html.match(/data-item-price="(\d+)"/)    || [])[1]) || null;
   const isOnSale  = /data-has-double-price="true"/.test(html);
   const origPrice = isOnSale ? parseInt((html.match(/data-proper-price="(\d+)"/) || [])[1]) || null : null;
-  const goodsId   = (html.match(/data-goods-id="(\d+)"/)   || [])[1] || null;
-  const goodsCode = (html.match(/data-goods-code="(\d+)"/) || [])[1] || null;
+  const goodsId   = (html.match(/data-goods-id="(\d+)"/)     || [])[1] || null;
+  const goodsCode = (html.match(/data-goods-code="([^"]+)"/) || [])[1] || null;
 
   const shelfItems = [];
   const tagRegex = /<[^>]+data-shelf-color-id="[^"]*"[^>]*>/g;
