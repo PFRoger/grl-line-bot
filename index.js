@@ -2170,7 +2170,7 @@ async function handleEvent(event, client) {
           paddingAll: '16px',
           contents: [
             { type: 'text', text: '🛍 ZOZO 商品查詢', weight: 'bold', size: 'md', color: '#3d2c1e' },
-            { type: 'text', text: 'zozo解析商品會需要約10-20秒.ᐟ\n如確認執行請協助點選確認查詢按鈕.ᐟ\n並請您稍後.ᐟ\n結果馬上到.ᐟ.', size: 'sm', color: '#888888', wrap: true },
+            { type: 'text', text: 'zozo解析商品會需要約10-20秒.ᐟ\n如確認執行請協助點選確認查詢按鈕.ᐟ\n並請您稍後.ᐟ\n結果馬上到.ᐟ', size: 'sm', color: '#888888', wrap: true },
           ],
         },
         footer: {
