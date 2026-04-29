@@ -1342,7 +1342,7 @@ async function handlePostback(event, client) {
               type: 'box', layout: 'vertical', paddingAll: '0px', backgroundColor: '#ffffff',
               contents: [
                 {
-                  type: 'box', layout: 'vertical', paddingTop: '28px', paddingBottom: '28px',
+                  type: 'box', layout: 'vertical', paddingTop: '52px', paddingBottom: '52px',
                   paddingStart: '20px', paddingEnd: '20px', backgroundColor: '#ede0f5',
                   contents: [
                     { type: 'text', text: 'GRL', color: '#222222', size: '4xl', weight: 'bold', align: 'center' },
