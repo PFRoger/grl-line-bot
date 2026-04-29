@@ -581,12 +581,8 @@ function buildZOZOFlexMessage(data, url, rate = null) {
       : [{ type: 'button', height: 'sm', style: 'primary', color: '#c8bbb0', margin: 'xs',
            action: { type: 'uri', label: '❌ 缺貨', uri: url } }];
 
-    const priceContents = ntdLine
-      ? [
-          { type: 'text', text: jpyLine, size: 'xs', color: '#a08060', margin: 'xs' },
-          { type: 'text', text: `💵 報價 ${ntdLine}`, size: 'xs', color: '#E53935', margin: 'xs', weight: 'bold' },
-        ]
-      : [{ type: 'text', text: jpyLine, size: 'xs', color: '#a08060', margin: 'xs' }];
+    const priceTxt = ntdLine ? `${jpyLine}  報價金額 ${ntdLine}` : jpyLine;
+    const priceContents = [{ type: 'text', text: priceTxt, size: 'xs', color: '#a08060', margin: 'xs', wrap: true }];
 
     const bubble = {
       type: 'bubble',
