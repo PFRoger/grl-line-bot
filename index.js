@@ -1358,7 +1358,7 @@ async function handlePostback(event, client) {
               contents: [
                 {
                   type: 'box', layout: 'vertical', paddingAll: '14px', backgroundColor: '#c9a98a',
-                  contents: [{ type: 'text', text: '如何報價', color: '#fff', weight: 'bold', size: 'md', align: 'center' }],
+                  contents: [{ type: 'text', text: '如何報價', color: '#ffffff', weight: 'bold', size: 'md', align: 'center' }],
                 },
                 {
                   type: 'box', layout: 'vertical', paddingAll: '16px', spacing: 'md',
@@ -1366,17 +1366,17 @@ async function handlePostback(event, client) {
                     { type: 'box', layout: 'horizontal', spacing: 'md',
                       contents: [
                         { type: 'text', text: '①', size: 'sm', color: '#c9a98a', flex: 0 },
-                        { type: 'text', text: '點選右方網站，找到喜歡的商品', size: 'sm', color: '#555', wrap: true, flex: 1 },
+                        { type: 'text', text: '點選右方網站，找到喜歡的商品', size: 'sm', color: '#555555', wrap: true, flex: 1 },
                       ] },
                     { type: 'box', layout: 'horizontal', spacing: 'md',
                       contents: [
                         { type: 'text', text: '②', size: 'sm', color: '#c9a98a', flex: 0 },
-                        { type: 'text', text: '複製商品網址（或 GRL 貨號）', size: 'sm', color: '#555', wrap: true, flex: 1 },
+                        { type: 'text', text: '複製商品網址（或 GRL 貨號）', size: 'sm', color: '#555555', wrap: true, flex: 1 },
                       ] },
                     { type: 'box', layout: 'horizontal', spacing: 'md',
                       contents: [
                         { type: 'text', text: '③', size: 'sm', color: '#c9a98a', flex: 0 },
-                        { type: 'text', text: '貼到此對話，即可獲得台幣報價 🎉', size: 'sm', color: '#555', wrap: true, flex: 1 },
+                        { type: 'text', text: '貼到此對話，即可獲得台幣報價 🎉', size: 'sm', color: '#555555', wrap: true, flex: 1 },
                       ] },
                   ],
                 },
