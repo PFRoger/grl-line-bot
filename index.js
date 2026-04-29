@@ -1332,7 +1332,7 @@ async function handlePostback(event, client) {
               size: 'full', aspectRatio: '3:4', aspectMode: 'cover',
             },
             body: {
-              type: 'box', layout: 'vertical', paddingAll: '0px', backgroundColor: '#F4E3D7',
+              type: 'box', layout: 'vertical', paddingAll: '0px', backgroundColor: '#EFD2BF',
               contents: [{ type: 'filler' }],
             },
           },
