@@ -1345,6 +1345,7 @@ async function handlePostback(event, client) {
                   paddingStart: '20px', paddingEnd: '20px', backgroundColor: '#ede0f5',
                   contents: [
                     { type: 'text', text: 'GRL', color: '#222222', size: '4xl', weight: 'bold', align: 'center' },
+                    { type: 'text', text: 'GRL', color: '#ede0f5', size: '4xl', weight: 'bold', align: 'center' },
                   ],
                 },
                 {
