@@ -1326,12 +1326,10 @@ async function handlePostback(event, client) {
           // ── 說明卡 ──
           {
             type: 'bubble', size: 'kilo',
-            body: {
-              type: 'box', layout: 'vertical', paddingAll: '0px', backgroundColor: '#ffffff',
-              contents: [
-                { type: 'image', url: 'https://raw.githubusercontent.com/PFRoger/grl-line-bot/main/assets/how-to-quote-v3.jpg',
-                  size: 'full', aspectRatio: '3:4', aspectMode: 'fit' },
-              ],
+            hero: {
+              type: 'image',
+              url: 'https://raw.githubusercontent.com/PFRoger/grl-line-bot/main/assets/how-to-quote-v3.jpg',
+              size: 'full', aspectRatio: '3:4', aspectMode: 'fit',
             },
           },
           // ── GRL 卡 ──
