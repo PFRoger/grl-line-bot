@@ -1330,7 +1330,7 @@ async function handlePostback(event, client) {
               type: 'box', layout: 'vertical', paddingAll: '0px', backgroundColor: '#ffffff',
               contents: [
                 { type: 'image', url: 'https://raw.githubusercontent.com/PFRoger/grl-line-bot/main/assets/how-to-quote.jpg',
-                  size: 'full', aspectRatio: '3:4', aspectMode: 'cover' },
+                  size: 'full', aspectRatio: '3:4', aspectMode: 'fit' },
               ],
             },
           },
