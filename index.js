@@ -1327,32 +1327,11 @@ async function handlePostback(event, client) {
           {
             type: 'bubble', size: 'kilo',
             body: {
-              type: 'box', layout: 'vertical', paddingAll: '0px', backgroundColor: '#fdf6ee',
+              type: 'box', layout: 'vertical', paddingAll: '20px', backgroundColor: '#ffffff', spacing: 'lg',
               contents: [
-                {
-                  type: 'box', layout: 'vertical', paddingAll: '14px', backgroundColor: '#c9a98a',
-                  contents: [{ type: 'text', text: '如何報價', color: '#ffffff', weight: 'bold', size: 'md', align: 'center' }],
-                },
-                {
-                  type: 'box', layout: 'vertical', paddingAll: '16px', spacing: 'md',
-                  contents: [
-                    { type: 'box', layout: 'horizontal', spacing: 'md',
-                      contents: [
-                        { type: 'text', text: '①', size: 'sm', color: '#c9a98a', flex: 0 },
-                        { type: 'text', text: '點選右方網站，找到喜歡的商品', size: 'sm', color: '#555555', wrap: true, flex: 1 },
-                      ] },
-                    { type: 'box', layout: 'horizontal', spacing: 'md',
-                      contents: [
-                        { type: 'text', text: '②', size: 'sm', color: '#c9a98a', flex: 0 },
-                        { type: 'text', text: '複製商品網址（或 GRL 貨號）', size: 'sm', color: '#555555', wrap: true, flex: 1 },
-                      ] },
-                    { type: 'box', layout: 'horizontal', spacing: 'md',
-                      contents: [
-                        { type: 'text', text: '③', size: 'sm', color: '#c9a98a', flex: 0 },
-                        { type: 'text', text: '貼到此對話，即可獲得台幣報價 🎉', size: 'sm', color: '#555555', wrap: true, flex: 1 },
-                      ] },
-                  ],
-                },
+                { type: 'text', text: '1  點選右方網站\n     找到喜歡的商品', size: 'md', color: '#333333', wrap: true },
+                { type: 'text', text: '2  複製商品網址\n     （或 GRL 貨號）', size: 'md', color: '#333333', wrap: true },
+                { type: 'text', text: '3  貼到此對話\n     即可獲得台幣報價 🎉', size: 'md', color: '#333333', wrap: true },
               ],
             },
           },
@@ -1360,28 +1339,27 @@ async function handlePostback(event, client) {
           {
             type: 'bubble', size: 'kilo',
             body: {
-              type: 'box', layout: 'vertical', paddingAll: '0px', backgroundColor: '#fff0f5',
+              type: 'box', layout: 'vertical', paddingAll: '0px', backgroundColor: '#ffffff',
               contents: [
                 {
-                  type: 'box', layout: 'vertical', paddingTop: '20px', paddingBottom: '20px',
-                  paddingStart: '20px', paddingEnd: '20px', backgroundColor: '#ffffff',
+                  type: 'box', layout: 'vertical', paddingTop: '28px', paddingBottom: '28px',
+                  paddingStart: '20px', paddingEnd: '20px', backgroundColor: '#ede0f5',
                   contents: [
-                    { type: 'image', url: 'https://cdn.grail.bz/images/template/logo_pc.png',
-                      size: 'lg', align: 'center' },
+                    { type: 'text', text: 'GRL', color: '#222222', size: '4xl', weight: 'bold', align: 'center' },
                   ],
                 },
                 {
                   type: 'box', layout: 'vertical', paddingAll: '14px',
                   contents: [
                     { type: 'text', text: '日本超人氣平價女裝\n每週上新・平價高質感\n傳入網址或貨號即可報價',
-                      size: 'xs', color: '#c06080', wrap: true, align: 'center' },
+                      size: 'xs', color: '#666666', wrap: true, align: 'center' },
                   ],
                 },
               ],
             },
             footer: {
-              type: 'box', layout: 'vertical', paddingAll: '10px', backgroundColor: '#fff0f5',
-              contents: [{ type: 'button', style: 'primary', color: '#FF6B9D', height: 'sm',
+              type: 'box', layout: 'vertical', paddingAll: '10px', backgroundColor: '#ffffff',
+              contents: [{ type: 'button', style: 'primary', color: '#c9a98a', height: 'sm',
                 action: { type: 'uri', label: '前往 GRL 網站逛逛', uri: 'https://www.grail.bz' } }],
             },
           },
@@ -1389,28 +1367,28 @@ async function handlePostback(event, client) {
           {
             type: 'bubble', size: 'kilo',
             body: {
-              type: 'box', layout: 'vertical', paddingAll: '0px', backgroundColor: '#1a1a2e',
+              type: 'box', layout: 'vertical', paddingAll: '0px', backgroundColor: '#ffffff',
               contents: [
                 {
-                  type: 'box', layout: 'vertical', paddingTop: '24px', paddingBottom: '24px',
+                  type: 'box', layout: 'vertical', paddingTop: '28px', paddingBottom: '28px',
                   paddingStart: '20px', paddingEnd: '20px', backgroundColor: '#111111',
                   contents: [
                     { type: 'text', text: 'ZOZO', color: '#ffffff', size: '4xl', weight: 'bold', align: 'center' },
-                    { type: 'text', text: 'TOWN', color: '#888888', size: 'lg', weight: 'bold', align: 'center' },
+                    { type: 'text', text: 'TOWN', color: '#ffffff', size: '4xl', weight: 'bold', align: 'center' },
                   ],
                 },
                 {
                   type: 'box', layout: 'vertical', paddingAll: '14px',
                   contents: [
                     { type: 'text', text: '日本最大時尚購物平台\n集結數百品牌・款式多元\n傳入商品網址即可報價',
-                      size: 'xs', color: '#9999cc', wrap: true, align: 'center' },
+                      size: 'xs', color: '#666666', wrap: true, align: 'center' },
                   ],
                 },
               ],
             },
             footer: {
-              type: 'box', layout: 'vertical', paddingAll: '10px', backgroundColor: '#1a1a2e',
-              contents: [{ type: 'button', style: 'primary', color: '#3333aa', height: 'sm',
+              type: 'box', layout: 'vertical', paddingAll: '10px', backgroundColor: '#ffffff',
+              contents: [{ type: 'button', style: 'primary', color: '#c9a98a', height: 'sm',
                 action: { type: 'uri', label: '前往 ZOZO 網站逛逛', uri: 'https://zozo.jp' } }],
             },
           },
