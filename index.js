@@ -72,6 +72,15 @@ function calcSuggestedPrice(rate, jpy, lbs = 1) {
   return base;
 }
 
+function calcZOZOSuggestedPrice(rate, jpy, lbs = 1) {
+  const cost = rate * (jpy + 330) * 1.075 + (150 * Math.ceil(lbs) + 20 + 10);
+  const base = Math.round(cost + PROFIT);
+  const last = base % 10;
+  if (last <= 4) return base - last + 5;
+  if (last >= 6) return base - last + 9;
+  return base;
+}
+
 // ── 格式化日幣（加千位符） ────────────────────────────────────────────────────
 function fmtJPY(n) {
   return n.toLocaleString('ja-JP');
@@ -538,12 +547,17 @@ function zozoSizeName(s) {
   return ZOZO_SIZE_ABBR[s.trim().toUpperCase()] || s;
 }
 
-function buildZOZOFlexMessage(data, url) {
+function buildZOZOFlexMessage(data, url, rate = null) {
   const { name, brand, price, isOnSale, originalPrice, colors } = data;
 
   const jpyLine = isOnSale && originalPrice
     ? `¥${originalPrice.toLocaleString('ja-JP')} → ¥${price.toLocaleString('ja-JP')} 🔥`
     : price ? `¥${price.toLocaleString('ja-JP')}` : '—';
+
+  const weightInfo = estimateWeight(name || '');
+  const lbs = weightInfo ? weightInfo.midLbs : 1;
+  const suggested = (rate && price) ? calcZOZOSuggestedPrice(rate, price, lbs) : null;
+  const ntdLine = suggested ? `NT$${suggested}` : null;
 
   const nameShort = (name || '').substring(0, 30);
 
@@ -567,6 +581,13 @@ function buildZOZOFlexMessage(data, url) {
       : [{ type: 'button', height: 'sm', style: 'primary', color: '#c8bbb0', margin: 'xs',
            action: { type: 'uri', label: '❌ 缺貨', uri: url } }];
 
+    const priceContents = ntdLine
+      ? [
+          { type: 'text', text: jpyLine, size: 'xs', color: '#a08060', margin: 'xs' },
+          { type: 'text', text: `💵 報價 ${ntdLine}`, size: 'xs', color: '#E53935', margin: 'xs', weight: 'bold' },
+        ]
+      : [{ type: 'text', text: jpyLine, size: 'xs', color: '#a08060', margin: 'xs' }];
+
     const bubble = {
       type: 'bubble',
       size: 'mega',
@@ -581,7 +602,7 @@ function buildZOZOFlexMessage(data, url) {
           ...(brand ? [{ type: 'text', text: brand, size: 'xxs', color: '#b8a090' }] : []),
           { type: 'text', text: nameShort, size: 'xs', color: '#a08060', wrap: true, margin: 'xs' },
           { type: 'text', text: colorLabel, weight: 'bold', size: 'md', color: '#3d2c1e', wrap: true, margin: 'xs' },
-          { type: 'text', text: jpyLine, size: 'xs', color: '#a08060', margin: 'xs' },
+          ...priceContents,
           { type: 'separator', margin: 'md', color: '#ddd0bc' },
           { type: 'box', layout: 'vertical', margin: 'md', spacing: 'none', contents: sizeRows },
         ],
@@ -5109,12 +5130,27 @@ app.post('/api/zozo-queue', express.json(), async (req, res) => {
       resource: { values: [[error ? 'error' : 'done', JSON.stringify(result || { error }), '', now]] },
     });
 
+    // 記錄查詢到「查詢紀錄」分頁
+    if (result && !error) {
+      const weightInfo = estimateWeight(result.name || '');
+      const lbs = weightInfo ? weightInfo.midLbs : 1;
+      let rateForLog = null;
+      try { rateForLog = await fetchRate(); } catch (_) {}
+      const suggestedForLog = (rateForLog && result.price) ? calcZOZOSuggestedPrice(rateForLog, result.price, lbs) : 0;
+      const imageForLog = result.colors && result.colors[0] ? (result.colors[0].imageUrl || '') : '';
+      logQueryToSheet(userId, '', result.goodsId || url, result.name || '', result.price || 0, weightInfo, imageForLog, suggestedForLog, url).catch(e => console.warn('[zozo-queue] logQueryToSheet 失敗:', e.message));
+    }
+
     // 發 LINE 訊息：優先用 replyMessage（免費），過期則 fallback pushMessage
     const lineClient = new line.Client({ channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN });
     let sendError = null;
     try {
+      let rate = null;
+      if (result && !error) {
+        try { rate = await fetchRate(); } catch (e) { console.warn('[zozo-queue] fetchRate 失敗:', e.message); }
+      }
       const msg = (result && !error)
-        ? buildZOZOFlexMessage(result, url)
+        ? buildZOZOFlexMessage(result, url, rate)
         : { type: 'text', text: 'ZOZO 商品查詢失敗，請重新傳送網址，或聯絡我們人工報價' };
 
       if (replyToken) {
