@@ -4564,7 +4564,7 @@ app.get('/api/member/orders', async (req, res) => {
     const sheets = getSheetsClient();
     const resp = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${ORDER_SHEET}!A:P` });
     const rows = resp.data.values || [];
-    const DONE = ['已完成', '已取消'];
+    const DONE = ['已完成', '已取消', '退單'];
     const orders = rows.slice(1)
       .filter(r => r[2] === userId && !DONE.includes(r[10] || ''))
       .map(r => ({
