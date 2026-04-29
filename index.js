@@ -905,7 +905,10 @@ async function submitOrder(userId, displayName, cartItems, buyerInfo, discountIn
   }
   const totalQty = cartItems.length;
   const itemsSummary = Object.values(itemMap)
-    .map(i => `${i.isPreorder ? '【預購】' : ''}${(i.productId||'').toUpperCase()} ${translateColorWithJp(i.color)} ${i.size} NT$${i.suggestedPrice}${i.qty > 1 ? ` ×${i.qty}` : ''}`)
+    .map(i => {
+      const srcTag = (i.productUrl || '').includes('zozo.jp') ? '【ZOZO】' : '【GRL】';
+      return `${i.isPreorder ? '【預購】' : ''}${srcTag}${(i.productId||'').toUpperCase()} ${translateColorWithJp(i.color)} ${i.size} NT$${i.suggestedPrice}${i.qty > 1 ? ` ×${i.qty}` : ''}`;
+    })
     .join('\n') + `\n共 ${totalQty} 件`;
   const totalTwd = cartItems.reduce((sum, i) => sum + (i.suggestedPrice || 0), 0);
   const { pointsUsed = 0, couponCode = '', couponAmount = 0 } = discountInfo;
@@ -2621,8 +2624,10 @@ app.post('/api/order', express.json(), async (req, res) => {
       _iMap[k].qty++;
     }
     const _iList = Object.values(_iMap);
-    const itemsText = _iList.map(i => `${i.isPreorder ? '【預購】' : '・'}${(i.productId||'').toUpperCase()} ${translateColorWithJp(i.color)} ${i.size} NT$${i.suggestedPrice}${i.qty > 1 ? ` ×${i.qty}` : ''}`).join('\n')
-      + `\n共 ${cartItems.length} 件`;
+    const itemsText = _iList.map(i => {
+      const srcTag = (i.productUrl || '').includes('zozo.jp') ? '[ZOZO]' : '[GRL]';
+      return `${i.isPreorder ? '【預購】' : '・'}${srcTag} ${(i.productId||'').toUpperCase()} ${translateColorWithJp(i.color)} ${i.size} NT$${i.suggestedPrice}${i.qty > 1 ? ` ×${i.qty}` : ''}`;
+    }).join('\n') + `\n共 ${cartItems.length} 件`;
 
     // 折扣文字（賣家用）
     let adminDiscText = '';
@@ -3704,8 +3709,20 @@ function createCard(o) {
   }).join('');
 
   var itemsHtml = (o.items||'').split('\\n').map(function(l){
-    if (l.indexOf('【預購】')===0) return '<div><span style="background:#fff3e0;color:#e65100;font-size:10px;font-weight:700;border-radius:3px;padding:1px 5px;margin-right:4px;border:1px solid #ffcc80">預購</span>' + esc(l.replace('【預購】','')) + '</div>';
-    return '<div>' + esc(l) + '</div>';
+    var badges = '';
+    var text = l;
+    if (text.indexOf('【預購】') >= 0) {
+      badges += '<span style="background:#fff3e0;color:#e65100;font-size:10px;font-weight:700;border-radius:3px;padding:1px 5px;margin-right:4px;border:1px solid #ffcc80">預購</span>';
+      text = text.replace('【預購】', '');
+    }
+    if (text.indexOf('【ZOZO】') >= 0) {
+      badges += '<span style="background:#1a1a2e;color:#fff;font-size:10px;font-weight:700;border-radius:3px;padding:1px 5px;margin-right:4px">ZOZO</span>';
+      text = text.replace('【ZOZO】', '');
+    } else if (text.indexOf('【GRL】') >= 0) {
+      badges += '<span style="background:#ff6b9d;color:#fff;font-size:10px;font-weight:700;border-radius:3px;padding:1px 5px;margin-right:4px">GRL</span>';
+      text = text.replace('【GRL】', '');
+    }
+    return '<div>' + badges + esc(text) + '</div>';
   }).join('');
 
   var priceHtml = '<div class="price-row"><span class="price-final">NT$' + (o.discountTotal > 0 ? o.finalAmount : o.total) + '</span>';
