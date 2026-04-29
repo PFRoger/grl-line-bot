@@ -548,7 +548,7 @@ function zozoSizeName(s) {
 }
 
 function buildZOZOFlexMessage(data, url, rate = null) {
-  const { name, brand, price, isOnSale, originalPrice, colors } = data;
+  const { name, brand, price, isOnSale, originalPrice, colors, goodsId } = data;
 
   const jpyLine = isOnSale && originalPrice
     ? `¥${originalPrice.toLocaleString('ja-JP')} → ¥${price.toLocaleString('ja-JP')} 🔥`
@@ -569,13 +569,20 @@ function buildZOZOFlexMessage(data, url, rate = null) {
           const label = s.inStock
             ? Array.from(`🛒 加入購物車｜${sizeName} 有庫存`).slice(0, 20).join('')
             : Array.from(`❌ ${sizeName} 缺貨`).slice(0, 20).join('');
+          let action;
+          if (s.inStock && goodsId) {
+            const pbData = `action=add_to_cart_zozo&gid=${goodsId}&cid=${encodeURIComponent(c.id)}&cn=${encodeURIComponent(c.name)}&sz=${encodeURIComponent(sizeName)}&jpy=${price || 0}&p=${suggested || 0}&img=${encodeURIComponent(c.imageUrl || '')}`;
+            action = { type: 'postback', label, data: pbData };
+          } else {
+            action = { type: 'uri', label, uri: url };
+          }
           return {
             type: 'button',
             height: 'sm',
             style: 'primary',
             color: s.inStock ? '#b8895a' : '#c8bbb0',
             margin: 'xs',
-            action: { type: 'uri', label, uri: url },
+            action,
           };
         })
       : [{ type: 'button', height: 'sm', style: 'primary', color: '#c8bbb0', margin: 'xs',
@@ -1276,6 +1283,34 @@ async function handlePostback(event, client) {
     await client.replyMessage(replyToken, {
       type: 'text',
       text: `✅ 已加入購物車\n商品：${isPreorder ? '【預購】' : ''}${productName || productId}\n貨號：${productId.toUpperCase()}\n\n顏色：${colorDisplay}\n尺寸：${size}\n\n售價：NT$${suggested}\n\n請按下方主選單「購物車」查看內容\n════════════\n購物車每 48 小時自動清空`,
+    });
+
+  } else if (action === 'add_to_cart_zozo') {
+    const goodsId    = params.get('gid') || '';
+    const colorId    = params.get('cid') || '';
+    const colorJp    = params.get('cn') || '';
+    const size       = params.get('sz') || '';
+    const jpy        = parseInt(params.get('jpy')) || 0;
+    const suggested  = parseInt(params.get('p')) || 0;
+    const imgUrl     = params.get('img') || '';
+    const productUrl = `https://zozo.jp/goods/${goodsId}/`;
+
+    let productName = goodsId;
+    try {
+      const sheets = getSheetsClient();
+      const resp = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: '查詢紀錄!A:E' });
+      const rows = (resp.data.values || []).reverse();
+      const found = rows.find(r => r[3] === goodsId);
+      if (found) productName = found[4] || goodsId;
+    } catch (e) { console.warn('[zozo cart lookup name]', e.message); }
+
+    let lineDisplayName = '';
+    try { const p = await client.getProfile(userId); lineDisplayName = p.displayName || ''; } catch(e) {}
+    await addToCartSheet(userId, lineDisplayName, goodsId, productName, colorJp, size, jpy, suggested, productUrl, imgUrl, false);
+    const colorDisplay = zozoColorLabel(colorJp);
+    await client.replyMessage(replyToken, {
+      type: 'text',
+      text: `✅ 已加入購物車\n商品：${productName}\n\n顏色：${colorDisplay}\n尺寸：${size}\n\n售價：NT$${suggested}\n\n請按下方主選單「購物車」查看內容\n════════════\n購物車每 48 小時自動清空`,
     });
 
   } else if (action === 'view_cart') {
