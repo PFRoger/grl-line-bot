@@ -1331,6 +1331,10 @@ async function handlePostback(event, client) {
               url: 'https://raw.githubusercontent.com/PFRoger/grl-line-bot/main/assets/how-to-quote-v3.jpg',
               size: 'full', aspectRatio: '3:4', aspectMode: 'cover',
             },
+            body: {
+              type: 'box', layout: 'vertical', paddingAll: '0px', backgroundColor: '#F4E3D7',
+              contents: [{ type: 'filler' }],
+            },
           },
           // ── GRL 卡 ──
           {
