@@ -1317,6 +1317,33 @@ async function handlePostback(event, client) {
     });
 
   } else if (action === 'start_shopping') {
+    const mkBubble = (bgHeader, headerText, bodyBg, titleText, titleColor, descText, descColor, btnColor, btnLabel, btnUri) => ({
+      type: 'bubble', size: 'kilo',
+      body: {
+        type: 'box', layout: 'vertical', paddingAll: '0px', backgroundColor: bodyBg,
+        contents: [
+          {
+            type: 'box', layout: 'vertical', paddingTop: '20px', paddingBottom: '20px',
+            paddingStart: '14px', paddingEnd: '14px', backgroundColor: bgHeader,
+            contents: [
+              { type: 'text', text: titleText, color: titleColor, size: '4xl', weight: 'bold', align: 'center' },
+            ],
+          },
+          {
+            type: 'box', layout: 'vertical', paddingAll: '14px', spacing: 'xs',
+            contents: [
+              { type: 'text', text: descText, size: 'xs', color: descColor, wrap: true, align: 'center' },
+            ],
+          },
+        ],
+      },
+      footer: {
+        type: 'box', layout: 'vertical', paddingAll: '10px', backgroundColor: bodyBg,
+        contents: [{ type: 'button', style: 'primary', color: btnColor, height: 'sm',
+          action: { type: 'uri', label: btnLabel, uri: btnUri } }],
+      },
+    });
+
     await client.replyMessage(replyToken, {
       type: 'flex',
       altText: '選擇購物平台：GRL 或 ZOZO',
@@ -1327,90 +1354,43 @@ async function handlePostback(event, client) {
           {
             type: 'bubble', size: 'kilo',
             body: {
-              type: 'box', layout: 'vertical', backgroundColor: '#fdf6ee', paddingAll: '0px',
+              type: 'box', layout: 'vertical', paddingAll: '0px', backgroundColor: '#fdf6ee',
               contents: [
                 {
-                  type: 'box', layout: 'vertical', backgroundColor: '#c9a98a', paddingAll: '12px',
-                  contents: [{ type: 'text', text: '🛍 開始購物', color: '#fff', weight: 'bold', size: 'md', align: 'center' }],
+                  type: 'box', layout: 'vertical', paddingAll: '14px', backgroundColor: '#c9a98a',
+                  contents: [{ type: 'text', text: '如何報價', color: '#fff', weight: 'bold', size: 'md', align: 'center' }],
                 },
                 {
                   type: 'box', layout: 'vertical', paddingAll: '16px', spacing: 'md',
                   contents: [
-                    { type: 'text', text: '如何報價', weight: 'bold', size: 'sm', color: '#7a5c3e' },
-                    {
-                      type: 'box', layout: 'horizontal', spacing: 'sm', alignItems: 'flex-start',
+                    { type: 'box', layout: 'horizontal', spacing: 'md',
                       contents: [
                         { type: 'text', text: '①', size: 'sm', color: '#c9a98a', flex: 0 },
-                        { type: 'text', text: '點選右方網站逛逛\n找到喜歡的商品', size: 'sm', color: '#555', wrap: true, flex: 1 },
-                      ],
-                    },
-                    {
-                      type: 'box', layout: 'horizontal', spacing: 'sm', alignItems: 'flex-start',
+                        { type: 'text', text: '點選右方網站，找到喜歡的商品', size: 'sm', color: '#555', wrap: true, flex: 1 },
+                      ] },
+                    { type: 'box', layout: 'horizontal', spacing: 'md',
                       contents: [
                         { type: 'text', text: '②', size: 'sm', color: '#c9a98a', flex: 0 },
-                        { type: 'text', text: '複製商品網址\n（或 GRL 貨號）', size: 'sm', color: '#555', wrap: true, flex: 1 },
-                      ],
-                    },
-                    {
-                      type: 'box', layout: 'horizontal', spacing: 'sm', alignItems: 'flex-start',
+                        { type: 'text', text: '複製商品網址（或 GRL 貨號）', size: 'sm', color: '#555', wrap: true, flex: 1 },
+                      ] },
+                    { type: 'box', layout: 'horizontal', spacing: 'md',
                       contents: [
                         { type: 'text', text: '③', size: 'sm', color: '#c9a98a', flex: 0 },
-                        { type: 'text', text: '貼到這個對話框\n即可獲得台幣報價 🎉', size: 'sm', color: '#555', wrap: true, flex: 1 },
-                      ],
-                    },
+                        { type: 'text', text: '貼到此對話，即可獲得台幣報價 🎉', size: 'sm', color: '#555', wrap: true, flex: 1 },
+                      ] },
                   ],
                 },
               ],
             },
           },
           // ── GRL 卡 ──
-          {
-            type: 'bubble', size: 'kilo',
-            hero: {
-              type: 'box', layout: 'vertical', height: '130px',
-              backgroundColor: '#FF6B9D', justifyContent: 'center', alignItems: 'center',
-              contents: [
-                { type: 'text', text: 'GRL', color: '#ffffff', size: '5xl', weight: 'bold', align: 'center' },
-                { type: 'text', text: 'グレイル', color: '#ffe0ee', size: 'sm', align: 'center', margin: 'xs' },
-              ],
-            },
-            body: {
-              type: 'box', layout: 'vertical', backgroundColor: '#fff0f5', paddingAll: '14px', spacing: 'xs',
-              contents: [
-                { type: 'text', text: '日本超人氣平價女裝', size: 'sm', color: '#c06080', weight: 'bold', align: 'center' },
-                { type: 'text', text: '每週上新・平價高質感\n傳入網址或貨號即可報價', size: 'xs', color: '#cc6688', wrap: true, align: 'center', margin: 'sm' },
-              ],
-            },
-            footer: {
-              type: 'box', layout: 'vertical', backgroundColor: '#fff0f5', paddingAll: '10px',
-              contents: [{ type: 'button', style: 'primary', color: '#FF6B9D', height: 'sm',
-                action: { type: 'uri', label: '前往 GRL 網站逛逛', uri: 'https://www.grail.bz' } }],
-            },
-          },
+          mkBubble('#FF6B9D', 'GRL', '#fff0f5', 'GRL', '#ffffff',
+            '日本超人氣平價女裝\n每週上新・平價高質感\n傳入網址或貨號即可報價', '#c06080',
+            '#FF6B9D', '前往 GRL 網站逛逛', 'https://www.grail.bz'),
           // ── ZOZO 卡 ──
-          {
-            type: 'bubble', size: 'kilo',
-            hero: {
-              type: 'box', layout: 'vertical', height: '130px',
-              backgroundColor: '#111111', justifyContent: 'center', alignItems: 'center',
-              contents: [
-                { type: 'text', text: 'ZOZO', color: '#ffffff', size: '4xl', weight: 'bold', align: 'center' },
-                { type: 'text', text: 'TOWN', color: '#aaaaaa', size: 'lg', weight: 'bold', align: 'center', margin: 'xs' },
-              ],
-            },
-            body: {
-              type: 'box', layout: 'vertical', backgroundColor: '#1a1a2e', paddingAll: '14px', spacing: 'xs',
-              contents: [
-                { type: 'text', text: '日本最大時尚購物平台', size: 'sm', color: '#aaaaee', weight: 'bold', align: 'center' },
-                { type: 'text', text: '集結數百品牌・款式多元\n傳入商品網址即可報價', size: 'xs', color: '#9999cc', wrap: true, align: 'center', margin: 'sm' },
-              ],
-            },
-            footer: {
-              type: 'box', layout: 'vertical', backgroundColor: '#1a1a2e', paddingAll: '10px',
-              contents: [{ type: 'button', style: 'primary', color: '#3333aa', height: 'sm',
-                action: { type: 'uri', label: '前往 ZOZO 網站逛逛', uri: 'https://zozo.jp' } }],
-            },
-          },
+          mkBubble('#111111', 'ZOZO', '#1a1a2e', 'ZOZO', '#ffffff',
+            '日本最大時尚購物平台\n集結數百品牌・款式多元\n傳入商品網址即可報價', '#9999cc',
+            '#3333aa', '前往 ZOZO 網站逛逛', 'https://zozo.jp'),
         ],
       },
     });
