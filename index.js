@@ -3857,7 +3857,7 @@ async function sendNotify(orderId, rowIndex) {
 }
 
 async function doReturn(rowIndex, orderId) {
-  if (!confirm('確定要將此訂單標記為退單？\\n將自動扣除買家點數、回扣年度消費並重算等級。')) return;
+  if (!confirm('確定要將此訂單標記為退單？\\n將自動執行：\\n・撤銷本單計得點數\\n・退還結帳折抵的點數\\n・回扣年度消費並重算等級\\n・收回邀請獎勵優惠券（若有）')) return;
   try {
     var r = await fetch('/api/admin/order-status', {
       method: 'POST',
@@ -4342,24 +4342,25 @@ async function processOrderCompletion(sheets, userId, displayName, orderId, orde
   return { pts, newTier, newPoints, tierChanged };
 }
 
-// ── 退單：撤銷點數 + 回扣年度消費 + 重新計算等級 ─────────────────────────────
+// ── 退單：撤銷點數 + 退還折抵點數 + 回扣年度消費 + 重算等級 + 收回邀請獎勵 ──
 async function processOrderReturn(sheets, orderId) {
-  // 取訂單資料（找實付金額）
+  // 取訂單資料
   const oResp = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${ORDER_SHEET}!A:P` });
   const oRows = oResp.data.values || [];
   const oRow = oRows.find((r, i) => i > 0 && r[0] === orderId);
-  const returnUserId = oRow ? (oRow[2] || '') : '';
-  const returnAmount = oRow ? (parseFloat(oRow[14]) || parseFloat(oRow[4]) || 0) : 0; // 實付金額(O) 或 總金額(E)
+  const returnUserId       = oRow ? (oRow[2]  || '') : '';
+  const returnAmount       = oRow ? (parseFloat(oRow[14]) || parseFloat(oRow[4]) || 0) : 0;
+  const pointsUsedAtOrder  = oRow ? (parseInt(oRow[11])  || 0) : 0; // L欄：結帳折抵點數
 
-  // 找點數紀錄中此訂單的點數
+  // 找點數紀錄中此訂單計得的點數
   const pResp = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${POINTS_SHEET}!A:H` });
   const pRows = pResp.data.values || [];
   const pIdx = pRows.findIndex((r, i) => i > 0 && r[4] === orderId && r[7] === 'active');
-  const pts = pIdx > 0 ? (parseInt(pRows[pIdx][5]) || 0) : 0;
+  const ptsEarned  = pIdx > 0 ? (parseInt(pRows[pIdx][5]) || 0) : 0;
   const pointUserId = pIdx > 0 ? (pRows[pIdx][2] || '') : '';
   const userId = returnUserId || pointUserId;
 
-  // 標記點數已撤銷
+  // 標記計得點數已撤銷
   if (pIdx > 0) {
     await sheets.spreadsheets.values.update({
       spreadsheetId: SHEET_ID, range: `${POINTS_SHEET}!H${pIdx + 1}`,
@@ -4367,34 +4368,72 @@ async function processOrderReturn(sheets, orderId) {
     });
   }
 
-  // 更新會員：扣點 + 回扣年度消費 + 重算等級
+  // 更新會員：-計得點數 + 退還折抵點數 + 回扣年度消費 + 重算等級
+  let newPoints = 0, newTier = '', tierChanged = false;
   if (userId) {
     const member = await getMember(sheets, userId);
     if (member) {
-      const newPoints = Math.max(0, (member.points || 0) - pts);
-      const newSpend  = Math.max(0, (member.yearlySpend || 0) - returnAmount);
-      const newTier   = calcTier(newSpend);
-      const tierChanged = newTier !== member.tier;
+      newPoints  = Math.max(0, (member.points || 0) - ptsEarned + pointsUsedAtOrder);
+      const newSpend = Math.max(0, (member.yearlySpend || 0) - returnAmount);
+      newTier    = calcTier(newSpend);
+      tierChanged = newTier !== member.tier;
       await sheets.spreadsheets.values.update({
         spreadsheetId: SHEET_ID,
         range: `${MEMBER_SHEET}!I${member.rowIndex}:L${member.rowIndex}`,
         valueInputOption: 'RAW',
         resource: { values: [[newSpend, newTier, newPoints, todayStr()]] },
       });
-      // 通知買家
-      try {
-        const client = new line.Client({ channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN });
-        let msg = `📦 訂單 ${orderId} 已辦理退單。\n`;
-        if (pts > 0) msg += `\n💎 已扣除本次獲得的 ${pts} 點`;
-        msg += `\n📊 目前剩餘點數：${newPoints} 點`;
-        msg += `\n🏅 會員等級：${newTier}`;
-        if (tierChanged) msg += `\n（等級調整為 ${newTier}）`;
-        msg += `\n\n如有疑問請聯繫客服 🌸`;
-        await client.pushMessage(userId, { type: 'text', text: msg });
-      } catch(e) { console.error('[return notify error]', e.message); }
     }
   }
-  return { ptsDeducted: pts, amountDeducted: returnAmount };
+
+  // 收回邀請獎勵：若此訂單觸發過邀請獎勵，撤銷雙方尚未使用的邀請券
+  let referralRevoked = false;
+  try {
+    await ensureReferralSheet(sheets);
+    const refResp = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${REFERRAL_SHEET}!A:G` });
+    const refRows = refResp.data.values || [];
+    for (let i = 1; i < refRows.length; i++) {
+      const r = refRows[i];
+      if (r[5] !== orderId || r[6] !== 'completed') continue;
+      const inviterUserId = r[0], inviteeUserId = r[1];
+      // 標記邀請紀錄 → returned
+      await sheets.spreadsheets.values.update({
+        spreadsheetId: SHEET_ID, range: `${REFERRAL_SHEET}!G${i + 1}`,
+        valueInputOption: 'RAW', resource: { values: [['returned']] },
+      });
+      // 撤銷雙方 unused 邀請獎勵券
+      const cResp = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${COUPON_SHEET}!A:I` });
+      const cRows = cResp.data.values || [];
+      for (let j = 1; j < cRows.length; j++) {
+        const c = cRows[j];
+        if ((c[1] === inviterUserId || c[1] === inviteeUserId) && c[3] === '邀請獎勵' && c[7] === 'unused') {
+          await sheets.spreadsheets.values.update({
+            spreadsheetId: SHEET_ID, range: `${COUPON_SHEET}!H${j + 1}`,
+            valueInputOption: 'RAW', resource: { values: [['cancelled']] },
+          });
+          referralRevoked = true;
+        }
+      }
+      break;
+    }
+  } catch(e) { console.error('[return referral revoke]', e.message); }
+
+  // 通知買家
+  if (userId) {
+    try {
+      const client = new line.Client({ channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN });
+      let msg = `📦 訂單 ${orderId} 已辦理退單。\n`;
+      if (ptsEarned > 0)         msg += `\n💎 已撤銷本次獲得的 ${ptsEarned} 點`;
+      if (pointsUsedAtOrder > 0) msg += `\n💎 已退還結帳折抵的 ${pointsUsedAtOrder} 點`;
+      msg += `\n📊 目前剩餘點數：${newPoints} 點`;
+      msg += `\n🏅 會員等級：${newTier}`;
+      if (tierChanged)      msg += `\n（等級調整為 ${newTier}）`;
+      if (referralRevoked)  msg += `\n\n⚠️ 邀請獎勵優惠券已一併收回`;
+      msg += `\n\n如有疑問請聯繫客服 🌸`;
+      await client.pushMessage(userId, { type: 'text', text: msg });
+    } catch(e) { console.error('[return notify error]', e.message); }
+  }
+  return { ptsEarned, pointsUsedAtOrder, referralRevoked };
 }
 
 // ── 邀請獎勵處理（訂單完成時呼叫）────────────────────────────────────────────
