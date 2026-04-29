@@ -1327,11 +1327,10 @@ async function handlePostback(event, client) {
           {
             type: 'bubble', size: 'kilo',
             body: {
-              type: 'box', layout: 'vertical', paddingAll: '20px', backgroundColor: '#ffffff', spacing: 'lg',
+              type: 'box', layout: 'vertical', paddingAll: '0px', backgroundColor: '#ffffff',
               contents: [
-                { type: 'text', text: '1  點選右方網站\n     找到喜歡的商品', size: 'md', color: '#333333', wrap: true },
-                { type: 'text', text: '2  複製商品網址\n     （或 GRL 貨號）', size: 'md', color: '#333333', wrap: true },
-                { type: 'text', text: '3  貼到此對話\n     即可獲得台幣報價 🎉', size: 'md', color: '#333333', wrap: true },
+                { type: 'image', url: 'https://raw.githubusercontent.com/PFRoger/grl-line-bot/main/assets/how-to-quote.jpg',
+                  size: 'full', aspectRatio: '1:1', aspectMode: 'cover' },
               ],
             },
           },
