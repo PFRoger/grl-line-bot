@@ -1317,25 +1317,6 @@ async function handlePostback(event, client) {
     });
 
   } else if (action === 'start_shopping') {
-    const mkBubble = (heroImgUrl, heroBg, bodyBg, descText, descColor, btnColor, btnLabel, btnUri) => ({
-      type: 'bubble', size: 'kilo',
-      hero: {
-        type: 'image', url: heroImgUrl, size: 'full',
-        aspectRatio: '20:13', aspectMode: 'fit', backgroundColor: heroBg,
-      },
-      body: {
-        type: 'box', layout: 'vertical', paddingAll: '14px', backgroundColor: bodyBg,
-        contents: [
-          { type: 'text', text: descText, size: 'xs', color: descColor, wrap: true, align: 'center' },
-        ],
-      },
-      footer: {
-        type: 'box', layout: 'vertical', paddingAll: '10px', backgroundColor: bodyBg,
-        contents: [{ type: 'button', style: 'primary', color: btnColor, height: 'sm',
-          action: { type: 'uri', label: btnLabel, uri: btnUri } }],
-      },
-    });
-
     await client.replyMessage(replyToken, {
       type: 'flex',
       altText: '選擇購物平台：GRL 或 ZOZO',
@@ -1376,13 +1357,63 @@ async function handlePostback(event, client) {
             },
           },
           // ── GRL 卡 ──
-          mkBubble('https://cdn.grail.bz/images/template/logo_pc.png', '#ffffff', '#fff0f5',
-            '日本超人氣平價女裝\n每週上新・平價高質感\n傳入網址或貨號即可報價', '#c06080',
-            '#FF6B9D', '前往 GRL 網站逛逛', 'https://www.grail.bz'),
+          {
+            type: 'bubble', size: 'kilo',
+            body: {
+              type: 'box', layout: 'vertical', paddingAll: '0px', backgroundColor: '#fff0f5',
+              contents: [
+                {
+                  type: 'box', layout: 'vertical', paddingTop: '20px', paddingBottom: '20px',
+                  paddingStart: '20px', paddingEnd: '20px', backgroundColor: '#ffffff',
+                  contents: [
+                    { type: 'image', url: 'https://cdn.grail.bz/images/template/logo_pc.png',
+                      size: 'lg', align: 'center' },
+                  ],
+                },
+                {
+                  type: 'box', layout: 'vertical', paddingAll: '14px',
+                  contents: [
+                    { type: 'text', text: '日本超人氣平價女裝\n每週上新・平價高質感\n傳入網址或貨號即可報價',
+                      size: 'xs', color: '#c06080', wrap: true, align: 'center' },
+                  ],
+                },
+              ],
+            },
+            footer: {
+              type: 'box', layout: 'vertical', paddingAll: '10px', backgroundColor: '#fff0f5',
+              contents: [{ type: 'button', style: 'primary', color: '#FF6B9D', height: 'sm',
+                action: { type: 'uri', label: '前往 GRL 網站逛逛', uri: 'https://www.grail.bz' } }],
+            },
+          },
           // ── ZOZO 卡 ──
-          mkBubble('https://logo.clearbit.com/zozo.jp', '#111111', '#1a1a2e',
-            '日本最大時尚購物平台\n集結數百品牌・款式多元\n傳入商品網址即可報價', '#9999cc',
-            '#3333aa', '前往 ZOZO 網站逛逛', 'https://zozo.jp'),
+          {
+            type: 'bubble', size: 'kilo',
+            body: {
+              type: 'box', layout: 'vertical', paddingAll: '0px', backgroundColor: '#1a1a2e',
+              contents: [
+                {
+                  type: 'box', layout: 'vertical', paddingTop: '24px', paddingBottom: '24px',
+                  paddingStart: '20px', paddingEnd: '20px', backgroundColor: '#111111',
+                  contents: [
+                    { type: 'text', text: 'ZOZO', color: '#ffffff', size: '4xl', weight: 'bold', align: 'center' },
+                    { type: 'text', text: 'TOWN', color: '#888888', size: 'lg', weight: 'bold', align: 'center' },
+                  ],
+                },
+                {
+                  type: 'box', layout: 'vertical', paddingAll: '14px',
+                  contents: [
+                    { type: 'text', text: '日本最大時尚購物平台\n集結數百品牌・款式多元\n傳入商品網址即可報價',
+                      size: 'xs', color: '#9999cc', wrap: true, align: 'center' },
+                  ],
+                },
+              ],
+            },
+            footer: {
+              type: 'box', layout: 'vertical', paddingAll: '10px', backgroundColor: '#1a1a2e',
+              contents: [{ type: 'button', style: 'primary', color: '#3333aa', height: 'sm',
+                action: { type: 'uri', label: '前往 ZOZO 網站逛逛', uri: 'https://zozo.jp' } }],
+            },
+          },
         ],
       },
     });
