@@ -3721,6 +3721,14 @@ function createCard(o) {
     } else if (text.indexOf('【GRL】') >= 0) {
       badges += '<span style="background:#ff6b9d;color:#fff;font-size:10px;font-weight:700;border-radius:3px;padding:1px 5px;margin-right:4px">GRL</span>';
       text = text.replace('【GRL】', '');
+    } else {
+      // 舊訂單 fallback：第一個 token 純數字 → ZOZO，否則 → GRL
+      var firstToken = text.replace(/^[・\s]+/, '').split(' ')[0] || '';
+      if (firstToken && /^\d+$/.test(firstToken)) {
+        badges += '<span style="background:#1a1a2e;color:#fff;font-size:10px;font-weight:700;border-radius:3px;padding:1px 5px;margin-right:4px">ZOZO</span>';
+      } else if (firstToken && /^[A-Z]/i.test(firstToken)) {
+        badges += '<span style="background:#ff6b9d;color:#fff;font-size:10px;font-weight:700;border-radius:3px;padding:1px 5px;margin-right:4px">GRL</span>';
+      }
     }
     return '<div>' + badges + esc(text) + '</div>';
   }).join('');
