@@ -1212,7 +1212,7 @@ async function setupRichMenu(imageUrl) {
     chatBarText: '主選單',
     areas: [
       { bounds: { x: 0,    y: 0,   width: 833, height: 843 }, action: { type: 'postback', label: '查詢紀錄', data: 'action=query_history', displayText: '查詢紀錄' } },
-      { bounds: { x: 833,  y: 0,   width: 833, height: 843 }, action: { type: 'uri',      label: '開始購物', uri: 'https://www.grail.bz' } },
+      { bounds: { x: 833,  y: 0,   width: 833, height: 843 }, action: { type: 'postback', label: '開始購物', data: 'action=start_shopping', displayText: '開始購物' } },
       { bounds: { x: 1666, y: 0,   width: 834, height: 843 }, action: { type: 'uri',      label: '購物車',   uri: `https://liff.line.me/${LIFF_ID}` } },
       { bounds: { x: 0,    y: 843, width: 833, height: 843 }, action: { type: 'uri',      label: '購物指南', uri: 'https://pfroger-linebot-2.vercel.app/guide' } },
       { bounds: { x: 833,  y: 843, width: 833, height: 843 }, action: { type: 'uri',      label: 'IG連結',   uri: 'https://www.instagram.com/bijin.jp.2024?igsh=MXZxY2wzc2tsdWxzeQ%3D%3D&utm_source=qr' } },
@@ -1314,6 +1314,53 @@ async function handlePostback(event, client) {
     await client.replyMessage(replyToken, {
       type: 'text',
       text: `✅ 已加入購物車\n商品：${productName}\n\n顏色：${colorDisplay}\n尺寸：${size}\n\n售價：NT$${suggested}\n\n請按下方主選單「購物車」查看內容\n════════════\n購物車每 48 小時自動清空`,
+    });
+
+  } else if (action === 'start_shopping') {
+    await client.replyMessage(replyToken, {
+      type: 'flex',
+      altText: '選擇購物平台：GRL 或 ZOZO',
+      contents: {
+        type: 'carousel',
+        contents: [
+          {
+            type: 'bubble',
+            size: 'kilo',
+            body: {
+              type: 'box', layout: 'vertical', backgroundColor: '#fff0f5', paddingAll: '16px',
+              contents: [
+                { type: 'text', text: '🌸 GRL', weight: 'bold', size: 'xl', color: '#FF6B9D' },
+                { type: 'text', text: 'Grail — 日本快時尚', size: 'xs', color: '#ffaacc', margin: 'xs' },
+                { type: 'separator', margin: 'md', color: '#FFB6C8' },
+                { type: 'text', text: '・日本超人氣平價女裝\n・每週上新，款式豐富\n・傳入網址或貨號即可報價', size: 'sm', color: '#c06080', wrap: true, margin: 'md' },
+              ],
+            },
+            footer: {
+              type: 'box', layout: 'vertical', paddingAll: '10px', backgroundColor: '#fff0f5',
+              contents: [{ type: 'button', style: 'primary', color: '#FF6B9D', height: 'sm',
+                action: { type: 'uri', label: '前往 GRL 官網', uri: 'https://www.grail.bz' } }],
+            },
+          },
+          {
+            type: 'bubble',
+            size: 'kilo',
+            body: {
+              type: 'box', layout: 'vertical', backgroundColor: '#1a1a2e', paddingAll: '16px',
+              contents: [
+                { type: 'text', text: '🛍 ZOZO', weight: 'bold', size: 'xl', color: '#ffffff' },
+                { type: 'text', text: 'ZOZO Town — 日本最大時尚平台', size: 'xs', color: '#aaaacc', margin: 'xs' },
+                { type: 'separator', margin: 'md', color: '#333355' },
+                { type: 'text', text: '・集結數百個人氣品牌\n・款式多元，定期特賣\n・傳入商品網址即可報價', size: 'sm', color: '#ccccee', wrap: true, margin: 'md' },
+              ],
+            },
+            footer: {
+              type: 'box', layout: 'vertical', paddingAll: '10px', backgroundColor: '#1a1a2e',
+              contents: [{ type: 'button', style: 'primary', color: '#4444aa', height: 'sm',
+                action: { type: 'uri', label: '前往 ZOZO 官網', uri: 'https://zozo.jp' } }],
+            },
+          },
+        ],
+      },
     });
 
   } else if (action === 'view_cart') {
