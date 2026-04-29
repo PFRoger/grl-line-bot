@@ -1329,7 +1329,7 @@ async function handlePostback(event, client) {
             body: {
               type: 'box', layout: 'vertical', paddingAll: '0px', backgroundColor: '#ffffff',
               contents: [
-                { type: 'image', url: 'https://raw.githubusercontent.com/PFRoger/grl-line-bot/main/assets/how-to-quote.jpg',
+                { type: 'image', url: 'https://raw.githubusercontent.com/PFRoger/grl-line-bot/main/assets/how-to-quote-v3.jpg',
                   size: 'full', aspectRatio: '3:4', aspectMode: 'fit' },
               ],
             },
