@@ -1317,24 +1317,16 @@ async function handlePostback(event, client) {
     });
 
   } else if (action === 'start_shopping') {
-    const mkBubble = (bgHeader, headerText, bodyBg, titleText, titleColor, descText, descColor, btnColor, btnLabel, btnUri) => ({
+    const mkBubble = (heroImgUrl, heroBg, bodyBg, descText, descColor, btnColor, btnLabel, btnUri) => ({
       type: 'bubble', size: 'kilo',
+      hero: {
+        type: 'image', url: heroImgUrl, size: 'full',
+        aspectRatio: '20:13', aspectMode: 'fit', backgroundColor: heroBg,
+      },
       body: {
-        type: 'box', layout: 'vertical', paddingAll: '0px', backgroundColor: bodyBg,
+        type: 'box', layout: 'vertical', paddingAll: '14px', backgroundColor: bodyBg,
         contents: [
-          {
-            type: 'box', layout: 'vertical', paddingTop: '20px', paddingBottom: '20px',
-            paddingStart: '14px', paddingEnd: '14px', backgroundColor: bgHeader,
-            contents: [
-              { type: 'text', text: titleText, color: titleColor, size: '4xl', weight: 'bold', align: 'center' },
-            ],
-          },
-          {
-            type: 'box', layout: 'vertical', paddingAll: '14px', spacing: 'xs',
-            contents: [
-              { type: 'text', text: descText, size: 'xs', color: descColor, wrap: true, align: 'center' },
-            ],
-          },
+          { type: 'text', text: descText, size: 'xs', color: descColor, wrap: true, align: 'center' },
         ],
       },
       footer: {
@@ -1384,11 +1376,11 @@ async function handlePostback(event, client) {
             },
           },
           // ── GRL 卡 ──
-          mkBubble('#FF6B9D', 'GRL', '#fff0f5', 'GRL', '#ffffff',
+          mkBubble('https://cdn.grail.bz/images/template/logo_pc.png', '#ffffff', '#fff0f5',
             '日本超人氣平價女裝\n每週上新・平價高質感\n傳入網址或貨號即可報價', '#c06080',
             '#FF6B9D', '前往 GRL 網站逛逛', 'https://www.grail.bz'),
           // ── ZOZO 卡 ──
-          mkBubble('#111111', 'ZOZO', '#1a1a2e', 'ZOZO', '#ffffff',
+          mkBubble('https://logo.clearbit.com/zozo.jp', '#111111', '#1a1a2e',
             '日本最大時尚購物平台\n集結數百品牌・款式多元\n傳入商品網址即可報價', '#9999cc',
             '#3333aa', '前往 ZOZO 網站逛逛', 'https://zozo.jp'),
         ],
