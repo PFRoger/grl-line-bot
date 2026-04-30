@@ -1328,7 +1328,7 @@ async function handlePostback(event, client) {
             type: 'bubble', size: 'kilo',
             hero: {
               type: 'image',
-              url: 'https://raw.githubusercontent.com/PFRoger/grl-line-bot/main/assets/how-to-quote-v5.jpg',
+              url: 'https://raw.githubusercontent.com/PFRoger/grl-line-bot/main/assets/how-to-quote-v6.jpg',
               size: 'full', aspectRatio: '3:4', aspectMode: 'cover',
             },
             body: {
