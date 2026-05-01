@@ -4089,8 +4089,8 @@ function calcOrderTotal() {
   var text = document.getElementById('oe-items').value;
   var total = 0, qty = 0;
   text.split('\\n').forEach(function(line) {
-    var pm = line.match(/NT\$(\d+)/);
-    var qm = line.match(/×(\d+)/);
+    var pm = line.match(/NT\\$(\\d+)/);
+    var qm = line.match(/×(\\d+)/);
     if (pm) {
       var p = parseInt(pm[1]), q = qm ? parseInt(qm[1]) : 1;
       total += p * q; qty += q;
