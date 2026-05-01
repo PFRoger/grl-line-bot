@@ -4076,8 +4076,8 @@ function openOrderEdit(ri) {
   if (!oeOrder) return;
   document.getElementById('oe-row').value = oeOrder.rowIndex;
   // 移除「共 X 件」行
-  var lines = (oeOrder.items || '').split('\n').filter(function(l){ return !l.match(/^共\s*\d+/); });
-  document.getElementById('oe-items').value = lines.join('\n');
+  var lines = (oeOrder.items || '').split('\\n').filter(function(l){ return !l.match(/^共\\s*\\d+/); });
+  document.getElementById('oe-items').value = lines.join('\\n');
   calcOrderTotal();
   document.getElementById('order-edit-modal').style.display = 'flex';
 }
@@ -4088,7 +4088,7 @@ function closeOrderEdit() {
 function calcOrderTotal() {
   var text = document.getElementById('oe-items').value;
   var total = 0, qty = 0;
-  text.split('\n').forEach(function(line) {
+  text.split('\\n').forEach(function(line) {
     var pm = line.match(/NT\$(\d+)/);
     var qm = line.match(/×(\d+)/);
     if (pm) {
@@ -4115,7 +4115,7 @@ async function saveOrderEdit() {
   var raw = document.getElementById('oe-items').value.trim();
   var { total, qty } = calcOrderTotal();
   if (!raw || qty === 0) { toast('請至少保留一件商品'); return; }
-  var itemsText = raw + '\n共 ' + qty + ' 件';
+  var itemsText = raw + '\\n共 ' + qty + ' 件';
   try {
     var r = await fetch('/api/admin/order-edit', {
       method: 'POST',
