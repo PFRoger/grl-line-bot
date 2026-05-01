@@ -3830,6 +3830,7 @@ function createCard(o) {
     } else if (text.indexOf('【GRL】') >= 0) {
       badges += '<span style="background:#ff6b9d;color:#fff;font-size:10px;font-weight:700;border-radius:3px;padding:1px 5px;margin-right:4px">GRL</span>';
       text = text.replace('【GRL】', '');
+    }
     return '<div>' + badges + esc(text) + '</div>';
   }).join('');
 
