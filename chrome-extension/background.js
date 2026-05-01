@@ -160,25 +160,31 @@ function parseZOZO(html, url) {
   }
 
   // OG image 作為 fallback（全商品都有，但不分顏色）
-  const ogImage = (html.match(/<meta[^>]+property="og:image"[^>]+content="([^"]+)"/i) ||
-                   html.match(/<meta[^>]+content="([^"]+)"[^>]+property="og:image"/i) || [])[1] || null;
+  const ogImage = (html.match(/<meta[^>]*property="og:image"[^>]*content="([^"]+)"/i) ||
+                   html.match(/<meta[^>]*content="([^"]+)"[^>]*property="og:image"/i) ||
+                   html.match(/og:image.*?content="([^"]+)"/i) || [])[1] || null;
 
-  // 從 <img alt="カラー名" src="...imgz.jp..."> 抓各顏色圖 URL（顏色名 → URL）
+  // 從 <img alt="カラー名" src="...imgz.jp 或 zozo CDN..."> 抓各顏色圖 URL（顏色名 → URL）
   const swatchByName = {};
-  const swatchRegex = /<img[^>]+src="(https?:\/\/[^"]*imgz\.jp[^"]*\.jpg)"[^>]*alt="([^"]+)"|<img[^>]+alt="([^"]+)"[^>]+src="(https?:\/\/[^"]*imgz\.jp[^"]*\.jpg)"/g;
+  const swatchRegex = /<img[^>]+src="(https?:\/\/[^"]+\.(?:jpg|jpeg|png|webp))"[^>]*alt="([^"]+)"|<img[^>]+alt="([^"]+)"[^>]+src="(https?:\/\/[^"]+\.(?:jpg|jpeg|png|webp))"/g;
   let sw;
   while ((sw = swatchRegex.exec(html)) !== null) {
     const imgUrl  = sw[1] || sw[4];
     const altText = sw[2] || sw[3];
-    if (altText && imgUrl && !swatchByName[altText]) swatchByName[altText] = imgUrl;
+    // 只收 imgz.jp / zozo CDN，避免抓到 icon/logo
+    if (altText && imgUrl && (imgUrl.includes('imgz.jp') || imgUrl.includes('zozo.jp')) && !swatchByName[altText]) {
+      swatchByName[altText] = imgUrl;
+    }
   }
   console.log('[ZOZO] swatch 顏色數:', Object.keys(swatchByName).length, Object.entries(swatchByName).slice(0, 3).map(([k,v]) => `${k}:${v.substring(0,50)}`).join(', '));
 
   const imgSuffix = goodsCode ? goodsCode.slice(-3) : '';
   const colors = Object.values(colorsMap).map(c => {
-    const swatchUrl = swatchByName[c.name] || null;
-    const cdnUrl    = goodsCode ? `https://c.imgz.jp/${imgSuffix}/${goodsCode}/${goodsCode}b_${c.id}_d_500.jpg` : null;
-    const imageUrl  = swatchUrl || cdnUrl || ogImage || null;
+    const swatchUrl  = swatchByName[c.name] || null;
+    const cdnUrl     = goodsCode ? `https://c.imgz.jp/${imgSuffix}/${goodsCode}/${goodsCode}b_${c.id}_d_500.jpg` : null;
+    // colorImage 來自 data-shelf-color-image-url（goods-sale 頁面可能只有這個）
+    const shelfImg   = c.colorImage || null;
+    const imageUrl   = swatchUrl || shelfImg || cdnUrl || ogImage || null;
     const { colorImage, ...rest } = c;
     return { ...rest, imageUrl };
   });
