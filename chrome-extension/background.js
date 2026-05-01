@@ -164,25 +164,34 @@ function parseZOZO(html, url) {
                    html.match(/<meta[^>]*content="([^"]+)"[^>]*property="og:image"/i) ||
                    html.match(/og:image.*?content="([^"]+)"/i) || [])[1] || null;
 
-  // 從 <img alt="カラー名" src="...imgz.jp 或 zozo CDN..."> 抓各顏色圖 URL（顏色名 → URL）
+  // 從 <img alt="..." src="...imgz.jp..."> 建立兩個對照表：
+  // swatchByName: 顏色名 → URL，swatchById: 顏色ID（從URL提取）→ URL
   const swatchByName = {};
-  const swatchRegex = /<img[^>]+src="(https?:\/\/[^"]+\.(?:jpg|jpeg|png|webp))"[^>]*alt="([^"]+)"|<img[^>]+alt="([^"]+)"[^>]+src="(https?:\/\/[^"]+\.(?:jpg|jpeg|png|webp))"/g;
+  const swatchById   = {};
+  const swatchRegex  = /<img[^>]+src="(https?:\/\/[^"]*imgz\.jp[^"]+)"[^>]*alt="([^"]+)"|<img[^>]+alt="([^"]+)"[^>]+src="(https?:\/\/[^"]*imgz\.jp[^"]+)"/g;
   let sw;
   while ((sw = swatchRegex.exec(html)) !== null) {
     const imgUrl  = sw[1] || sw[4];
     const altText = sw[2] || sw[3];
-    // 只收 imgz.jp / zozo CDN，避免抓到 icon/logo
-    if (altText && imgUrl && (imgUrl.includes('imgz.jp') || imgUrl.includes('zozo.jp')) && !swatchByName[altText]) {
-      swatchByName[altText] = imgUrl;
+    if (!imgUrl || !altText) continue;
+    // 全 alt 文字索引（e.g. "商品名 | ブラック"）
+    if (!swatchByName[altText]) swatchByName[altText] = imgUrl;
+    // alt 含「|」時，取 | 後的顏色部分（e.g. " ブラック"）
+    if (altText.includes('|')) {
+      const colorPart = altText.split('|').pop().trim();
+      if (colorPart && !swatchByName[colorPart]) swatchByName[colorPart] = imgUrl;
     }
+    // 從 URL 抽出 colorId (pattern: goodsCode_colorId_d_size 或 goodsCodeb_colorId_d_size)
+    const idM = imgUrl.match(/\/\w+b?_(\d+)_d_\d+/);
+    if (idM && !swatchById[idM[1]]) swatchById[idM[1]] = imgUrl;
   }
-  console.log('[ZOZO] swatch 顏色數:', Object.keys(swatchByName).length, Object.entries(swatchByName).slice(0, 3).map(([k,v]) => `${k}:${v.substring(0,50)}`).join(', '));
+  console.log('[ZOZO] swatch 顏色數:', Object.keys(swatchByName).length, '| byId:', Object.keys(swatchById).length, Object.entries(swatchById).slice(0, 2).map(([k,v]) => `id${k}:${v.substring(0,50)}`).join(', '));
 
   const imgSuffix = goodsCode ? goodsCode.slice(-3) : '';
   const colors = Object.values(colorsMap).map(c => {
-    const swatchUrl  = swatchByName[c.name] || null;
-    const cdnUrl     = goodsCode ? `https://c.imgz.jp/${imgSuffix}/${goodsCode}/${goodsCode}b_${c.id}_d_500.jpg` : null;
-    // colorImage 來自 data-shelf-color-image-url（goods-sale 頁面可能只有這個）
+    // 優先：頁面抓到的真實 URL（顏色名 or ID 索引）→ shelf tag 直帶圖 → CDN 公式 → ogImage
+    const swatchUrl  = swatchByName[c.name] || swatchById[c.id] || null;
+    const cdnUrl     = goodsCode ? `https://c.imgz.jp/${imgSuffix}/${goodsCode}/${goodsCode}_${c.id}_d_500.jpg` : null;
     const shelfImg   = c.colorImage || null;
     const imageUrl   = swatchUrl || shelfImg || cdnUrl || ogImage || null;
     const { colorImage, ...rest } = c;
