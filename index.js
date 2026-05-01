@@ -3651,7 +3651,7 @@ details.sec-closed[open] .sec-summary::after{content:'▾';font-size:12px}
 
 <script>
 var STATUSES =['待確認','待買家完成下單','處理中(待處理或完成官網下單)','已發貨(官網出貨)','已發貨(已達台灣海關作業)','已發貨(賣貨便出貨)','待買家取貨','已完成','已取消','退單'];
-var NOTIFY_STATUSES = {'處理中(待處理或完成官網下單)':1,'已發貨(官網出貨)':1,'已發貨(已達台灣海關作業)':1,'已發貨(賣貨便出貨)':1,'待買家取貨':1};
+var NOTIFY_STATUSES = {'待買家取貨':1};
 var CLOSED = {'已完成':1,'已取消':1,'退單':1};
 var STATUS_STYLE = {
   '待確認':'background:#fff3e0;color:#e65100',
