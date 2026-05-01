@@ -19,14 +19,20 @@ const CART_SHEET = '購物車';
 const ORDER_SHEET = '訂單';
 const ADMIN_KEY = process.env.ADMIN_KEY;
 
-// ── Google Sheets 驗證 ────────────────────────────────────────────────────────
+// ── LINE Bot 單一客戶端實例 ───────────────────────────────────────────────────
+const lineClient = new line.Client({ channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN });
+
+// ── Google Sheets 驗證（快取 client，避免每次重建 GoogleAuth）────────────────
+let _sheetsClient = null;
 function getSheetsClient() {
+  if (_sheetsClient) return _sheetsClient;
   const credentials = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
   const auth = new google.auth.GoogleAuth({
     credentials,
     scopes: ['https://www.googleapis.com/auth/spreadsheets'],
   });
-  return google.sheets({ version: 'v4', auth });
+  _sheetsClient = google.sheets({ version: 'v4', auth });
+  return _sheetsClient;
 }
 
 // ── 顏色對照表（複合詞排前面，避免被單字提前匹配）────────────────────────────
@@ -2420,13 +2426,9 @@ app.post('/webhook', express.raw({ type: '*/*' }), async (req, res) => {
     return res.status(400).json({ error: 'Invalid JSON' });
   }
 
-  const client = new line.Client({
-    channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN,
-  });
-
   try {
     await Promise.all(
-      (body.events || []).map((event) => handleEvent(event, client))
+      (body.events || []).map((event) => handleEvent(event, lineClient))
     );
     res.json({ status: 'ok' });
   } catch (err) {
@@ -2697,7 +2699,6 @@ app.post('/api/order', express.json(), async (req, res) => {
     if (pointsUsed > 0) await deductMemberPoints(sheets, userId, pointsUsed).catch(e => console.error('[deductPoints error]', e.message));
     if (couponCode) await markCouponUsed(sheets, couponCode, result.orderId).catch(e => console.error('[markCoupon error]', e.message));
 
-    const client = new line.Client({ channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN });
     // 合併相同規格，顯示數量
     const _iMap = {};
     for (const i of cartItems) {
@@ -2730,11 +2731,11 @@ app.post('/api/order', express.json(), async (req, res) => {
     }
 
     const [adminR, buyerR] = await Promise.allSettled([
-      client.pushMessage(ADMIN_USER_ID, {
+      lineClient.pushMessage(ADMIN_USER_ID, {
         type: 'text',
         text: `🛍 新訂單！\n訂單ID: ${result.orderId}\n時間: ${result.orderTime}\n━━━━━━━━━━\n${itemsText}\n━━━━━━━━━━\n商品小計: NT$${result.totalTwd}${adminDiscText || ('\n合計: NT$' + result.totalTwd)}\n\n買家: ${buyerInfo.name}\n手機: ${buyerInfo.phone}\n聯繫方式: ${buyerInfo.contactMethod} @${buyerInfo.contactAccount}${buyerInfo.note ? '\n備註: ' + buyerInfo.note : ''}`,
       }),
-      client.pushMessage(userId, {
+      lineClient.pushMessage(userId, {
         type: 'text',
         text: `🎉 訂單已收到！\n\n訂單編號：${result.orderId}\n下單時間：${result.orderTime}\n━━━━━━━━━━\n${itemsText}\n━━━━━━━━━━\n商品小計：NT$${result.totalTwd}${buyerDiscText}\n\n我們確認後會盡快提供賣貨便下單連結，請耐心等候 🌸`,
       }),
@@ -2755,8 +2756,7 @@ app.post('/api/order', express.json(), async (req, res) => {
 app.get('/api/debug/notify', async (req, res) => {
   if (req.query.key !== ADMIN_KEY) return res.status(401).json({ error: 'Unauthorized' });
   try {
-    const client = new line.Client({ channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN });
-    await client.pushMessage(ADMIN_USER_ID, { type: 'text', text: '🔧 通知測試 - 如果收到這訊息代表 LINE push 正常' });
+    await lineClient.pushMessage(ADMIN_USER_ID, { type: 'text', text: '🔧 通知測試 - 如果收到這訊息代表 LINE push 正常' });
     res.json({ ok: true, message: '推播成功' });
   } catch(e) {
     res.json({ ok: false, error: e.message, statusCode: e.statusCode });
@@ -4286,8 +4286,7 @@ app.get('/admin/notify-buyer', async (req, res) => {
     if (!buyerUserId) return res.status(400).json({ error: '訂單缺少 userId' });
 
     // Push LINE 訊息給買家
-    const client = new line.Client({ channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN });
-    await client.pushMessage(buyerUserId, {
+    await lineClient.pushMessage(buyerUserId, {
       type: 'flex',
       altText: '您的訂單賣貨便已建立，請前往下單 🛍',
       contents: {
@@ -4378,8 +4377,7 @@ app.post('/api/admin/notify-progress', express.json(), async (req, res) => {
 
     const msgText = `您好～🚚商品\n${itemsSummary}\n進度回報：\n${progressLines}`;
 
-    const client = new line.Client({ channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN });
-    await client.pushMessage(buyerUserId, { type: 'text', text: msgText });
+    await lineClient.pushMessage(buyerUserId, { type: 'text', text: msgText });
 
     // 更新訂單狀態
     await sheets.spreadsheets.values.update({
@@ -4619,8 +4617,7 @@ async function processOrderCompletion(sheets, userId, displayName, orderId, orde
   }
 
   try {
-    const client = new line.Client({ channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN });
-    await client.pushMessage(userId, { type: 'text', text: notifyText });
+    await lineClient.pushMessage(userId, { type: 'text', text: notifyText });
   } catch(e) { console.error('[member notify error]', e.message); }
 
   // 處理邀請獎勵
@@ -4708,7 +4705,6 @@ async function processOrderReturn(sheets, orderId) {
   // 通知買家
   if (userId) {
     try {
-      const client = new line.Client({ channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN });
       let msg = `📦 訂單 ${orderId} 已辦理退單。\n`;
       if (ptsEarned > 0)         msg += `\n💎 已撤銷本次獲得的 ${ptsEarned} 點`;
       if (pointsUsedAtOrder > 0) msg += `\n💎 已退還結帳折抵的 ${pointsUsedAtOrder} 點`;
@@ -4717,7 +4713,7 @@ async function processOrderReturn(sheets, orderId) {
       if (tierChanged)      msg += `\n（等級調整為 ${newTier}）`;
       if (referralRevoked)  msg += `\n\n⚠️ 邀請獎勵優惠券已一併收回`;
       msg += `\n\n如有疑問請聯繫客服 🌸`;
-      await client.pushMessage(userId, { type: 'text', text: msg });
+      await lineClient.pushMessage(userId, { type: 'text', text: msg });
     } catch(e) { console.error('[return notify error]', e.message); }
   }
   return { ptsEarned, pointsUsedAtOrder, referralRevoked };
@@ -4758,10 +4754,9 @@ async function processReferralReward(sheets, inviteeUserId, orderId) {
     });
 
     // 通知雙方
-    const client = new line.Client({ channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN });
     const msg = `🎁 邀請獎勵！\n好友訂單已完成，雙方各獲得 NT$50 折扣碼 × 2 張！\n請至會員中心查看。`;
-    await client.pushMessage(inviteeUserId, { type: 'text', text: msg }).catch(() => {});
-    await client.pushMessage(inviterUserId, { type: 'text', text: msg }).catch(() => {});
+    await lineClient.pushMessage(inviteeUserId, { type: 'text', text: msg }).catch(() => {});
+    await lineClient.pushMessage(inviterUserId, { type: 'text', text: msg }).catch(() => {});
   }
 }
 
@@ -5515,7 +5510,6 @@ app.post('/api/zozo-queue', express.json(), async (req, res) => {
     }
 
     // 發 LINE 訊息：優先用 replyMessage（免費），過期則 fallback pushMessage
-    const lineClient = new line.Client({ channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN });
     let sendError = null;
     try {
       let rate = null;
@@ -5580,7 +5574,6 @@ app.post('/api/cron/birthday', async (req, res) => {
         .map(r => r[1])
     );
 
-    const client = new line.Client({ channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN });
     let count = 0;
 
     for (let i = 1; i < mRows.length; i++) {
@@ -5608,7 +5601,7 @@ app.post('/api/cron/birthday', async (req, res) => {
       const totalQty = gifts.reduce((s, g) => s + g.qty, 0);
       const totalAmt = gifts.reduce((s, g) => s + g.amount * g.qty, 0);
       const msg = `🎂 生日快樂！\n\n感謝您是 Bijin 的 ${tier}會員 🌸\n\n生日禮券已發送：\nNT$${gifts[0].amount} 折扣碼 × ${totalQty} 張（共 NT$${totalAmt}）\n有效至本月底 ${expiry}\n\n請至會員中心查看並使用 💝`;
-      await client.pushMessage(userId, { type: 'text', text: msg }).catch(() => {});
+      await lineClient.pushMessage(userId, { type: 'text', text: msg }).catch(() => {});
       count++;
     }
 
