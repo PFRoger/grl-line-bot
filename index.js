@@ -3586,6 +3586,20 @@ details.sec-closed[open] .sec-summary::after{content:'▾';font-size:12px}
 .modal-cancel{flex:1;background:#f0ebe4;color:#7a5c3e;border:none;border-radius:10px;padding:11px;font-size:14px;font-weight:600;cursor:pointer}
 .modal-ok{flex:1;background:#c9a98a;color:#fff;border:none;border-radius:10px;padding:11px;font-size:14px;font-weight:700;cursor:pointer}
 .modal-ok:hover{background:#b0885e}
+/* ── 訂單商品表格 ── */
+.oe-table{width:100%;border-collapse:collapse;font-size:13px}
+.oe-table th{background:#f9f3ed;color:#7a5c3e;padding:6px 8px;text-align:center;white-space:nowrap;border-bottom:2px solid #e8dcd0}
+.oe-table td{padding:5px 4px;text-align:center;border-bottom:1px solid #f5ede4;vertical-align:middle}
+.oe-num{border:1px solid #ddd;border-radius:6px;padding:3px 5px;font-size:13px;text-align:center;outline:none}
+.oe-num:focus{border-color:#c9a98a}
+.oe-txt{border:1px solid #ddd;border-radius:6px;padding:3px 5px;font-size:12px;outline:none}
+.oe-txt:focus{border-color:#c9a98a}
+.oe-del{background:none;border:none;color:#ccc;font-size:15px;cursor:pointer;padding:2px 6px;border-radius:4px;line-height:1}
+.oe-del:hover{color:#e74c3c;background:#fff0f0}
+.oe-add{width:100%;margin-top:8px;background:#f0ebe4;color:#7a5c3e;border:none;border-radius:8px;padding:8px;font-size:13px;font-weight:600;cursor:pointer}
+.oe-add:hover{background:#e8dcd0}
+.src-grl{background:#ff6b9d;color:#fff;border-radius:4px;padding:1px 6px;font-size:11px;font-weight:700}
+.src-zozo{background:#1a1a2e;color:#fff;border-radius:4px;padding:1px 6px;font-size:11px;font-weight:700}
 </style>
 </head>
 <body>
@@ -4071,13 +4085,57 @@ if (SSR_ERROR) {
 
 // ── 訂單編輯 ──
 var oeOrder = null;
+function parseItemLine(line) {
+  var sm = line.match(/^【(GRL|ZOZO)】/);
+  if (!sm) return null;
+  var source = sm[1];
+  var rest = line.slice(sm[0].length).trim();
+  var pm = rest.match(/NT\$(\d+)/);
+  var qm = rest.match(/×(\d+)/);
+  if (!pm) return null;
+  var price = parseInt(pm[1]);
+  var qty = qm ? parseInt(qm[1]) : 1;
+  var beforePrice = rest.slice(0, rest.indexOf('NT$')).trim();
+  var spIdx = beforePrice.indexOf(' ');
+  var productId = spIdx >= 0 ? beforePrice.slice(0, spIdx) : beforePrice;
+  var colorSize = spIdx >= 0 ? beforePrice.slice(spIdx + 1).trim() : '';
+  return { source: source, productId: productId, colorSize: colorSize, price: price, qty: qty };
+}
+function srcBadge(s) {
+  return s === 'GRL' ? '<span class="src-grl">GRL</span>' : '<span class="src-zozo">ZOZO</span>';
+}
+function renderItemRow(item) {
+  var ds = (item.source||'').replace(/"/g,'&quot;');
+  var dp = (item.productId||'').replace(/"/g,'&quot;');
+  var dc = (item.colorSize||'').replace(/"/g,'&quot;');
+  return '<tr data-source="' + ds + '" data-pid="' + dp + '" data-cs="' + dc + '">'
+    + '<td>' + srcBadge(item.source) + '</td>'
+    + '<td style="font-size:12px">' + esc(item.productId) + '</td>'
+    + '<td style="font-size:12px;text-align:left">' + esc(item.colorSize) + '</td>'
+    + '<td>NT$<input type="number" class="oe-num oe-price" value="' + item.price + '" min="0" step="1" style="width:68px" oninput="calcOrderTotal()"></td>'
+    + '<td>\xd7<input type="number" class="oe-num oe-qty" value="' + item.qty + '" min="1" max="99" style="width:44px" oninput="calcOrderTotal()"></td>'
+    + '<td><button class="oe-del" onclick="removeItemRow(this)" title="刪除">✕</button></td>'
+    + '</tr>';
+}
+function renderNewRow() {
+  return '<tr data-new="1">'
+    + '<td><select class="nr-src" style="font-size:12px;border:1px solid #ddd;border-radius:6px;padding:2px 3px"><option>GRL</option><option>ZOZO</option></select></td>'
+    + '<td><input type="text" class="oe-txt nr-pid" placeholder="商品ID" style="width:65px"></td>'
+    + '<td><input type="text" class="oe-txt nr-cs" placeholder="顏色 尺寸" style="width:90px"></td>'
+    + '<td>NT$<input type="number" class="oe-num oe-price" value="" min="0" step="1" style="width:68px" oninput="calcOrderTotal()"></td>'
+    + '<td>\xd7<input type="number" class="oe-num oe-qty" value="1" min="1" max="99" style="width:44px" oninput="calcOrderTotal()"></td>'
+    + '<td><button class="oe-del" onclick="removeItemRow(this)" title="刪除">✕</button></td>'
+    + '</tr>';
+}
 function openOrderEdit(ri) {
   oeOrder = allOrders.find(function(x){ return x.rowIndex === ri; });
   if (!oeOrder) return;
   document.getElementById('oe-row').value = oeOrder.rowIndex;
-  // 移除「共 X 件」行
-  var lines = (oeOrder.items || '').split('\\n').filter(function(l){ return !l.match(/^共\\s*\\d+/); });
-  document.getElementById('oe-items').value = lines.join('\\n');
+  var lines = (oeOrder.items || '').split('\\n').filter(function(l){ return l.trim() && !l.match(/^共\s*\d+/); });
+  var tbody = document.getElementById('oe-tbody');
+  tbody.innerHTML = lines.map(function(l) {
+    var item = parseItemLine(l); return item ? renderItemRow(item) : '';
+  }).join('');
   calcOrderTotal();
   document.getElementById('order-edit-modal').style.display = 'flex';
 }
@@ -4085,46 +4143,64 @@ function closeOrderEdit() {
   document.getElementById('order-edit-modal').style.display = 'none';
   oeOrder = null;
 }
+function addItemRow() {
+  document.getElementById('oe-tbody').insertAdjacentHTML('beforeend', renderNewRow());
+}
+function removeItemRow(btn) {
+  btn.closest('tr').remove();
+  calcOrderTotal();
+}
 function calcOrderTotal() {
-  var text = document.getElementById('oe-items').value;
   var total = 0, qty = 0;
-  text.split('\\n').forEach(function(line) {
-    var pm = line.match(/NT\\$(\\d+)/);
-    var qm = line.match(/×(\\d+)/);
-    if (pm) {
-      var p = parseInt(pm[1]), q = qm ? parseInt(qm[1]) : 1;
-      total += p * q; qty += q;
-    }
+  document.querySelectorAll('#oe-tbody tr').forEach(function(tr) {
+    var p = parseInt((tr.querySelector('.oe-price')||{}).value) || 0;
+    var q = parseInt((tr.querySelector('.oe-qty')||{}).value) || 0;
+    total += p * q; qty += q;
   });
   document.getElementById('oe-subtotal').textContent = 'NT$' + total;
   var disc = oeOrder ? (oeOrder.discountTotal || 0) : 0;
   if (disc > 0) {
-    var final = Math.max(total - disc, 0);
+    var fin = Math.max(total - disc, 0);
     document.getElementById('oe-discount-row').style.display = '';
     document.getElementById('oe-discount').textContent = '-NT$' + disc;
     document.getElementById('oe-final-row').style.display = '';
-    document.getElementById('oe-final').textContent = 'NT$' + final;
+    document.getElementById('oe-final').textContent = 'NT$' + fin;
   } else {
     document.getElementById('oe-discount-row').style.display = 'none';
     document.getElementById('oe-final-row').style.display = 'none';
   }
-  return { total, qty };
+  return { total: total, qty: qty };
 }
 async function saveOrderEdit() {
   var rowIndex = parseInt(document.getElementById('oe-row').value);
-  var raw = document.getElementById('oe-items').value.trim();
-  var { total, qty } = calcOrderTotal();
-  if (!raw || qty === 0) { toast('請至少保留一件商品'); return; }
-  var itemsText = raw + '\\n共 ' + qty + ' 件';
+  var lines = [], totalPrice = 0, totalQty = 0, valid = true;
+  document.querySelectorAll('#oe-tbody tr').forEach(function(tr) {
+    var isNew = tr.getAttribute('data-new') === '1';
+    var source, productId, colorSize;
+    if (isNew) {
+      source = (tr.querySelector('.nr-src')||{}).value || 'GRL';
+      productId = ((tr.querySelector('.nr-pid')||{}).value || '').trim();
+      colorSize = ((tr.querySelector('.nr-cs')||{}).value || '').trim();
+      if (!productId) { valid = false; return; }
+    } else {
+      source = tr.getAttribute('data-source') || 'GRL';
+      productId = tr.getAttribute('data-pid') || '';
+      colorSize = tr.getAttribute('data-cs') || '';
+    }
+    var price = parseInt((tr.querySelector('.oe-price')||{}).value) || 0;
+    var qty = parseInt((tr.querySelector('.oe-qty')||{}).value) || 1;
+    lines.push('【' + source + '】' + productId + (colorSize ? ' ' + colorSize : '') + ' NT$' + price + ' \xd7' + qty);
+    totalPrice += price * qty; totalQty += qty;
+  });
+  if (!valid || lines.length === 0) { toast('請填寫完整商品資料'); return; }
+  var itemsText = lines.join('\\n') + '\\n共 ' + totalQty + ' 件';
   try {
     var r = await fetch('/api/admin/order-edit', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ key: KEY, rowIndex, items: itemsText, totalTwd: total })
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key: KEY, rowIndex: rowIndex, items: itemsText, totalTwd: totalPrice })
     });
     var d = await r.json();
     if (!r.ok) { toast('失敗：' + (d.error || r.status)); return; }
-    // 更新本地資料
     oeOrder.items = itemsText;
     oeOrder.total = d.totalTwd;
     oeOrder.finalAmount = d.finalAmount;
@@ -4137,15 +4213,22 @@ async function saveOrderEdit() {
 
 <!-- 訂單編輯 Modal -->
 <div id="order-edit-modal" class="modal-overlay" onclick="if(event.target===this)closeOrderEdit()">
-  <div class="modal-box" style="width:460px;max-width:95vw">
+  <div class="modal-box" style="width:600px;max-width:96vw">
     <div class="modal-title">✏️ 修改訂單商品</div>
     <input type="hidden" id="oe-row">
-    <div style="font-size:12px;color:#888;margin-bottom:6px">每行一個商品，格式：【GRL/ZOZO】商品ID 顏色 尺寸 NT$價格 ×數量</div>
-    <textarea id="oe-items" rows="6" style="width:100%;box-sizing:border-box;border:1px solid #ddd;border-radius:8px;padding:8px;font-size:13px;line-height:1.6;resize:vertical" oninput="calcOrderTotal()"></textarea>
-    <div style="margin-top:10px;font-size:13px;color:#555">
-      <div>商品小計：<strong id="oe-subtotal" style="color:#c9a98a">NT$0</strong></div>
-      <div id="oe-discount-row" style="display:none;color:#888;margin-top:4px">折扣：<span id="oe-discount"></span></div>
-      <div id="oe-final-row" style="display:none;margin-top:4px;font-size:15px;font-weight:700;color:#7a5c3e">實付：<span id="oe-final"></span></div>
+    <div style="overflow-x:auto">
+      <table class="oe-table">
+        <thead>
+          <tr><th>來源</th><th>商品ID</th><th style="text-align:left">顏色／尺寸</th><th>單價</th><th>數量</th><th></th></tr>
+        </thead>
+        <tbody id="oe-tbody"></tbody>
+      </table>
+    </div>
+    <button class="oe-add" onclick="addItemRow()">＋ 新增商品</button>
+    <div style="margin-top:10px;font-size:13px;color:#555;display:flex;flex-direction:column;gap:4px">
+      <div>小計：<strong id="oe-subtotal" style="color:#c9a98a">NT$0</strong></div>
+      <div id="oe-discount-row" style="display:none;color:#888;font-size:12px">折扣：<span id="oe-discount"></span></div>
+      <div id="oe-final-row" style="display:none;font-weight:700;color:#7a5c3e">實付：<span id="oe-final"></span></div>
     </div>
     <div class="modal-btns" style="margin-top:16px">
       <button class="modal-cancel" onclick="closeOrderEdit()">取消</button>
