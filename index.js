@@ -3382,6 +3382,33 @@ app.post('/api/admin/order-warehouse', express.json(), async (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── 管理員 API：修改訂單商品 ──────────────────────────────────────────────────
+app.post('/api/admin/order-edit', express.json(), async (req, res) => {
+  const { key, rowIndex, items, totalTwd } = req.body;
+  if (key !== ADMIN_KEY) return res.status(401).json({ error: 'Unauthorized' });
+  if (!rowIndex || !items || totalTwd === undefined) return res.status(400).json({ error: 'missing fields' });
+  try {
+    const sheets = getSheetsClient();
+    const existing = await sheets.spreadsheets.values.get({
+      spreadsheetId: SHEET_ID, range: `${ORDER_SHEET}!N${rowIndex}:N${rowIndex}`,
+    });
+    const discountTotal = parseInt(((existing.data.values || [[]])[0] || [])[0]) || 0;
+    const finalAmount = Math.max(totalTwd - discountTotal, 0);
+    await sheets.spreadsheets.values.batchUpdate({
+      spreadsheetId: SHEET_ID,
+      resource: {
+        valueInputOption: 'RAW',
+        data: [
+          { range: `${ORDER_SHEET}!D${rowIndex}`, values: [[items]] },
+          { range: `${ORDER_SHEET}!E${rowIndex}`, values: [[totalTwd]] },
+          { range: `${ORDER_SHEET}!O${rowIndex}`, values: [[finalAmount]] },
+        ],
+      },
+    });
+    res.json({ ok: true, totalTwd, discountTotal, finalAmount });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 // ── 管理員頁面 ────────────────────────────────────────────────────────────────
 app.get('/admin', async (req, res) => {
   const { key } = req.query;
@@ -3849,6 +3876,7 @@ function createCard(o) {
     + '<select class="status-select" id="sel-' + ri + '">' + opts + '</select>'
     + '<button class="btn-save" onclick="saveStatus(' + ri + ',\\'' + esc(o.orderId) + '\\')">儲存</button>'
     + '<button class="btn-save" style="background:#f5c97a;color:#5d4037;padding:7px 10px" title="內部備註" onclick="toggleNote(' + ri + ')">📝</button>'
+    + '<button class="btn-save" style="background:#7ab8f5;color:#fff;padding:7px 10px" title="修改訂單商品" onclick="openOrderEdit(' + ri + ')">✏️</button>'
     + '</div>'
     + notifyRowHtml
     + '<div class="note-area" id="note-area-' + ri + '">'
@@ -4039,7 +4067,91 @@ if (SSR_ERROR) {
 } else {
   renderOrders();
 }
+
+// ── 訂單編輯 ──
+var oeOrder = null;
+function openOrderEdit(ri) {
+  oeOrder = allOrders.find(function(x){ return x.rowIndex === ri; });
+  if (!oeOrder) return;
+  document.getElementById('oe-row').value = oeOrder.rowIndex;
+  // 移除「共 X 件」行
+  var lines = (oeOrder.items || '').split('\n').filter(function(l){ return !l.match(/^共\s*\d+/); });
+  document.getElementById('oe-items').value = lines.join('\n');
+  calcOrderTotal();
+  document.getElementById('order-edit-modal').style.display = 'flex';
+}
+function closeOrderEdit() {
+  document.getElementById('order-edit-modal').style.display = 'none';
+  oeOrder = null;
+}
+function calcOrderTotal() {
+  var text = document.getElementById('oe-items').value;
+  var total = 0, qty = 0;
+  text.split('\n').forEach(function(line) {
+    var pm = line.match(/NT\$(\d+)/);
+    var qm = line.match(/×(\d+)/);
+    if (pm) {
+      var p = parseInt(pm[1]), q = qm ? parseInt(qm[1]) : 1;
+      total += p * q; qty += q;
+    }
+  });
+  document.getElementById('oe-subtotal').textContent = 'NT$' + total;
+  var disc = oeOrder ? (oeOrder.discountTotal || 0) : 0;
+  if (disc > 0) {
+    var final = Math.max(total - disc, 0);
+    document.getElementById('oe-discount-row').style.display = '';
+    document.getElementById('oe-discount').textContent = '-NT$' + disc;
+    document.getElementById('oe-final-row').style.display = '';
+    document.getElementById('oe-final').textContent = 'NT$' + final;
+  } else {
+    document.getElementById('oe-discount-row').style.display = 'none';
+    document.getElementById('oe-final-row').style.display = 'none';
+  }
+  return { total, qty };
+}
+async function saveOrderEdit() {
+  var rowIndex = parseInt(document.getElementById('oe-row').value);
+  var raw = document.getElementById('oe-items').value.trim();
+  var { total, qty } = calcOrderTotal();
+  if (!raw || qty === 0) { toast('請至少保留一件商品'); return; }
+  var itemsText = raw + '\n共 ' + qty + ' 件';
+  try {
+    var r = await fetch('/api/admin/order-edit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key: KEY, rowIndex, items: itemsText, totalTwd: total })
+    });
+    var d = await r.json();
+    if (!r.ok) { toast('失敗：' + (d.error || r.status)); return; }
+    // 更新本地資料
+    oeOrder.items = itemsText;
+    oeOrder.total = d.totalTwd;
+    oeOrder.finalAmount = d.finalAmount;
+    renderOrders();
+    closeOrderEdit();
+    toast('已更新訂單商品');
+  } catch(e) { toast('錯誤：' + e.message); }
+}
 </script>
+
+<!-- 訂單編輯 Modal -->
+<div id="order-edit-modal" class="modal-overlay" onclick="if(event.target===this)closeOrderEdit()">
+  <div class="modal-box" style="width:460px;max-width:95vw">
+    <div class="modal-title">✏️ 修改訂單商品</div>
+    <input type="hidden" id="oe-row">
+    <div style="font-size:12px;color:#888;margin-bottom:6px">每行一個商品，格式：【GRL/ZOZO】商品ID 顏色 尺寸 NT$價格 ×數量</div>
+    <textarea id="oe-items" rows="6" style="width:100%;box-sizing:border-box;border:1px solid #ddd;border-radius:8px;padding:8px;font-size:13px;line-height:1.6;resize:vertical" oninput="calcOrderTotal()"></textarea>
+    <div style="margin-top:10px;font-size:13px;color:#555">
+      <div>商品小計：<strong id="oe-subtotal" style="color:#c9a98a">NT$0</strong></div>
+      <div id="oe-discount-row" style="display:none;color:#888;margin-top:4px">折扣：<span id="oe-discount"></span></div>
+      <div id="oe-final-row" style="display:none;margin-top:4px;font-size:15px;font-weight:700;color:#7a5c3e">實付：<span id="oe-final"></span></div>
+    </div>
+    <div class="modal-btns" style="margin-top:16px">
+      <button class="modal-cancel" onclick="closeOrderEdit()">取消</button>
+      <button class="modal-ok" onclick="saveOrderEdit()">儲存</button>
+    </div>
+  </div>
+</div>
 
 <div id="date-modal" class="modal-overlay" onclick="if(event.target===this)closeDateModal()">
   <div class="modal-box">
@@ -4073,10 +4185,14 @@ app.get('/admin/notify-buyer', async (req, res) => {
     if (!orderRow) return res.status(404).json({ error: `找不到訂單 ${orderId}` });
 
     const orderRowIndex = rows.indexOf(orderRow) + 1; // 1-indexed (includes header)
-    const buyerUserId  = orderRow[2] || '';
-    const buyerName    = orderRow[5] || '';
-    const itemsSummary = orderRow[3] || '';
-    const totalTwd     = orderRow[4] || '';
+    const buyerUserId   = orderRow[2] || '';
+    const buyerName     = orderRow[5] || '';
+    const itemsSummary  = orderRow[3] || '';
+    const totalTwd      = parseInt(orderRow[4]) || 0;
+    const discountTotal = parseInt(orderRow[13]) || 0;
+    const finalAmount   = parseInt(orderRow[14]) || totalTwd;
+    const displayAmount = discountTotal > 0 ? finalAmount : totalTwd;
+    const amountLabel   = discountTotal > 0 ? `實付金額：NT$${displayAmount}（已折 NT$${discountTotal}）` : `合計：NT$${displayAmount}`;
 
     if (!buyerUserId) return res.status(400).json({ error: '訂單缺少 userId' });
 
@@ -4104,7 +4220,7 @@ app.get('/admin/notify-buyer', async (req, res) => {
             { type: 'text', text: `${buyerName} 您好`, size: 'sm', color: '#555555' },
             { type: 'separator', margin: 'sm' },
             { type: 'text', text: itemsSummary, size: 'xs', color: '#888888', wrap: true, margin: 'sm' },
-            { type: 'text', text: `合計：NT$${totalTwd}`, size: 'sm', weight: 'bold', color: '#c9a98a', margin: 'sm' },
+            { type: 'text', text: amountLabel, size: 'sm', weight: 'bold', color: '#c9a98a', margin: 'sm' },
             { type: 'separator', margin: 'sm' },
             { type: 'text', text: '請點選下方按鈕前往賣貨便完成下單 👇', size: 'sm', color: '#555555', margin: 'sm', wrap: true },
           ],
