@@ -4221,7 +4221,7 @@ app.get('/admin/notify-buyer', async (req, res) => {
             { type: 'text', text: `${buyerName} 您好`, size: 'sm', color: '#555555' },
             { type: 'separator', margin: 'sm' },
             { type: 'text', text: itemsSummary, size: 'xs', color: '#888888', wrap: true, margin: 'sm' },
-            { type: 'text', text: amountLabel, size: 'sm', weight: 'bold', color: '#c9a98a', margin: 'sm' },
+            { type: 'text', text: amountLabel, size: 'sm', weight: 'bold', color: '#c9a98a', margin: 'sm', wrap: true },
             { type: 'separator', margin: 'sm' },
             { type: 'text', text: '請點選下方按鈕前往賣貨便完成下單 👇', size: 'sm', color: '#555555', margin: 'sm', wrap: true },
           ],
