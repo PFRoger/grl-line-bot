@@ -4086,13 +4086,13 @@ if (SSR_ERROR) {
 // ── 訂單編輯 ──
 var oeOrder = null;
 function parseItemLine(line) {
-  var sm = line.match(/^【(GRL|ZOZO)】/);
-  if (!sm) return null;
-  var source = sm[1];
-  var rest = line.slice(sm[0].length).trim();
+  var stripped = line.replace(/^【預購】/, '').trim(); // 去掉預購前綴
+  var sm = stripped.match(/^【(GRL|ZOZO)】/);
+  var source = sm ? sm[1] : 'GRL';
+  var rest = sm ? stripped.slice(sm[0].length).trim() : stripped;
   var pm = rest.match(/NT\$(\d+)/);
   var qm = rest.match(/×(\d+)/);
-  if (!pm) return null;
+  if (!pm) return null; // 完全無法解析的行（如「共 N 件」已被 filter 掉，但保留這道防線）
   var price = parseInt(pm[1]);
   var qty = qm ? parseInt(qm[1]) : 1;
   var beforePrice = rest.slice(0, rest.indexOf('NT$')).trim();
@@ -4131,10 +4131,15 @@ function openOrderEdit(ri) {
   oeOrder = allOrders.find(function(x){ return x.rowIndex === ri; });
   if (!oeOrder) return;
   document.getElementById('oe-row').value = oeOrder.rowIndex;
-  var lines = (oeOrder.items || '').split('\\n').filter(function(l){ return l.trim() && !l.match(/^共\s*\d+/); });
+  var raw = oeOrder.items || '';
+  console.log('[openOrderEdit] items JSON:', JSON.stringify(raw.substring(0, 300)));
+  var lines = raw.split('\\n').filter(function(l){ return l.trim() && !l.match(/^共\s*\d+/); });
+  console.log('[openOrderEdit] lines:', lines);
   var tbody = document.getElementById('oe-tbody');
   tbody.innerHTML = lines.map(function(l) {
-    var item = parseItemLine(l); return item ? renderItemRow(item) : '';
+    var item = parseItemLine(l);
+    console.log('[parseItemLine]', JSON.stringify(l.substring(0, 60)), '->', item);
+    return item ? renderItemRow(item) : '';
   }).join('');
   calcOrderTotal();
   document.getElementById('order-edit-modal').style.display = 'flex';
