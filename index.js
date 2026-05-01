@@ -4090,8 +4090,8 @@ function parseItemLine(line) {
   var sm = stripped.match(/^【(GRL|ZOZO)】/);
   var source = sm ? sm[1] : 'GRL';
   var rest = sm ? stripped.slice(sm[0].length).trim() : stripped;
-  var pm = rest.match(/NT\$(\d+)/);
-  var qm = rest.match(/×(\d+)/);
+  var pm = rest.match(/NT[$](\\d+)/);
+  var qm = rest.match(/×(\\d+)/);
   if (!pm) return null; // 完全無法解析的行（如「共 N 件」已被 filter 掉，但保留這道防線）
   var price = parseInt(pm[1]);
   var qty = qm ? parseInt(qm[1]) : 1;
@@ -4133,7 +4133,7 @@ function openOrderEdit(ri) {
   document.getElementById('oe-row').value = oeOrder.rowIndex;
   var raw = oeOrder.items || '';
   console.log('[openOrderEdit] items JSON:', JSON.stringify(raw.substring(0, 300)));
-  var lines = raw.split('\\n').filter(function(l){ return l.trim() && !l.match(/^共\s*\d+/); });
+  var lines = raw.split('\\n').filter(function(l){ return l.trim() && !l.match(/^共\\s*\\d+/); });
   console.log('[openOrderEdit] lines:', lines);
   var tbody = document.getElementById('oe-tbody');
   tbody.innerHTML = lines.map(function(l) {
