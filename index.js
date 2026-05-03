@@ -2373,7 +2373,7 @@ async function handleEvent(event, client) {
           backgroundColor: '#f5ede4',
           paddingAll: '14px',
           contents: [
-            { type: 'text', text: '🔍 報價解析中', color: '#7a5c3e', size: 'xl', weight: 'bold', align: 'center' },
+            { type: 'text', text: '報價解析中', color: '#7a5c3e', size: 'xl', weight: 'bold', align: 'center' },
             { type: 'text', text: '平台：ZOZO', color: '#c9a98a', size: 'sm', align: 'center' },
           ],
         },
