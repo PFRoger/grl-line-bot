@@ -1368,8 +1368,8 @@ async function handlePostback(event, client) {
                   type: 'box', layout: 'vertical', paddingTop: '52px', paddingBottom: '52px',
                   paddingStart: '20px', paddingEnd: '20px', backgroundColor: '#c4879a',
                   contents: [
-                    { type: 'text', text: 'GRL', color: '#ffffff', size: '5xl', weight: 'bold', align: 'center' },
-                    { type: 'text', text: 'GRL', color: '#c4879a', size: '5xl', weight: 'bold', align: 'center' },
+                    { type: 'text', text: 'GRL', color: '#ffffff', size: '4xl', weight: 'bold', align: 'center' },
+                    { type: 'text', text: 'GRL', color: '#c4879a', size: '4xl', weight: 'bold', align: 'center' },
                   ],
                 },
                 {
