@@ -122,10 +122,18 @@ async function submitResult(taskId, result, error) {
 
 function parseZOZO(html, url) {
   console.log('[ZOZO] HTML大小:', html.length, '| goods-id:', html.includes('data-goods-id'), '| item-price:', html.includes('data-item-price'), '| goodsCode:', (html.match(/data-goods-code="([^"]+)"/)||[])[1]||'null', '| title:', (html.match(/<title[^>]*>([^<]{0,80})/i)||[])[1]||'');
-  // debug: 尋找尺寸對應標籤（抓 サイズ相当 前面的文字）
-  const sizeEquivMatches = [...html.matchAll(/([^<>"]{1,10})サイズ相当/g)].map(m => m[1].trim() + 'サイズ相当').slice(0, 8);
-  const sizeAttrMatches = html.match(/data-shelf-size-[a-z-]+=["'][^"']+["']/g)?.slice(0, 10) || [];
-  console.log('[ZOZO DEBUG 尺寸相当]', sizeEquivMatches, '| shelf-size-attrs:', sizeAttrMatches);
+  // debug: 找出 サイズ相当 周圍的完整 HTML 結構
+  const sizeEquivIdx = html.indexOf('サイズ相当');
+  const sizeContext = sizeEquivIdx >= 0 ? JSON.stringify(html.substring(Math.max(0, sizeEquivIdx - 80), sizeEquivIdx + 30)) : 'not found';
+  // 同時找所有 <li> 的文字內容（含サイズ相当的那個）
+  const liSizeContents = [];
+  const liRe2 = /<li\b[^>]*data-shelf-size-name="([^"]+)"[^>]*>([\s\S]*?)<\/li>/g;
+  let liM2;
+  while ((liM2 = liRe2.exec(html)) !== null && liSizeContents.length < 3) {
+    liSizeContents.push(liM2[1] + ': ' + liM2[2].replace(/<[^>]+>/g, '|').replace(/\s+/g, ' ').trim().substring(0, 120));
+  }
+  console.log('[ZOZO DEBUG サイズ周圍]', sizeContext);
+  console.log('[ZOZO DEBUG li內容]', liSizeContents);
   if (!html.includes('data-goods-id') && !html.includes('data-item-price')) return null;
 
   const titleRaw = (html.match(/<title[^>]*>([^<]+)<\/title>/i) || [])[1] || '';
