@@ -577,7 +577,7 @@ function buildZOZOFlexMessage(data, url, rate = null) {
             : Array.from(`❌ ${sizeName} 缺貨`).slice(0, 20).join('');
           let action;
           if (s.inStock && goodsId) {
-            const pbData = `action=add_to_cart_zozo&gid=${goodsId}&cid=${encodeURIComponent(c.id)}&cn=${encodeURIComponent(c.name)}&sz=${encodeURIComponent(sizeName)}&jpy=${price || 0}&p=${suggested || 0}&img=${encodeURIComponent(c.imageUrl || '')}`;
+            const pbData = `action=add_to_cart_zozo&gid=${goodsId}&cid=${encodeURIComponent(c.id)}&cn=${encodeURIComponent(c.name)}&sz=${encodeURIComponent(sizeName)}&jpy=${price || 0}&p=${suggested || 0}&img=${encodeURIComponent(c.imageUrl || '')}&ts=${Math.floor(Date.now()/1000)}`;
             action = { type: 'postback', label, data: pbData };
           } else {
             action = { type: 'uri', label, uri: url };
@@ -1266,6 +1266,14 @@ async function handlePostback(event, client) {
     });
 
   } else if (action === 'add_to_cart') {
+    const ts = parseInt(params.get('ts')) || 0;
+    if (!ts || (Math.floor(Date.now()/1000) - ts) > 6 * 3600) {
+      await client.replyMessage(replyToken, {
+        type: 'text',
+        text: '⚠️ 此報價已超過 6 小時，價格可能有變動。\n\n請重新傳送商品網址取得最新報價，再加入購物車 😊',
+      });
+      return;
+    }
     const productId    = params.get('id') || '';
     const colorJp      = params.get('c') || '';
     const size         = params.get('s') || '';
@@ -1295,6 +1303,14 @@ async function handlePostback(event, client) {
     });
 
   } else if (action === 'add_to_cart_zozo') {
+    const ts = parseInt(params.get('ts')) || 0;
+    if (!ts || (Math.floor(Date.now()/1000) - ts) > 6 * 3600) {
+      await client.replyMessage(replyToken, {
+        type: 'text',
+        text: '⚠️ 此報價已超過 6 小時，價格可能有變動。\n\n請重新傳送商品網址取得最新報價，再加入購物車 😊',
+      });
+      return;
+    }
     const goodsId    = params.get('gid') || '';
     const colorId    = params.get('cid') || '';
     const colorJp    = params.get('cn') || '';
@@ -2027,7 +2043,7 @@ function buildAddToCartFlex(stockLines, productId, jpy, suggested, productUrl, i
       const btnLabel = Array.from(`🛒 加入購物車｜${item.size} ${shortStatus}`).slice(0, 20).join('');
       const displayText = `加入購物車：${item.colorZh || colorJp} ${item.size}`;
       const imgUrl = colorImages[colorJp] || imageUrl || '';
-      const data = `action=add_to_cart&id=${productId}&c=${encodeURIComponent(colorJp)}&s=${encodeURIComponent(item.size)}&jpy=${jpy}&p=${suggested}&url=${encodeURIComponent(productUrl)}&img=${encodeURIComponent(imgUrl)}${item.isPreorder ? '&pre=1' : ''}`;
+      const data = `action=add_to_cart&id=${productId}&c=${encodeURIComponent(colorJp)}&s=${encodeURIComponent(item.size)}&jpy=${jpy}&p=${suggested}&url=${encodeURIComponent(productUrl)}&img=${encodeURIComponent(imgUrl)}${item.isPreorder ? '&pre=1' : ''}&ts=${Math.floor(Date.now()/1000)}`;
       const btnColor = item.inStock ? '#b8895a' : item.isPreorder ? '#7a8fb5' : '#c4956a';
       return {
         type: 'button',
