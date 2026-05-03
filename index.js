@@ -571,7 +571,7 @@ function buildZOZOFlexMessage(data, url, rate = null) {
     const colorLabel = zozoColorLabel(c.name);
     const sizeRows = c.sizes.length > 0
       ? c.sizes.map(s => {
-          const sizeName = sizeEquivMap[s.name] || zozoSizeName(s.name);
+          const sizeName = (/^\d+$/.test(s.name) && sizeEquivMap[s.name]) ? sizeEquivMap[s.name] : zozoSizeName(s.name);
           const label = s.inStock
             ? Array.from(`🛒 加入購物車｜${sizeName} 有庫存`).slice(0, 20).join('')
             : Array.from(`❌ ${sizeName} 缺貨`).slice(0, 20).join('');
