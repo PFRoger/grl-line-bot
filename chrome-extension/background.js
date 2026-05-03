@@ -122,6 +122,10 @@ async function submitResult(taskId, result, error) {
 
 function parseZOZO(html, url) {
   console.log('[ZOZO] HTML大小:', html.length, '| goods-id:', html.includes('data-goods-id'), '| item-price:', html.includes('data-item-price'), '| goodsCode:', (html.match(/data-goods-code="([^"]+)"/)||[])[1]||'null', '| title:', (html.match(/<title[^>]*>([^<]{0,80})/i)||[])[1]||'');
+  // debug: 尋找尺寸對應標籤
+  const sizeEquivMatches = html.match(/サイズ相当[^<"]{0,30}/g) || [];
+  const sizeJsonMatch = html.match(/"size(?:Label|Name|Equiv|Chart|Guide)[^"]*"\s*:\s*"([^"]{1,50})"/g) || [];
+  console.log('[ZOZO DEBUG 尺寸相当]', sizeEquivMatches.slice(0,5), '| sizeJSON:', sizeJsonMatch.slice(0,5));
   if (!html.includes('data-goods-id') && !html.includes('data-item-price')) return null;
 
   const titleRaw = (html.match(/<title[^>]*>([^<]+)<\/title>/i) || [])[1] || '';

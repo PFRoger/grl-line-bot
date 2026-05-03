@@ -2370,11 +2370,11 @@ async function handleEvent(event, client) {
         header: {
           type: 'box',
           layout: 'vertical',
-          backgroundColor: '#111111',
+          backgroundColor: '#f5ede4',
           paddingAll: '14px',
           contents: [
-            { type: 'text', text: 'ZOZO', color: '#ffffff', size: 'xl', weight: 'bold', align: 'center' },
-            { type: 'text', text: '🔍 報價解析中', color: '#aaaaaa', size: 'sm', align: 'center' },
+            { type: 'text', text: 'ZOZO', color: '#7a5c3e', size: 'xl', weight: 'bold', align: 'center' },
+            { type: 'text', text: '🔍 報價解析中', color: '#c9a98a', size: 'sm', align: 'center' },
           ],
         },
         body: {
@@ -2394,7 +2394,7 @@ async function handleEvent(event, client) {
           contents: [{
             type: 'button',
             style: 'primary',
-            color: '#111111',
+            color: '#c9a98a',
             height: 'sm',
             action: { type: 'postback', label: '📋 查看報價', data: `action=zozo_check&taskId=${taskId}`, displayText: '查看 ZOZO 報價結果' },
           }],
