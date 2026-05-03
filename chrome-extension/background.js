@@ -59,7 +59,7 @@ function fetchViaTab(url) {
       fn();
     };
 
-    const globalTimer = setTimeout(() => done(() => reject(new Error('Timeout（25秒）'))), 25000);
+    const globalTimer = setTimeout(() => done(() => reject(new Error('Timeout（60秒）'))), 60000);
 
     const tryExtract = () => {
       chrome.scripting.executeScript(
@@ -91,7 +91,7 @@ function fetchViaTab(url) {
       }
     }
 
-    chrome.tabs.create({ url, active: false }, (tab) => {
+    chrome.tabs.create({ url, active: true }, (tab) => {
       if (chrome.runtime.lastError) {
         done(() => reject(new Error(chrome.runtime.lastError.message)));
         return;

@@ -517,7 +517,7 @@ async function addZOZOTask(sheets, userId, url) {
     spreadsheetId: SHEET_ID,
     range: `${ZOZO_SHEET}!A:H`,
     valueInputOption: 'RAW',
-    resource: { values: [[taskId, userId, url, 'awaiting_confirm', '', new Date().toISOString(), '', '']] },
+    resource: { values: [[taskId, userId, url, 'pending', '', new Date().toISOString(), '', '']] },
   });
   return taskId;
 }
@@ -1426,28 +1426,51 @@ async function handlePostback(event, client) {
       text: `🛒 前往購物車結帳：\nhttps://liff.line.me/${LIFF_ID}`,
     });
 
-  } else if (action === 'zozo_confirm') {
+  } else if (action === 'zozo_check') {
     const taskId = params.get('taskId');
     if (!taskId) return;
     try {
       const sheets = getSheetsClient();
-      const res = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${ZOZO_SHEET}!A:H` });
+      const res = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${ZOZO_SHEET}!A:G` });
       const rows = res.data.values || [];
       const rowIdx = rows.findIndex((r, i) => i > 0 && r[0] === taskId);
       if (rowIdx < 0) {
-        await client.replyMessage(replyToken, { type: 'text', text: '查詢任務已過期，請重新傳送網址。' });
+        await client.replyMessage(replyToken, { type: 'text', text: '查詢紀錄已不存在，請重新傳送商品網址 🙏' });
         return;
       }
-      // 將 postback 的 replyToken 寫入 H 欄，狀態改 pending
-      await sheets.spreadsheets.values.update({
-        spreadsheetId: SHEET_ID,
-        range: `${ZOZO_SHEET}!D${rowIdx + 1}:H${rowIdx + 1}`,
-        valueInputOption: 'RAW',
-        resource: { values: [['pending', '', '', '', replyToken]] },
-      });
-      // 不 reply，保留 replyToken 給 Extension 完成後使用
+      const row = rows[rowIdx];
+      const status    = row[3] || '';
+      const resultStr = row[4] || '';
+      const url       = row[2] || '';
+      const createdAt = new Date(row[5] || 0).getTime();
+      const ageMs     = Date.now() - createdAt;
+
+      if (status === 'done' && resultStr) {
+        let result;
+        try { result = JSON.parse(resultStr); } catch (_) {
+          await client.replyMessage(replyToken, { type: 'text', text: 'ZOZO 商品資料讀取異常，請重新傳送網址 🙏' });
+          return;
+        }
+        let rate = null;
+        try { rate = await fetchRate(); } catch (_) {}
+        let msg;
+        try { msg = buildZOZOFlexMessage(result, url, rate); } catch (e) {
+          console.error('[zozo_check buildFlex]', e.message);
+          await client.replyMessage(replyToken, { type: 'text', text: 'ZOZO 報價卡片建立失敗，請重新傳送網址 🙏' });
+          return;
+        }
+        await client.replyMessage(replyToken, msg);
+      } else if (status === 'error') {
+        await client.replyMessage(replyToken, { type: 'text', text: 'ZOZO 商品查詢失敗，請重新傳送網址，或聯絡我們人工報價 🙏' });
+      } else if (ageMs > 2 * 60 * 1000) {
+        // 超過 2 分鐘仍未完成 → Extension 可能當機或未啟動
+        await client.replyMessage(replyToken, { type: 'text', text: 'ZOZO 解析好像遇到了一點小狀況 🥺\n\n請重新傳送商品網址再試一次，或稍後再查詢。如持續有問題請聯絡我們 🌸' });
+      } else {
+        // pending / processing，仍在解析中
+        await client.replyMessage(replyToken, { type: 'text', text: '報價還在努力生成中 🐢💨\n\n通常需要 30～60 秒，請再稍候片刻後點擊「查看報價」，感謝您的耐心等待 🌸' });
+      }
     } catch (err) {
-      console.error('[zozo_confirm error]', err.message);
+      console.error('[zozo_check error]', err.message);
       await client.replyMessage(replyToken, { type: 'text', text: 'ZOZO 查詢暫時無法使用，請稍後再試。' });
     }
   }
@@ -2337,21 +2360,31 @@ async function handleEvent(event, client) {
       await client.replyMessage(replyToken, { type: 'text', text: 'ZOZO 查詢暫時無法使用，請稍後再試' });
       return;
     }
-    // 第一步：用 replyToken_1 回確認按鈕，URL 已存 Sheet，taskId 放進 postback data
+    // 立即回「解析中」卡片，taskId 放進「查看報價」按鈕
     await client.replyMessage(replyToken, {
       type: 'flex',
-      altText: '收到 ZOZO 商品連結，點確認開始查詢',
+      altText: 'ZOZO 報價解析中，請稍後點「查看報價」',
       contents: {
         type: 'bubble',
         size: 'kilo',
+        header: {
+          type: 'box',
+          layout: 'vertical',
+          backgroundColor: '#111111',
+          paddingAll: '14px',
+          contents: [
+            { type: 'text', text: 'ZOZO', color: '#ffffff', size: 'xl', weight: 'bold', align: 'center' },
+            { type: 'text', text: '🔍 報價解析中', color: '#aaaaaa', size: 'sm', align: 'center' },
+          ],
+        },
         body: {
           type: 'box',
           layout: 'vertical',
-          spacing: 'md',
+          spacing: 'sm',
           paddingAll: '16px',
           contents: [
-            { type: 'text', text: '🛍 ZOZO 商品查詢', weight: 'bold', size: 'md', color: '#3d2c1e' },
-            { type: 'text', text: 'zozo解析商品會需要約10-20秒.ᐟ\n如確認執行請協助點選確認查詢按鈕.ᐟ\n並請您稍後.ᐟ\n結果馬上到.ᐟ', size: 'sm', color: '#888888', wrap: true },
+            { type: 'text', text: '正在為您抓取 ZOZO 商品資訊 ✨', weight: 'bold', size: 'sm', color: '#3d2c1e', wrap: true },
+            { type: 'text', text: '解析通常需要 30～60 秒\n稍後請點下方「查看報價」取得結果 🌸', size: 'sm', color: '#888888', wrap: true },
           ],
         },
         footer: {
@@ -2361,9 +2394,9 @@ async function handleEvent(event, client) {
           contents: [{
             type: 'button',
             style: 'primary',
-            color: '#FF6B9D',
+            color: '#111111',
             height: 'sm',
-            action: { type: 'postback', label: '確認查詢', data: `action=zozo_confirm&taskId=${taskId}`, displayText: '確認查詢 ZOZO 商品' },
+            action: { type: 'postback', label: '📋 查看報價', data: `action=zozo_check&taskId=${taskId}`, displayText: '查看 ZOZO 報價結果' },
           }],
         },
       },
@@ -5547,7 +5580,7 @@ app.get('/api/zozo-queue', async (req, res) => {
   }
 });
 
-// POST /api/zozo-queue — Extension 回傳結果，Bot 發 LINE push
+// POST /api/zozo-queue — Extension 回傳結果，更新 Sheet（買家主動點「查看報價」取結果）
 app.post('/api/zozo-queue', express.json(), async (req, res) => {
   if (req.body.key !== ADMIN_KEY) return res.status(401).json({ error: 'Unauthorized' });
   const { taskId, result, error } = req.body;
@@ -5557,18 +5590,17 @@ app.post('/api/zozo-queue', express.json(), async (req, res) => {
     const sheets = getSheetsClient();
     const existing = await sheets.spreadsheets.values.get({
       spreadsheetId: SHEET_ID,
-      range: `${ZOZO_SHEET}!A:H`,
+      range: `${ZOZO_SHEET}!A:G`,
     });
     const rows = existing.data.values || [];
     const rowIdx = rows.findIndex((r, i) => i > 0 && r[0] === taskId);
     if (rowIdx < 0) return res.status(404).json({ error: 'Task not found' });
 
-    const userId     = rows[rowIdx][1];
-    const url        = rows[rowIdx][2];
-    const replyToken = rows[rowIdx][7] || null; // H欄：30秒有效的 replyToken
-    const now        = new Date().toISOString();
+    const userId = rows[rowIdx][1];
+    const url    = rows[rowIdx][2];
+    const now    = new Date().toISOString();
 
-    // 更新狀態（G欄留給錯誤訊息）
+    // 更新狀態與結果（E欄=result JSON，G欄=完成時間）
     await sheets.spreadsheets.values.update({
       spreadsheetId: SHEET_ID,
       range: `${ZOZO_SHEET}!D${rowIdx + 1}:G${rowIdx + 1}`,
@@ -5576,7 +5608,7 @@ app.post('/api/zozo-queue', express.json(), async (req, res) => {
       resource: { values: [[error ? 'error' : 'done', JSON.stringify(result || { error }), '', now]] },
     });
 
-    // 記錄查詢到「查詢紀錄」分頁
+    // 記錄查詢到「查詢紀錄」分頁（供 add_to_cart_zozo 查商品名用）
     if (result && !error) {
       const weightInfo = estimateWeight(result.name || '');
       const lbs = weightInfo ? weightInfo.midLbs : 1;
@@ -5587,33 +5619,7 @@ app.post('/api/zozo-queue', express.json(), async (req, res) => {
       logQueryToSheet(userId, '', result.goodsId || url, result.name || '', result.price || 0, weightInfo, imageForLog, suggestedForLog, url).catch(e => console.warn('[zozo-queue] logQueryToSheet 失敗:', e.message));
     }
 
-    // 發 LINE 訊息：優先用 replyMessage（免費），過期則 fallback pushMessage
-    let sendError = null;
-    try {
-      let rate = null;
-      if (result && !error) {
-        try { rate = await fetchRate(); } catch (e) { console.warn('[zozo-queue] fetchRate 失敗:', e.message); }
-      }
-      const msg = (result && !error)
-        ? buildZOZOFlexMessage(result, url, rate)
-        : { type: 'text', text: 'ZOZO 商品查詢失敗，請重新傳送網址，或聯絡我們人工報價' };
-
-      if (replyToken) {
-        await lineClient.replyMessage(replyToken, msg);
-      } else {
-        await lineClient.pushMessage(userId, msg);
-      }
-    } catch (sendErr) {
-      sendError = sendErr.message;
-      console.error('[zozo-queue SEND]', sendErr.message);
-      await sheets.spreadsheets.values.update({
-        spreadsheetId: SHEET_ID,
-        range: `${ZOZO_SHEET}!G${rowIdx + 1}`,
-        valueInputOption: 'RAW',
-        resource: { values: [[`send_error: ${sendErr.message}`]] },
-      }).catch(() => {});
-    }
-    return res.json({ ok: !sendError, sendError: sendError || undefined });
+    return res.json({ ok: true });
   } catch (e) {
     console.error('[zozo-queue POST]', e.message);
     return res.status(500).json({ error: e.message });
