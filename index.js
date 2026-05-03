@@ -1395,10 +1395,10 @@ async function handlePostback(event, client) {
               contents: [
                 {
                   type: 'box', layout: 'vertical', paddingTop: '52px', paddingBottom: '52px',
-                  paddingStart: '20px', paddingEnd: '20px', backgroundColor: '#111111',
+                  paddingStart: '20px', paddingEnd: '20px', backgroundColor: '#f5ede4',
                   contents: [
-                    { type: 'text', text: 'ZOZO', color: '#ffffff', size: '4xl', weight: 'bold', align: 'center' },
-                    { type: 'text', text: 'TOWN', color: '#ffffff', size: '4xl', weight: 'bold', align: 'center' },
+                    { type: 'text', text: 'ZOZO', color: '#7a5c3e', size: '4xl', weight: 'bold', align: 'center' },
+                    { type: 'text', text: 'TOWN', color: '#c9a98a', size: '4xl', weight: 'bold', align: 'center' },
                   ],
                 },
                 {
@@ -2192,7 +2192,7 @@ function buildFlexMessage(url, productName, jpy, suggested, stockLines, imageUrl
     header: {
       type: 'box',
       layout: 'vertical',
-      backgroundColor: '#FF6B9D',
+      backgroundColor: '#c9a98a',
       paddingAll: '14px',
       contents: [
         {
@@ -2292,7 +2292,7 @@ function buildFlexMessage(url, productName, jpy, suggested, stockLines, imageUrl
         {
           type: 'button',
           style: 'primary',
-          color: '#FF6B9D',
+          color: '#c9a98a',
           height: 'sm',
           action: {
             type: 'uri',

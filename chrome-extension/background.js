@@ -122,10 +122,10 @@ async function submitResult(taskId, result, error) {
 
 function parseZOZO(html, url) {
   console.log('[ZOZO] HTML大小:', html.length, '| goods-id:', html.includes('data-goods-id'), '| item-price:', html.includes('data-item-price'), '| goodsCode:', (html.match(/data-goods-code="([^"]+)"/)||[])[1]||'null', '| title:', (html.match(/<title[^>]*>([^<]{0,80})/i)||[])[1]||'');
-  // debug: 尋找尺寸對應標籤
-  const sizeEquivMatches = html.match(/サイズ相当[^<"]{0,30}/g) || [];
-  const sizeJsonMatch = html.match(/"size(?:Label|Name|Equiv|Chart|Guide)[^"]*"\s*:\s*"([^"]{1,50})"/g) || [];
-  console.log('[ZOZO DEBUG 尺寸相当]', sizeEquivMatches.slice(0,5), '| sizeJSON:', sizeJsonMatch.slice(0,5));
+  // debug: 尋找尺寸對應標籤（抓 サイズ相当 前面的文字）
+  const sizeEquivMatches = [...html.matchAll(/([^<>"]{1,10})サイズ相当/g)].map(m => m[1].trim() + 'サイズ相当').slice(0, 8);
+  const sizeAttrMatches = html.match(/data-shelf-size-[a-z-]+=["'][^"']+["']/g)?.slice(0, 10) || [];
+  console.log('[ZOZO DEBUG 尺寸相当]', sizeEquivMatches, '| shelf-size-attrs:', sizeAttrMatches);
   if (!html.includes('data-goods-id') && !html.includes('data-item-price')) return null;
 
   const titleRaw = (html.match(/<title[^>]*>([^<]+)<\/title>/i) || [])[1] || '';
