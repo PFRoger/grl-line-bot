@@ -841,7 +841,7 @@ async function getCartItems(userId) {
   }
   const rows = (resp && resp.data.values) || [];
   const now = Date.now();
-  const EXPIRE_MS = 48 * 60 * 60 * 1000; // 48 hours
+  const EXPIRE_MS = 6 * 60 * 60 * 1000; // 6 hours
   const items = [];
   rows.forEach((row, idx) => {
     if (idx === 0) return; // header
@@ -1082,7 +1082,7 @@ function buildTutorialFlexMessage() {
         { text: ' ', bold: false },
         { text: '想要多件？繼續貼網址選款即可', bold: true },
         { text: ' ', bold: false },
-        { text: '⚠️ 購物車 48 小時後自動清空', bold: false },
+        { text: '⚠️ 購物車 6 小時後自動清空', bold: false },
         { text: '請盡早完成結帳！', bold: false },
       ],
     },
@@ -1299,7 +1299,7 @@ async function handlePostback(event, client) {
     const colorDisplay = translateColorWithJp(colorJp);
     await client.replyMessage(replyToken, {
       type: 'text',
-      text: `✅ 已加入購物車\n商品：${isPreorder ? '【預購】' : ''}${productName || productId}\n貨號：${productId.toUpperCase()}\n\n顏色：${colorDisplay}\n尺寸：${size}\n\n售價：NT$${suggested}\n\n請按下方主選單「購物車」查看內容\n════════════\n購物車每 48 小時自動清空`,
+      text: `✅ 已加入購物車\n商品：${isPreorder ? '【預購】' : ''}${productName || productId}\n貨號：${productId.toUpperCase()}\n\n顏色：${colorDisplay}\n尺寸：${size}\n\n售價：NT$${suggested}\n\n請按下方主選單「購物車」查看內容\n════════════\n購物車每 6 小時自動清空`,
     });
 
   } else if (action === 'add_to_cart_zozo') {
@@ -1335,7 +1335,7 @@ async function handlePostback(event, client) {
     const colorDisplay = zozoColorLabel(colorJp);
     await client.replyMessage(replyToken, {
       type: 'text',
-      text: `✅ 已加入購物車\n商品：${productName}\n\n顏色：${colorDisplay}\n尺寸：${size}\n\n售價：NT$${suggested}\n\n請按下方主選單「購物車」查看內容\n════════════\n購物車每 48 小時自動清空`,
+      text: `✅ 已加入購物車\n商品：${productName}\n\n顏色：${colorDisplay}\n尺寸：${size}\n\n售價：NT$${suggested}\n\n請按下方主選單「購物車」查看內容\n════════════\n購物車每 6 小時自動清空`,
     });
 
   } else if (action === 'start_shopping') {
@@ -1604,6 +1604,7 @@ let _confirmCb = null;
 let memberPoints = 0;
 let activeCoupons = [];
 let selectedCouponCode = '';
+let isMember = false;
 let subtotal = 0;
 // ── 欄位歷史記錄（autocomplete）──
 function getHist(key) {
@@ -1682,6 +1683,7 @@ async function init() {
     ]);
     cartItems = cartData.items || [];
     if (memberData.ok && memberData.registered) {
+      isMember = true;
       memberPoints = memberData.member.points || 0;
       activeCoupons = memberData.coupons || [];
     }
@@ -1916,6 +1918,10 @@ function useAllPts() {
 }
 
 async function submitOrder() {
+  if (!isMember) {
+    showAlert('請先加入會員才能下單 🌸<br><br>請點選下方主選單「會員中心」完成會員註冊後再返回下單');
+    return;
+  }
   const name = document.getElementById('f-name').value.trim();
   const phone = document.getElementById('f-phone').value.trim();
   const contactMethodEl = document.querySelector('input[name="contact-method"]:checked');
@@ -2474,7 +2480,7 @@ function buildGuideHtml() {
     { num: '02', title: '選色加入購物車', icon: '🛒',
       grad: 'linear-gradient(135deg,#e8d5c4 0%,#d8c0aa 50%,#c8a890 100%)',
       desc: '在報價卡片上優雅地挑選顏色與尺寸。您可以連續貼上多個網址，一次滿足所有購物願望。',
-      note: { type: 'quote', text: '溫馨提示：您的購物車具有 48 小時的短暫記憶，請及時完成結帳。' } },
+      note: { type: 'quote', text: '溫馨提示：您的購物車具有 6 小時的短暫記憶，請及時完成結帳。' } },
     { num: '03', title: '填資料・送出訂單', icon: '📋',
       grad: 'linear-gradient(135deg,#d8e0d4 0%,#c4d0be 50%,#b0c0a8 100%)',
       desc: '確認購物清單後，填寫基本聯絡資料。我們會細心核對每一筆訂單，確保您的商品正確無誤。',
@@ -2698,10 +2704,13 @@ app.post('/api/order', express.json(), async (req, res) => {
     const sheets = getSheetsClient();
     const { pointsUsed = 0, couponCode = '', couponAmount = 0 } = discountInfo;
 
+    // 強制會員才能下單
+    const member = await getMember(sheets, userId);
+    if (!member) return res.status(400).json({ error: '請先加入會員才能下單' });
+
     // 驗證點數
     if (pointsUsed > 0) {
-      const member = await getMember(sheets, userId);
-      if (!member || pointsUsed > (member.points || 0)) return res.status(400).json({ error: '點數不足' });
+      if (pointsUsed > (member.points || 0)) return res.status(400).json({ error: '點數不足' });
     }
     // 驗證優惠券
     if (couponCode) {
