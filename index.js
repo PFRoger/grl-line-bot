@@ -1366,10 +1366,10 @@ async function handlePostback(event, client) {
               contents: [
                 {
                   type: 'box', layout: 'vertical', paddingTop: '52px', paddingBottom: '52px',
-                  paddingStart: '20px', paddingEnd: '20px', backgroundColor: '#ede0f5',
+                  paddingStart: '20px', paddingEnd: '20px', backgroundColor: '#c4879a',
                   contents: [
-                    { type: 'text', text: 'GRL', color: '#222222', size: '4xl', weight: 'bold', align: 'center' },
-                    { type: 'text', text: 'GRL', color: '#ede0f5', size: '4xl', weight: 'bold', align: 'center' },
+                    { type: 'text', text: 'GRL', color: '#ffffff', size: '4xl', weight: 'bold', align: 'center' },
+                    { type: 'text', text: 'GRL', color: '#c4879a', size: '4xl', weight: 'bold', align: 'center' },
                   ],
                 },
                 {
@@ -1395,10 +1395,10 @@ async function handlePostback(event, client) {
               contents: [
                 {
                   type: 'box', layout: 'vertical', paddingTop: '52px', paddingBottom: '52px',
-                  paddingStart: '20px', paddingEnd: '20px', backgroundColor: '#f5ede4',
+                  paddingStart: '20px', paddingEnd: '20px', backgroundColor: '#111111',
                   contents: [
-                    { type: 'text', text: 'ZOZO', color: '#7a5c3e', size: '4xl', weight: 'bold', align: 'center' },
-                    { type: 'text', text: 'TOWN', color: '#c9a98a', size: '4xl', weight: 'bold', align: 'center' },
+                    { type: 'text', text: 'ZOZO', color: '#ffffff', size: '4xl', weight: 'bold', align: 'center' },
+                    { type: 'text', text: 'TOWN', color: '#ffffff', size: '4xl', weight: 'bold', align: 'center' },
                   ],
                 },
                 {
