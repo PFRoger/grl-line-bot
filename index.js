@@ -554,7 +554,7 @@ function zozoSizeName(s) {
 }
 
 function buildZOZOFlexMessage(data, url, rate = null) {
-  const { name, brand, price, isOnSale, originalPrice, colors, goodsId } = data;
+  const { name, brand, price, isOnSale, originalPrice, colors, goodsId, sizeEquivMap = {} } = data;
 
   const jpyLine = isOnSale && originalPrice
     ? `¥${originalPrice.toLocaleString('ja-JP')} → ¥${price.toLocaleString('ja-JP')} 🔥`
@@ -571,7 +571,7 @@ function buildZOZOFlexMessage(data, url, rate = null) {
     const colorLabel = zozoColorLabel(c.name);
     const sizeRows = c.sizes.length > 0
       ? c.sizes.map(s => {
-          const sizeName = zozoSizeName(s.name);
+          const sizeName = sizeEquivMap[s.name] || zozoSizeName(s.name);
           const label = s.inStock
             ? Array.from(`🛒 加入購物車｜${sizeName} 有庫存`).slice(0, 20).join('')
             : Array.from(`❌ ${sizeName} 缺貨`).slice(0, 20).join('');
