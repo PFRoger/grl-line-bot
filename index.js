@@ -2628,6 +2628,14 @@ app.get('/api/item-image', async (req, res) => {
   const { id: productId, c: colorJp, url: directUrl } = req.query;
   if (!colorJp) return res.status(400).json({ error: 'c required' });
   if (!productId && !directUrl) return res.status(400).json({ error: 'id or url required' });
+  if (directUrl) {
+    try {
+      const u = new URL(directUrl);
+      if (!['www.grail.bz', 'grail.bz', 'zozo.jp', 'www.zozo.jp'].includes(u.hostname)) {
+        return res.status(400).json({ error: 'invalid url' });
+      }
+    } catch { return res.status(400).json({ error: 'invalid url' }); }
+  }
   try {
     const productUrl = directUrl || `https://www.grail.bz/item/${productId}/`;
     const { data: html } = await axios.get(productUrl, {
