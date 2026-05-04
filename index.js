@@ -1059,15 +1059,16 @@ function buildTutorialFlexMessage() {
       headerBg: '#e8c4bc',
       accentColor: '#c4847a',
       lines: [
-        { text: '前往 GRL 官網找到喜歡的商品', bold: false },
+        { text: '支援 GRL・ZOZO 兩大平台', bold: true },
+        { text: '前往官網找到喜歡的商品', bold: false },
         { text: '複製商品網址，貼到這個對話框', bold: false },
         { text: ' ', bold: false },
         { text: 'Bot 立即回傳', bold: true },
         { text: '・台幣報價（含代購費 + 國際運費）', bold: false },
         { text: '・各顏色 / 尺寸庫存狀態', bold: false },
         { text: ' ', bold: false },
-        { text: '✅ 有庫存　⚠️ 剩餘少量', bold: false },
-        { text: '📅 預約販售　❌ 缺貨', bold: false },
+        { text: '✅ 有庫存　❌ 缺貨', bold: false },
+        { text: '※ ZOZO 需 30～60 秒解析', bold: false },
       ],
     },
     {
@@ -2508,8 +2509,8 @@ function buildGuideHtml() {
   const steps = [
     { num: '01', title: '查詢商品報價', icon: '🔍',
       grad: 'linear-gradient(135deg,#f0ddd5 0%,#e4c8bc 50%,#d4b0a8 100%)',
-      desc: '瀏覽 GRL 官網尋找您的心頭好，將網址貼給機器人。我們將即時為您計算包含代購費與國際運費的台幣總額。',
-      note: null },
+      desc: '瀏覽 GRL 或 ZOZO 官網尋找您的心頭好，將商品網址貼給機器人。我們將即時為您計算包含代購費與國際運費的台幣總額。',
+      note: { type: 'quote', text: '※ ZOZO 商品需 30～60 秒解析，稍候點「查看報價」即可取得結果。' } },
     { num: '02', title: '選色加入購物車', icon: '🛒',
       grad: 'linear-gradient(135deg,#e8d5c4 0%,#d8c0aa 50%,#c8a890 100%)',
       desc: '在報價卡片上優雅地挑選顏色與尺寸。您可以連續貼上多個網址，一次滿足所有購物願望。',
@@ -2564,7 +2565,7 @@ function buildGuideHtml() {
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
-<title>GRL 代購流程指南 | Bijin</title>
+<title>代購流程指南 | Bijin</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@300;400;700&family=Noto+Sans+TC:wght@300;400;500&display=swap">
 <style>
@@ -2596,7 +2597,7 @@ body{font-family:'Noto Sans TC',sans-serif;background:#faf9f6;color:#4a423e;padd
     <div style="display:inline-flex;align-items:center;gap:8px;margin-bottom:20px;padding:6px 16px;border:1px solid #e5e1da;border-radius:999px;font-size:11px;letter-spacing:2px;color:#8c8279;text-transform:uppercase">
       ✦ Premium Shopping Experience
     </div>
-    <h1 style="font-family:'Noto Serif TC',serif;font-size:clamp(28px,6vw,40px);font-weight:700;color:#2d2723;margin-bottom:16px;line-height:1.2">GRL 代購流程指南</h1>
+    <h1 style="font-family:'Noto Serif TC',serif;font-size:clamp(28px,6vw,40px);font-weight:700;color:#2d2723;margin-bottom:16px;line-height:1.2">代購流程指南</h1>
     <p style="color:#8c8279;font-size:14px;max-width:480px;margin:0 auto;font-weight:300;line-height:1.9">
       我們致力於為您帶來最優質的日系穿搭體驗。<br>跟著以下五個簡潔步驟，輕鬆完成您的跨國購物。
     </p>
