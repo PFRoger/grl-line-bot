@@ -2922,7 +2922,7 @@ app.get('/admin/members', async (req, res) => {
     })).filter(m => m.userId);
   } catch(e) { loadError = e.message; }
 
-  const membersJson = JSON.stringify(members).replace(/<\/script>/gi, '<\\/script>');
+  const membersJson = JSON.stringify(members).replace(/</g, '\\u003c').replace(/>/g, '\\u003e').replace(/&/g, '\\u0026');
   const adminKey = key;
 
   res.send(`<!DOCTYPE html>
@@ -3524,7 +3524,7 @@ app.get('/admin', async (req, res) => {
     const sheets3 = getSheetsClient();
     zozoEnabled = await getZOZOEnabled(sheets3);
   } catch(e) { /* ignore */ }
-  const ssrOrdersJson = JSON.stringify(ssrOrders).replace(/<\/script>/gi, '<\\/script>');
+  const ssrOrdersJson = JSON.stringify(ssrOrders).replace(/</g, '\\u003c').replace(/>/g, '\\u003e').replace(/&/g, '\\u0026');
   res.send(`<!DOCTYPE html>
 <html lang="zh-TW">
 <head>
