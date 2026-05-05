@@ -2355,7 +2355,10 @@ async function handleEvent(event, client) {
         await client.replyMessage(replyToken, { type: 'text', text: 'ZOZO爬蟲伺服器維護中，如造成不便還請見諒.ᐟ' });
         return;
       }
-      taskId = await addZOZOTask(sheets, userId, userText);
+      // goods-sale 頁面缺少解析所需的 data attributes，正規化為標準 goods URL
+      const goodsSaleMatch = userText.match(/zozo\.jp\/shop\/[^/]+\/goods-sale\/(\d+)/);
+      const zozoUrl = goodsSaleMatch ? `https://zozo.jp/goods/${goodsSaleMatch[1]}/` : userText;
+      taskId = await addZOZOTask(sheets, userId, zozoUrl);
     } catch (err) {
       console.error('[zozo queue error]', err.message);
       await client.replyMessage(replyToken, { type: 'text', text: 'ZOZO 查詢暫時無法使用，請稍後再試' });
