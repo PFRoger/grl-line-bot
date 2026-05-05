@@ -31,7 +31,28 @@ async function pollAndProcess() {
     return;
   }
 
-  const result = parseZOZO(html, task.url);
+  let parseUrl = task.url;
+
+  // goods-sale 頁面缺少 data-goods-id/data-item-price，從 HTML 找 canonical/og:url 再重爬
+  if (/goods-sale/.test(task.url)) {
+    const canonical = (html.match(/<link[^>]+rel="canonical"[^>]+href="(https?:\/\/zozo\.jp\/goods\/\d+\/?)"/) ||
+                       html.match(/<link[^>]+href="(https?:\/\/zozo\.jp\/goods\/\d+\/?)"/i) ||
+                       html.match(/<meta[^>]+property="og:url"[^>]+content="(https?:\/\/zozo\.jp\/goods\/\d+\/?)"/) ||
+                       html.match(/<meta[^>]+content="(https?:\/\/zozo\.jp\/goods\/\d+\/?)"/i))?.[1];
+    if (canonical) {
+      console.log('[ZOZO] goods-sale → canonical:', canonical);
+      try {
+        html = await fetchViaTab(canonical);
+        parseUrl = canonical;
+      } catch (e) {
+        console.warn('[ZOZO] canonical fetch 失敗:', e.message);
+      }
+    } else {
+      console.warn('[ZOZO] goods-sale 頁面找不到 canonical URL');
+    }
+  }
+
+  const result = parseZOZO(html, parseUrl);
   if (!result) {
     console.warn('[ZOZO] 無法解析商品資料');
     await submitResult(task.taskId, null, '無法解析商品資料（頁面結構可能改變）');
