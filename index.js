@@ -555,13 +555,13 @@ function zozoSizeName(s) {
 }
 
 function buildZOZOFlexMessage(data, url, rate = null) {
-  const { name, brand, price, isOnSale, originalPrice, colors, goodsId, sizeEquivMap = {} } = data;
+  const { name, brand, price, isOnSale, originalPrice, colors, goodsId, sizeEquivMap = {}, materialText = '' } = data;
 
   const jpyLine = isOnSale && originalPrice
     ? `¥${originalPrice.toLocaleString('ja-JP')} → ¥${price.toLocaleString('ja-JP')} 🔥`
     : price ? `¥${price.toLocaleString('ja-JP')}` : '—';
 
-  const weightInfo = estimateWeight(name || '');
+  const weightInfo = estimateWeight(name || '', materialText);
   const lbs = weightInfo ? weightInfo.midLbs : 1;
   const suggested = (rate && price) ? calcZOZOSuggestedPrice(rate, price, lbs) : null;
   const ntdLine = suggested ? `NT$${suggested}` : null;

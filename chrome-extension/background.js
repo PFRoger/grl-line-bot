@@ -207,10 +207,13 @@ function parseZOZOLegacy(html, url) {
 
   console.log('[ZOZO] goodsCode:', goodsCode, '| colors:', colors.length, '| firstImg:', colors[0]?.imageUrl?.substring(0, 70) || 'null');
 
+  const materialText = extractZOZOMaterial(html);
+  console.log('[ZOZO] materialText:', materialText.substring(0, 80) || '(empty)');
+
   return {
     name, brand, price, isOnSale, originalPrice: origPrice,
     goodsId, goodsCode, hasStock: colors.some(c => c.sizes.some(s => s.inStock)),
-    colors, sizeEquivMap, url,
+    colors, sizeEquivMap, url, materialText,
   };
 }
 
@@ -314,11 +317,15 @@ function parseZOZONextData(html, url) {
 
   if (!name && !price) { console.log('[ZOZO] __NEXT_DATA__ no name/price, giving up'); return null; }
 
+  const materialText = (raw.match(/"(?:materialDescription|materialComposition|materialText)"\s*:\s*"([^"]+)"/)?.[1]) ||
+                       extractZOZOMaterial(html) || '';
+  console.log('[ZOZO] materialText:', materialText.substring(0, 80) || '(empty)');
+
   return {
     name, brand, price, isOnSale, originalPrice: origPrice,
     goodsId, goodsCode,
     hasStock: colors.some(c => c.sizes.some(s => s.inStock)),
-    colors, sizeEquivMap: {}, url,
+    colors, sizeEquivMap: {}, url, materialText,
   };
 }
 
@@ -348,4 +355,18 @@ function findColorStocksArray(obj, depth) {
     }
   }
   return null;
+}
+
+// ZOZO 素材テキスト抽出（table th/td → dt/dd → 近傍テキスト の順に試みる）
+function extractZOZOMaterial(html) {
+  // Pattern 1: <th>素材</th><td>...</td>
+  let m = html.match(/<th[^>]*>\s*素材\s*<\/th>\s*<td[^>]*>([\s\S]*?)<\/td>/i);
+  if (m) return m[1].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+  // Pattern 2: <dt>素材</dt><dd>...</dd>
+  m = html.match(/<dt[^>]*>\s*素材\s*<\/dt>\s*<dd[^>]*>([\s\S]*?)<\/dd>/i);
+  if (m) return m[1].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+  // Pattern 3: inline text "素材：ポリエステル100%" 等
+  m = html.match(/素材[：:]\s*([^<\n]{4,80})/);
+  if (m) return m[1].trim();
+  return '';
 }
