@@ -442,7 +442,7 @@ function estimateWeightLbs(productName, materialText) {
   if (/ニット|セーター/.test(name)) {
     if (/ノースリーブ|袖なし/.test(name)) {
       // 無袖不加
-    } else if (/半袖|半そで|ショートスリーブ/.test(name)) {
+    } else if (/半袖|半そで|ショートスリーブ|ポロシャツ/.test(name)) {
       minG += 45; maxG += 45;
     } else if (/七分袖|五分袖/.test(name)) {
       minG += 136; maxG += 136;

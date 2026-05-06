@@ -249,7 +249,7 @@ function calcQStatus(stockLines) {
 
 // ── 商品重量估算 ──────────────────────────────────────────────────────────────
 // 依商品名稱關鍵字判斷品類，回傳估算重量範圍與信心程度
-function estimateWeight(productName, materialText = '') {
+function estimateWeight(productName, materialText = '', sleeveCm = null) {
   const name = productName;
   const mat = materialText;
 
@@ -307,14 +307,18 @@ function estimateWeight(productName, materialText = '') {
   minG += pkgG; maxG += pkgG;
   packagingNote = `含包裝約${pkgG}g`;
 
-  // 針織材質加成（袖丈優先，其次依素材，最後保守預設）
+  // 針織材質加成（優先順序：商品名袖丈 > 實測 sleeveCm > 素材判斷 > 保守預設）
   if (/ニット|セーター/.test(name)) {
     if (/ノースリーブ|袖なし/.test(name)) {
       // 無袖針織不加
-    } else if (/半袖|半そで|ショートスリーブ/.test(name)) {
+    } else if (/半袖|半そで|ショートスリーブ|ポロシャツ/.test(name)) {
       minG += 45; maxG += 45;
     } else if (/七分袖|五分袖/.test(name)) {
       minG += 136; maxG += 136;
+    } else if (sleeveCm !== null && sleeveCm < 30) {
+      minG += 45; maxG += 45;   // 實測袖長 < 30cm → 短袖
+    } else if (sleeveCm !== null && sleeveCm < 45) {
+      minG += 136; maxG += 136; // 實測袖長 30~44cm → 五/七分袖
     } else if (/ウール|カシミア/.test(mat)) {
       minG += 227; maxG += 227; // 厚重羊毛
     } else if (/アクリル/.test(mat)) {
@@ -555,13 +559,13 @@ function zozoSizeName(s) {
 }
 
 function buildZOZOFlexMessage(data, url, rate = null) {
-  const { name, brand, price, isOnSale, originalPrice, colors, goodsId, sizeEquivMap = {}, materialText = '' } = data;
+  const { name, brand, price, isOnSale, originalPrice, colors, goodsId, sizeEquivMap = {}, materialText = '', sleeveCm = null } = data;
 
   const jpyLine = isOnSale && originalPrice
     ? `¥${originalPrice.toLocaleString('ja-JP')} → ¥${price.toLocaleString('ja-JP')} 🔥`
     : price ? `¥${price.toLocaleString('ja-JP')}` : '—';
 
-  const weightInfo = estimateWeight(name || '', materialText);
+  const weightInfo = estimateWeight(name || '', materialText, sleeveCm);
   const lbs = weightInfo ? weightInfo.midLbs : 1;
   const suggested = (rate && price) ? calcZOZOSuggestedPrice(rate, price, lbs) : null;
   const ntdLine = suggested ? `NT$${suggested}` : null;

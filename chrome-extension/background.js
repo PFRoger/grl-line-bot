@@ -208,12 +208,13 @@ function parseZOZOLegacy(html, url) {
   console.log('[ZOZO] goodsCode:', goodsCode, '| colors:', colors.length, '| firstImg:', colors[0]?.imageUrl?.substring(0, 70) || 'null');
 
   const materialText = extractZOZOMaterial(html);
-  console.log('[ZOZO] materialText:', materialText.substring(0, 80) || '(empty)');
+  const sleeveCm = extractSleeveLength(html);
+  console.log('[ZOZO] materialText:', materialText.substring(0, 80) || '(empty)', '| sleeveCm:', sleeveCm);
 
   return {
     name, brand, price, isOnSale, originalPrice: origPrice,
     goodsId, goodsCode, hasStock: colors.some(c => c.sizes.some(s => s.inStock)),
-    colors, sizeEquivMap, url, materialText,
+    colors, sizeEquivMap, url, materialText, sleeveCm,
   };
 }
 
@@ -319,13 +320,14 @@ function parseZOZONextData(html, url) {
 
   const materialText = (raw.match(/"(?:materialDescription|materialComposition|materialText)"\s*:\s*"([^"]+)"/)?.[1]) ||
                        extractZOZOMaterial(html) || '';
-  console.log('[ZOZO] materialText:', materialText.substring(0, 80) || '(empty)');
+  const sleeveCm = extractSleeveLength(html);
+  console.log('[ZOZO] materialText:', materialText.substring(0, 80) || '(empty)', '| sleeveCm:', sleeveCm);
 
   return {
     name, brand, price, isOnSale, originalPrice: origPrice,
     goodsId, goodsCode,
     hasStock: colors.some(c => c.sizes.some(s => s.inStock)),
-    colors, sizeEquivMap: {}, url, materialText,
+    colors, sizeEquivMap: {}, url, materialText, sleeveCm,
   };
 }
 
@@ -355,6 +357,12 @@ function findColorStocksArray(obj, depth) {
     }
   }
   return null;
+}
+
+// そで丈（袖長 cm）抽出 — 賣家說明文字中的 "そで丈 18" 格式
+function extractSleeveLength(html) {
+  const m = html.match(/そで丈[^\d]*(\d+(?:\.\d+)?)/);
+  return m ? parseFloat(m[1]) : null;
 }
 
 // ZOZO 素材テキスト抽出（table th/td → dt/dd → 近傍テキスト の順に試みる）
