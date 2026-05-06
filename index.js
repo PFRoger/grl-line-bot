@@ -249,8 +249,9 @@ function calcQStatus(stockLines) {
 
 // ── 商品重量估算 ──────────────────────────────────────────────────────────────
 // 依商品名稱關鍵字判斷品類，回傳估算重量範圍與信心程度
-function estimateWeight(productName) {
+function estimateWeight(productName, materialText = '') {
   const name = productName;
+  const mat = materialText;
 
   let category, label, minG, maxG, confidence, packagingNote;
 
@@ -306,7 +307,7 @@ function estimateWeight(productName) {
   minG += pkgG; maxG += pkgG;
   packagingNote = `含包裝約${pkgG}g`;
 
-  // 針織材質加成（依袖丈調整：長袖+227g，七分袖/五分袖+136g，半袖+45g，無袖+0g）
+  // 針織材質加成（袖丈優先，其次依素材，最後保守預設）
   if (/ニット|セーター/.test(name)) {
     if (/ノースリーブ|袖なし/.test(name)) {
       // 無袖針織不加
@@ -314,8 +315,16 @@ function estimateWeight(productName) {
       minG += 45; maxG += 45;
     } else if (/七分袖|五分袖/.test(name)) {
       minG += 136; maxG += 136;
+    } else if (/ウール|カシミア/.test(mat)) {
+      minG += 227; maxG += 227; // 厚重羊毛
+    } else if (/アクリル/.test(mat)) {
+      minG += 180; maxG += 180; // 壓克力
+    } else if (/コットン|綿/.test(mat)) {
+      minG += 136; maxG += 136; // 棉質
+    } else if (/レーヨン|ポリエステル|ナイロン/.test(mat)) {
+      minG += 45; maxG += 45;  // 輕薄合成纖維
     } else {
-      minG += 227; maxG += 227;
+      minG += 136; maxG += 136; // 未知素材→保守中間值
     }
   }
 
@@ -455,6 +464,16 @@ async function scrapeGRL(inputUrl) {
   // 庫存：使用 GAS 相同的 raw HTML regex 解析法
   const stockLines = parseStockFromHtml(html);
 
+  // 素材資訊：從 div.tab-content 抓取含「素材」或「%」的區塊
+  let materialText = '';
+  $('div.tab-content').each((_, el) => {
+    const text = $(el).text().trim();
+    if (text.includes('素材') || text.includes('%')) {
+      materialText = text;
+      return false;
+    }
+  });
+
   // 每個顏色的對應圖片：GRL 用 <img alt="ブラック" src="...col_11.jpg"> 方式關聯顏色
   // 縮圖路徑 /images/goods/t/ → 全尺寸改為 /images/goods/d/
   const colorImages = {};
@@ -474,7 +493,7 @@ async function scrapeGRL(inputUrl) {
     }
   });
 
-  return { productName, jpy, stockLines, imageUrl, colorImages, resolvedUrl };
+  return { productName, jpy, stockLines, imageUrl, colorImages, resolvedUrl, materialText };
 }
 
 // ── ZOZO 任務佇列（Chrome Extension 負責爬蟲，Bot 負責發 push）────────────────
@@ -2462,9 +2481,9 @@ async function handleEvent(event, client) {
     return;
   }
 
-  const { productName, jpy, stockLines, imageUrl, colorImages, resolvedUrl } = productData;
+  const { productName, jpy, stockLines, imageUrl, colorImages, resolvedUrl, materialText = '' } = productData;
   const effectiveUrl = resolvedUrl || queryUrl;
-  const weightInfo  = estimateWeight(productName);
+  const weightInfo  = estimateWeight(productName, materialText);
   const lbsForPrice = kWeight || (weightInfo ? weightInfo.midLbs : 1);
   const suggested   = calcSuggestedPrice(rate, jpy, lbsForPrice);
   const qStatus     = calcQStatus(stockLines);
