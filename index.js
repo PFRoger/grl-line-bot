@@ -2347,7 +2347,7 @@ function buildWelcomeFlexMessage() {
             backgroundColor: '#FFF8F0', spacing: 'sm',
             contents: [
               { type: 'text', text: '🎁 新會員入會禮', weight: 'bold', size: 'sm', color: '#c9a98a' },
-              { type: 'text', text: 'NT$50 購物金 × 1 張', weight: 'bold', size: 'lg', color: '#c0392b', margin: 'sm' },
+              { type: 'text', text: 'NT$50 購物金 × 1 張', weight: 'bold', size: 'lg', color: '#222222', margin: 'sm' },
               { type: 'text', text: '有效期限：完成註冊後 2 個月', size: 'xs', color: '#aaaaaa' },
               { type: 'text', text: '完成會員中心註冊即自動發放', size: 'xs', color: '#aaaaaa', wrap: true },
             ],
