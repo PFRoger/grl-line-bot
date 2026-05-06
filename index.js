@@ -1383,24 +1383,16 @@ async function handlePostback(event, client) {
           // ── ZOZO 卡 ──
           {
             type: 'bubble', size: 'kilo',
+            hero: {
+              type: 'image',
+              url: 'https://raw.githubusercontent.com/PFRoger/grl-line-bot/main/assets/ZOZO.png',
+              size: 'full', aspectRatio: '4:3', aspectMode: 'cover',
+            },
             body: {
-              type: 'box', layout: 'vertical', paddingAll: '0px', backgroundColor: '#ffffff',
+              type: 'box', layout: 'vertical', paddingAll: '14px',
               contents: [
-                {
-                  type: 'box', layout: 'vertical', paddingTop: '52px', paddingBottom: '52px',
-                  paddingStart: '20px', paddingEnd: '20px', backgroundColor: '#111111',
-                  contents: [
-                    { type: 'text', text: 'ZOZO', color: '#ffffff', size: '4xl', weight: 'bold', align: 'center' },
-                    { type: 'text', text: 'TOWN', color: '#ffffff', size: '4xl', weight: 'bold', align: 'center' },
-                  ],
-                },
-                {
-                  type: 'box', layout: 'vertical', paddingAll: '14px',
-                  contents: [
-                    { type: 'text', text: '日本最大時尚購物平台\n集結數百品牌・款式多元\n傳入商品網址即可報價',
-                      size: 'xs', color: '#666666', wrap: true, align: 'center' },
-                  ],
-                },
+                { type: 'text', text: '日本最大時尚購物平台\n集結數百品牌・款式多元\n傳入商品網址即可報價',
+                  size: 'xs', color: '#666666', wrap: true, align: 'center' },
               ],
             },
             footer: {
