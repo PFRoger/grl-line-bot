@@ -27,6 +27,7 @@
  *   - [v7.6-1] 新增品類：衛衣/帽T(スウェット/パーカー) 300~550g，牛仔短褲(ショートデニム) 200~380g，短褲(ショートパンツ/ハーフパンツ) 120~300g，內搭褲(レギンス/スパッツ) 50~150g
  *   - [v7.6-2] 針織加成改依袖丈調整：長袖+227g，七分袖/五分袖+136g，半袖+45g，無袖+0g
  *   - [v7.6-3] 袖丈縮減：半袖外罩衫×0.85，半袖洋裝×0.93，無袖洋裝×0.88
+ *   - [v7.6-4] parseMaterialText()：從 HTML div.tab-content 抓素材，針織加成依素材分級（羊毛+227g/壓克力+180g/棉+136g/合成纖維+45g/未知+136g）
  */
 
 // ═══════════════════════════════════════════════════
@@ -368,10 +369,22 @@ function buildLearnedCorrections(data, headerIdx, colMap) {
   return result;
 }
 
+// ── 素材資訊解析（從 GRL HTML 抓 div.tab-content）──────────────────────────
+function parseMaterialText(html) {
+  var match = html.match(/class="tab-content"[^>]*>([\s\S]*?)<\/div>/i);
+  if (match) {
+    var text = match[1].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+    if (text.indexOf('%') !== -1 || text.indexOf('素材') !== -1) return text;
+  }
+  var m2 = html.match(/(?:ウール|アクリル|コットン|綿|レーヨン|ポリエステル|ナイロン|カシミア)[^<]{0,200}%/);
+  return m2 ? m2[0] : '';
+}
+
 // ── [v7.3-1] 商品重量估算：依商品名稱關鍵字判斷品類，回傳估算磅數中間值 ──
-function estimateWeightLbs(productName) {
+function estimateWeightLbs(productName, materialText) {
   if (!productName) return "";
   var name = productName;
+  var mat = materialText || '';
   var minG, maxG;
 
   if (/サンダル|スニーカー|ブーツ|パンプス|シューズ|ミュール|ローファー|スリッポン|ウェッジ|ヒール/.test(name)) {
@@ -421,16 +434,24 @@ function estimateWeightLbs(productName) {
     : /コート|アウター|ダウン|ブルゾン|ムートン|バッグ|トートバッグ|ショルダーバッグ|ハンドバッグ|リュック|クラッチ|ポーチ/.test(name) ? 150 : 80;
   minG += pkgG; maxG += pkgG;
 
-  // 針織材質加成（依袖丈調整：長袖+227g，七分袖/五分袖+136g，半袖+45g，無袖+0g）
+  // 針織材質加成（袖丈優先，其次依素材，最後保守預設）
   if (/ニット|セーター/.test(name)) {
     if (/ノースリーブ|袖なし/.test(name)) {
-      // 無袖針織不加
+      // 無袖不加
     } else if (/半袖|半そで|ショートスリーブ/.test(name)) {
       minG += 45; maxG += 45;
     } else if (/七分袖|五分袖/.test(name)) {
       minG += 136; maxG += 136;
-    } else {
+    } else if (/ウール|カシミア/.test(mat)) {
       minG += 227; maxG += 227;
+    } else if (/アクリル/.test(mat)) {
+      minG += 180; maxG += 180;
+    } else if (/コットン|綿/.test(mat)) {
+      minG += 136; maxG += 136;
+    } else if (/レーヨン|ポリエステル|ナイロン/.test(mat)) {
+      minG += 45; maxG += 45;
+    } else {
+      minG += 136; maxG += 136; // 未知素材→保守預設
     }
   }
 
@@ -630,7 +651,7 @@ function updateGrlData() {
   var now = Utilities.formatDate(new Date(), "GMT+8", "yyyy-MM-dd HH:mm");
 
   // [v7.3-2] setRowData 同步更新「估算磅數（估算值）」
-  function setRowData(idx, itemName, price, stock, statusNote, bgColor) {
+  function setRowData(idx, itemName, price, stock, statusNote, bgColor, materialText) {
     data[idx][colMap["更新日期"]] = now;
     data[idx][colMap["目前價格"]] = price;
     data[idx][colMap["庫存狀態"]] = stock;
@@ -639,7 +660,7 @@ function updateGrlData() {
     if (itemName && colMap["商品名稱"] !== -1)     data[idx][colMap["商品名稱"]] = itemName;
     // 自動填入估算磅數：若品類已有 K 欄學習均值則優先使用
     if (itemName && colMap["估算磅數"] !== -1) {
-      var wLbs = estimateWeightLbs(itemName);
+      var wLbs = estimateWeightLbs(itemName, materialText || '');
       if (wLbs !== "") {
         var cat = getCategory(itemName);
         if (learnedCorrections[cat] !== undefined) {
@@ -958,6 +979,7 @@ function updateGrlData() {
       }
       try {
         var itemName     = parseItemName(itemHtml);
+        var materialText = parseMaterialText(itemHtml);
         var price        = parsePrice(itemHtml);
         var stockDetails = parseStockFull(itemHtml);
         var allOut       = stockDetails.length > 0 && stockDetails.every(function(s){ return s.indexOf("❌") !== -1; });
@@ -975,9 +997,9 @@ function updateGrlData() {
         data[dataIdx][colMap["上次價格"]] = price;
         data[dataIdx][colMap["上次庫存"]] = stockText;
 
-        if (allOut)      setRowData(dataIdx, itemName, price, stockText, "缺貨", "#fff176");
-        else if (allRes) setRowData(dataIdx, itemName, price, stockText, "預約", "#e3f2fd");
-        else             setRowData(dataIdx, itemName, price, stockText, "", "#ffffff");
+        if (allOut)      setRowData(dataIdx, itemName, price, stockText, "缺貨", "#fff176", materialText);
+        else if (allRes) setRowData(dataIdx, itemName, price, stockText, "預約", "#e3f2fd", materialText);
+        else             setRowData(dataIdx, itemName, price, stockText, "", "#ffffff", materialText);
         processedCount++;
 
       } catch(e) { data[dataIdx][colMap["備註"]] = "錯誤: " + e.message; }
