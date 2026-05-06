@@ -2340,7 +2340,7 @@ function buildWelcomeFlexMessage() {
       body: {
         type: 'box', layout: 'vertical', spacing: 'md', paddingAll: '16px',
         contents: [
-          { type: 'text', text: '提供 GRL・ZOZO 等日本品牌代購服務，讓您輕鬆購入日本正品。', wrap: true, size: 'sm', color: '#666' },
+          { type: 'text', text: '提供 GRL・ZOZO 等日本品牌代購服務，讓您輕鬆購入日本正品。', wrap: true, size: 'sm', color: '#666666' },
           { type: 'separator', margin: 'lg' },
           {
             type: 'box', layout: 'vertical', margin: 'lg', paddingAll: '14px',
@@ -2348,8 +2348,8 @@ function buildWelcomeFlexMessage() {
             contents: [
               { type: 'text', text: '🎁 新會員入會禮', weight: 'bold', size: 'sm', color: '#c9a98a' },
               { type: 'text', text: 'NT$50 購物金 × 1 張', weight: 'bold', size: 'lg', color: '#c0392b', margin: 'sm' },
-              { type: 'text', text: '有效期限：完成註冊後 2 個月', size: 'xs', color: '#aaa' },
-              { type: 'text', text: '完成會員中心註冊即自動發放', size: 'xs', color: '#aaa', wrap: true },
+              { type: 'text', text: '有效期限：完成註冊後 2 個月', size: 'xs', color: '#aaaaaa' },
+              { type: 'text', text: '完成會員中心註冊即自動發放', size: 'xs', color: '#aaaaaa', wrap: true },
             ],
           },
         ],
