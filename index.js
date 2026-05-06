@@ -1365,7 +1365,7 @@ async function handlePostback(event, client) {
             hero: {
               type: 'image',
               url: 'https://raw.githubusercontent.com/PFRoger/grl-line-bot/main/assets/GRL.png',
-              size: 'full', aspectRatio: '5:2', aspectMode: 'cover',
+              size: 'full', aspectRatio: '4:3', aspectMode: 'cover',
             },
             body: {
               type: 'box', layout: 'vertical', paddingAll: '14px',
