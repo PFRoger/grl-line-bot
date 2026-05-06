@@ -31,28 +31,7 @@ async function pollAndProcess() {
     return;
   }
 
-  let parseUrl = task.url;
-
-  // goods-sale 頁面缺少 data-goods-id/data-item-price，從 HTML 找 canonical/og:url 再重爬
-  if (/goods-sale/.test(task.url)) {
-    const canonical = (html.match(/<link[^>]+rel="canonical"[^>]+href="(https?:\/\/zozo\.jp\/goods\/\d+\/?)"/) ||
-                       html.match(/<link[^>]+href="(https?:\/\/zozo\.jp\/goods\/\d+\/?)"/i) ||
-                       html.match(/<meta[^>]+property="og:url"[^>]+content="(https?:\/\/zozo\.jp\/goods\/\d+\/?)"/) ||
-                       html.match(/<meta[^>]+content="(https?:\/\/zozo\.jp\/goods\/\d+\/?)"/i))?.[1];
-    if (canonical) {
-      console.log('[ZOZO] goods-sale → canonical:', canonical);
-      try {
-        html = await fetchViaTab(canonical);
-        parseUrl = canonical;
-      } catch (e) {
-        console.warn('[ZOZO] canonical fetch 失敗:', e.message);
-      }
-    } else {
-      console.warn('[ZOZO] goods-sale 頁面找不到 canonical URL');
-    }
-  }
-
-  const result = parseZOZO(html, parseUrl);
+  const result = parseZOZO(html, task.url);
   if (!result) {
     console.warn('[ZOZO] 無法解析商品資料');
     await submitResult(task.taskId, null, '無法解析商品資料（頁面結構可能改變）');
@@ -88,13 +67,11 @@ function fetchViaTab(url) {
         (results) => {
           if (settled) return;
           if (chrome.runtime.lastError) {
-            // tab 還在跳轉，再等一下
             stableTimer = setTimeout(tryExtract, 1500);
             return;
           }
           const html = results && results[0] && results[0].result;
           if (!html || html.length < 10000) {
-            // 太小 → Akamai challenge 頁，等 JS 執行完再試
             console.log('[ZOZO] 小頁面', html ? html.length : 0, 'bytes，等待...');
             stableTimer = setTimeout(tryExtract, 2000);
             return;
@@ -142,8 +119,16 @@ async function submitResult(taskId, result, error) {
 }
 
 function parseZOZO(html, url) {
-  if (!html.includes('data-goods-id') && !html.includes('data-item-price')) return null;
+  // 舊版頁面（data-* attributes）
+  if (html.includes('data-goods-id') || html.includes('data-item-price')) {
+    return parseZOZOLegacy(html, url);
+  }
+  // Next.js 頁面（goods-sale 等，資料在 __NEXT_DATA__）
+  return parseZOZONextData(html, url);
+}
 
+// ── 舊版解析（data-shelf-color-id 等 attributes）────────────────────────────
+function parseZOZOLegacy(html, url) {
   const titleRaw = (html.match(/<title[^>]*>([^<]+)<\/title>/i) || [])[1] || '';
   const titleParts = titleRaw.split(/[|｜]/).map(s => s.trim()).filter(Boolean);
   const brand = titleParts.length >= 3 ? titleParts[0] : null;
@@ -179,7 +164,6 @@ function parseZOZO(html, url) {
     if (item.sizeName) colorsMap[item.colorId].sizes.push({ name: item.sizeName, inStock: item.inStock });
   }
 
-  // サイズ相当 mapping（e.g. "2" → "XSサイズ相当"）
   const seenSizes = new Set();
   const orderedSizeNames = [];
   for (const m of html.matchAll(/data-shelf-size-name="([^"]+)"/g)) {
@@ -187,15 +171,12 @@ function parseZOZO(html, url) {
   }
   const sizeZSpans = [...html.matchAll(/<span[^>]*class="sizeZ"[^>]*><span>([^<]+)<\/span><\/span>サイズ相当/g)].map(m => m[1].trim());
   const sizeEquivMap = {};
-  orderedSizeNames.forEach((name, i) => { if (sizeZSpans[i]) sizeEquivMap[name] = sizeZSpans[i] + 'サイズ相当'; });
+  orderedSizeNames.forEach((name, i) => { if (sizeZSpans[i]) sizeEquivMap[name] = sizeZSpans[i]; });
 
-  // OG image 作為 fallback（全商品都有，但不分顏色）
   const ogImage = (html.match(/<meta[^>]*property="og:image"[^>]*content="([^"]+)"/i) ||
                    html.match(/<meta[^>]*content="([^"]+)"[^>]*property="og:image"/i) ||
                    html.match(/og:image.*?content="([^"]+)"/i) || [])[1] || null;
 
-  // 從 <img alt="..." src="...imgz.jp..."> 建立兩個對照表：
-  // swatchByName: 顏色名 → URL，swatchById: 顏色ID（從URL提取）→ URL
   const swatchByName = {};
   const swatchById   = {};
   const swatchRegex  = /<img[^>]+src="(https?:\/\/[^"]*imgz\.jp[^"]+)"[^>]*alt="([^"]+)"|<img[^>]+alt="([^"]+)"[^>]+src="(https?:\/\/[^"]*imgz\.jp[^"]+)"/g;
@@ -204,14 +185,11 @@ function parseZOZO(html, url) {
     const imgUrl  = sw[1] || sw[4];
     const altText = sw[2] || sw[3];
     if (!imgUrl || !altText) continue;
-    // 全 alt 文字索引（e.g. "商品名 | ブラック"）
     if (!swatchByName[altText]) swatchByName[altText] = imgUrl;
-    // alt 含「|」時，取 | 後的顏色部分（e.g. " ブラック"）
     if (altText.includes('|')) {
       const colorPart = altText.split('|').pop().trim();
       if (colorPart && !swatchByName[colorPart]) swatchByName[colorPart] = imgUrl;
     }
-    // 從 URL 抽出 colorId (pattern: goodsCode_colorId_d_size 或 goodsCodeb_colorId_d_size)
     const idM = imgUrl.match(/\/\w+b?_(\d+)_d_\d+/);
     if (idM && !swatchById[idM[1]]) swatchById[idM[1]] = imgUrl;
   }
@@ -219,11 +197,10 @@ function parseZOZO(html, url) {
 
   const imgSuffix = goodsCode ? goodsCode.slice(-3) : '';
   const colors = Object.values(colorsMap).map(c => {
-    // 優先：頁面抓到的真實 URL（顏色名 or ID 索引）→ shelf tag 直帶圖 → CDN 公式 → ogImage
-    const swatchUrl  = swatchByName[c.name] || swatchById[c.id] || null;
-    const cdnUrl     = goodsCode ? `https://c.imgz.jp/${imgSuffix}/${goodsCode}/${goodsCode}_${c.id}_d_500.jpg` : null;
-    const shelfImg   = c.colorImage || null;
-    const imageUrl   = swatchUrl || shelfImg || cdnUrl || ogImage || null;
+    const swatchUrl = swatchByName[c.name] || swatchById[c.id] || null;
+    const cdnUrl    = goodsCode ? `https://c.imgz.jp/${imgSuffix}/${goodsCode}/${goodsCode}_${c.id}_d_500.jpg` : null;
+    const shelfImg  = c.colorImage || null;
+    const imageUrl  = swatchUrl || shelfImg || cdnUrl || ogImage || null;
     const { colorImage, ...rest } = c;
     return { ...rest, imageUrl };
   });
@@ -235,4 +212,140 @@ function parseZOZO(html, url) {
     goodsId, goodsCode, hasStock: colors.some(c => c.sizes.some(s => s.inStock)),
     colors, sizeEquivMap, url,
   };
+}
+
+// ── Next.js 頁面解析（__NEXT_DATA__ JSON）────────────────────────────────────
+// 不依賴固定的 key 路徑，改用 regex 直接搜尋 JSON 字串裡的欄位值，
+// 以及遞迴搜尋 colorStocks array，避免欄位名/嵌套結構改變就失效。
+function parseZOZONextData(html, url) {
+  const m = html.match(/<script[^>]*id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/);
+  if (!m) { console.log('[ZOZO] __NEXT_DATA__ not found'); return null; }
+
+  const raw = m[1];
+  let nd;
+  try { nd = JSON.parse(raw); } catch(e) { console.log('[ZOZO] __NEXT_DATA__ JSON error:', e.message); return null; }
+
+  // ── Scalar fields: 直接 regex 搜尋，不管嵌套多深 ──────────────────────────
+  const cdnId   = (html.match(/c\.imgz\.jp\/\d+\/(\d+)\/\1b?_\d+_d_\d+/) || [])[1] || null;
+  const goodsId = cdnId || (raw.match(/"goodsId"\s*:\s*(\d+)/)?.[1]) || null;
+  const goodsCode = raw.match(/"goodsCode"\s*:\s*"([A-Za-z0-9_-]+)"/)?.[1] || null;
+
+  // 含稅售價優先（ZOZO 日本站顯示含稅）；"price" 為最後 fallback 以免誤抓無關數字
+  const price = parseInt(
+    raw.match(/"salePriceInTax"\s*:\s*(\d+)/)?.[1] ||
+    raw.match(/"salePrice"\s*:\s*(\d+)/)?.[1] ||
+    raw.match(/"discountPrice"\s*:\s*(\d+)/)?.[1] ||
+    raw.match(/"taxIncludedPrice"\s*:\s*(\d+)/)?.[1] ||
+    raw.match(/"displayPrice"\s*:\s*(\d+)/)?.[1] ||
+    raw.match(/"unitPrice"\s*:\s*(\d+)/)?.[1] ||
+    raw.match(/"itemPrice"\s*:\s*(\d+)/)?.[1] ||
+    raw.match(/"price"\s*:\s*(\d+)/)?.[1] || '0') || null;
+  const origPrice = parseInt(
+    raw.match(/"regularPriceInTax"\s*:\s*(\d+)/)?.[1] ||
+    raw.match(/"regularPrice"\s*:\s*(\d+)/)?.[1] ||
+    raw.match(/"originalPrice"\s*:\s*(\d+)/)?.[1] ||
+    raw.match(/"listPrice"\s*:\s*(\d+)/)?.[1] ||
+    raw.match(/"basePrice"\s*:\s*(\d+)/)?.[1] || '0') || null;
+  const isOnSale = !!(origPrice && price && origPrice > price);
+
+  // 商品名：先找 JSON，再從 HTML title 解析
+  let name = raw.match(/"goodsName"\s*:\s*"([^"]+)"/)?.[1] || '';
+  if (!name) {
+    const titleRaw = (html.match(/<title[^>]*>([^<]+)<\/title>/i) || [])[1] || '';
+    name = titleRaw.replace(/^【[^】]*】/, '').split(/[|｜]/)[0].trim();
+  }
+  const brand = raw.match(/"brandName"\s*:\s*"([^"]+)"/)?.[1] || null;
+
+  console.log('[ZOZO] __NEXT_DATA__ basic:', { goodsId, name: (name || '').substring(0, 40), price, origPrice });
+
+  const ogImage = (html.match(/<meta[^>]*property="og:image"[^>]*content="([^"]+)"/i) ||
+                   html.match(/<meta[^>]*content="([^"]+)"[^>]*property="og:image"/i) || [])[1] || null;
+
+  // ── Colors: 遞迴搜尋 colorStocks/colors/colorGroups array ─────────────────
+  const colorList = findColorStocksArray(nd) || [];
+  console.log('[ZOZO] __NEXT_DATA__ colorList:', colorList.length);
+
+  // 判斷 colorList 是嵌套結構（每色含 sizes array）還是扁平結構（每色每尺一筆）
+  const firstItem = colorList[0] || {};
+  const isGrouped = Array.isArray(firstItem.sizeStocks) || Array.isArray(firstItem.sizes) ||
+                    Array.isArray(firstItem.stocks) || Array.isArray(firstItem.sizeGroups);
+
+  let colors;
+  if (isGrouped) {
+    colors = colorList.map(c => {
+      const cid   = String(c.colorId || c.id || '');
+      const cname = c.colorName || c.name || cid;
+      const sizeList = c.sizeStocks || c.sizes || c.stocks || c.sizeGroups || [];
+      const sizes = sizeList.map(s => ({
+        name:    s.sizeName || s.name || s.sizeId || String(s.id || ''),
+        inStock: (s.stockQuantity || s.stock || s.quantity || 0) > 0,
+      }));
+      return { id: cid, name: cname, sizes, imageUrl: c.imageUrl || c.colorImageUrl || c.image || ogImage || null };
+    });
+  } else {
+    // 扁平結構：每筆可能是「一色」或「一色一尺」
+    // goods-sale 頁面用 goodsDetailId 作為顏色識別符（無 colorId）
+    const grouped = new Map();
+    for (const item of colorList) {
+      const cid   = String(item.colorId || item.goodsDetailId || item.id || '');
+      const cname = item.colorName || item.name || cid;
+      if (!grouped.has(cid)) {
+        // colorImageUrl 是 35px 縮圖（_d_35.jpg），統一換成 500px
+        const rawImg = item.colorImageUrl || item.imageUrl || item.image || null;
+        const imageUrl = rawImg ? rawImg.replace(/_d_\d+\.jpg$/, '_d_500.jpg') : (ogImage || null);
+        grouped.set(cid, { id: cid, name: cname, sizes: [], imageUrl });
+      }
+      const sizeName = item.sizeName || item.sizeId || item.sizeCode || String(item.sizeNumber || '');
+      if (sizeName) {
+        // captionType 是最可靠的庫存指標（stockQuantity 可能為 null 但仍有貨）
+        const inStock = item.captionType
+          ? item.captionType === 'INSTOCK'
+          : (item.stockQuantity || 0) > 0;
+        grouped.get(cid).sizes.push({ name: sizeName, inStock });
+      } else if (grouped.get(cid).sizes.length === 0) {
+        const avail = item.goodsAvailability;
+        const inStock = avail !== undefined && avail !== false && avail !== null &&
+                        avail !== 'OUT_OF_STOCK' && avail !== 'UNAVAILABLE' && avail !== 0;
+        grouped.get(cid).sizes.push({ name: 'F', inStock });
+      }
+    }
+    colors = [...grouped.values()];
+  }
+
+  if (!name && !price) { console.log('[ZOZO] __NEXT_DATA__ no name/price, giving up'); return null; }
+
+  return {
+    name, brand, price, isOnSale, originalPrice: origPrice,
+    goodsId, goodsCode,
+    hasStock: colors.some(c => c.sizes.some(s => s.inStock)),
+    colors, sizeEquivMap: {}, url,
+  };
+}
+
+// 遞迴搜尋第一個長得像貨架庫存的 array
+// 條件：有顏色欄位（colorId/colorName）且有尺碼或庫存欄位（sizeName/stockQuantity）
+// 這樣可以跳過 merchantCenter.items（只有 colorName，無 sizeName/stockQuantity）
+// 正確找到 goodsShelfInfo.shelves（同時有 colorId、colorName、sizeName、stockQuantity）
+function findColorStocksArray(obj, depth) {
+  if (depth === undefined) depth = 0;
+  if (!obj || typeof obj !== 'object' || depth > 7) return null;
+
+  const isShelfLike = (item) =>
+    item && (item.colorId !== undefined || item.colorName !== undefined) &&
+    (item.sizeName !== undefined || item.stockQuantity !== undefined);
+
+  if (Array.isArray(obj)) {
+    if (obj.length > 0 && isShelfLike(obj[0])) return obj;
+    return null;
+  }
+  for (const key of ['shelves', 'colorStocks', 'colors', 'colorGroups']) {
+    if (Array.isArray(obj[key]) && obj[key].length > 0 && isShelfLike(obj[key][0])) return obj[key];
+  }
+  for (const val of Object.values(obj)) {
+    if (val && typeof val === 'object') {
+      const found = findColorStocksArray(val, depth + 1);
+      if (found) return found;
+    }
+  }
+  return null;
 }
