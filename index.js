@@ -2344,18 +2344,12 @@ function buildWelcomeFlexMessage() {
           { type: 'separator', margin: 'lg' },
           {
             type: 'box', layout: 'vertical', margin: 'lg', paddingAll: '14px',
-            backgroundColor: '#FFF8F0', cornerRadius: '10px', spacing: 'sm',
+            backgroundColor: '#FFF8F0', spacing: 'sm',
             contents: [
-              { type: 'text', text: '新會員入會禮', weight: 'bold', size: 'sm', color: '#c9a98a' },
-              {
-                type: 'box', layout: 'horizontal', margin: 'sm', alignItems: 'center',
-                contents: [
-                  { type: 'text', text: 'NT$50 購物金', weight: 'bold', size: 'xl', color: '#c0392b', flex: 1 },
-                  { type: 'text', text: '× 1 張', size: 'sm', color: '#888' },
-                ],
-              },
+              { type: 'text', text: '🎁 新會員入會禮', weight: 'bold', size: 'sm', color: '#c9a98a' },
+              { type: 'text', text: 'NT$50 購物金 × 1 張', weight: 'bold', size: 'lg', color: '#c0392b', margin: 'sm' },
               { type: 'text', text: '有效期限：完成註冊後 2 個月', size: 'xs', color: '#aaa' },
-              { type: 'text', text: '完成下方「會員中心」註冊即自動發放', size: 'xs', color: '#aaa', wrap: true },
+              { type: 'text', text: '完成會員中心註冊即自動發放', size: 'xs', color: '#aaa', wrap: true },
             ],
           },
         ],
@@ -2377,28 +2371,21 @@ function buildWelcomeFlexMessage() {
 async function handleFollow(event, client) {
   const userId = event.source.userId;
 
-  // 取顯示名稱（失敗不影響後續流程）
-  let displayName = '';
+  // 最先送歡迎小卡（replyToken 有時效，不能等其他 async 完成）
   try {
-    const profile = await client.getProfile(userId);
-    displayName = profile.displayName || '';
+    await client.replyMessage(event.replyToken, buildWelcomeFlexMessage());
   } catch (e) {
-    console.warn('[handleFollow] getProfile failed:', e.message);
+    console.error('[handleFollow] replyMessage error:', e.message, JSON.stringify(e.response?.data));
   }
 
-  // 記錄加入紀錄（失敗不影響送訊息）
+  // 背景記錄加入紀錄（不影響訊息送出）
   try {
+    const profile = await client.getProfile(userId).catch(() => null);
+    const displayName = profile?.displayName || '';
     const sheets = getSheetsClient();
     await recordFollowEvent(sheets, userId, displayName);
   } catch (e) {
-    console.error('[handleFollow] recordFollowEvent error:', e.message);
-  }
-
-  // 送歡迎小卡
-  try {
-    await client.pushMessage(userId, buildWelcomeFlexMessage());
-  } catch (e) {
-    console.error('[handleFollow] pushMessage error:', e.message, JSON.stringify(e.response?.data));
+    console.error('[handleFollow] record error:', e.message);
   }
 }
 
