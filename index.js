@@ -2371,11 +2371,14 @@ function buildWelcomeFlexMessage() {
 async function handleFollow(event, client) {
   const userId = event.source.userId;
 
-  // 最先送歡迎小卡（replyToken 有時效，不能等其他 async 完成）
+  // 最先送歡迎訊息（replyToken 有時效，不能等其他 async 完成）
+  console.log('[handleFollow] replyToken:', event.replyToken, 'userId:', userId);
   try {
-    await client.replyMessage(event.replyToken, buildWelcomeFlexMessage());
+    await client.replyMessage(event.replyToken, { type: 'text', text: '歡迎加入 Bijin！[測試]' });
+    console.log('[handleFollow] replyMessage success');
   } catch (e) {
-    console.error('[handleFollow] replyMessage error:', e.message, JSON.stringify(e.response?.data));
+    console.error('[handleFollow] replyMessage FAILED statusCode:', e.statusCode, 'message:', e.message);
+    console.error('[handleFollow] LINE error body:', JSON.stringify(e.originalError?.response?.data ?? e.response?.data ?? e.body ?? null));
   }
 
   // 背景記錄加入紀錄（不影響訊息送出）
