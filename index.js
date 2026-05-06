@@ -473,6 +473,7 @@ async function scrapeGRL(inputUrl) {
       return false;
     }
   });
+  console.log('[scrapeGRL] materialText:', materialText.slice(0, 100) || '(empty)');
 
   // 每個顏色的對應圖片：GRL 用 <img alt="ブラック" src="...col_11.jpg"> 方式關聯顏色
   // 縮圖路徑 /images/goods/t/ → 全尺寸改為 /images/goods/d/
