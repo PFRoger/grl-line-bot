@@ -2376,14 +2376,29 @@ function buildWelcomeFlexMessage() {
 // ── 處理加入好友事件 ──────────────────────────────────────────────────────────
 async function handleFollow(event, client) {
   const userId = event.source.userId;
+
+  // 取顯示名稱（失敗不影響後續流程）
+  let displayName = '';
   try {
     const profile = await client.getProfile(userId);
-    const displayName = profile.displayName || '';
+    displayName = profile.displayName || '';
+  } catch (e) {
+    console.warn('[handleFollow] getProfile failed:', e.message);
+  }
+
+  // 記錄加入紀錄（失敗不影響送訊息）
+  try {
     const sheets = getSheetsClient();
     await recordFollowEvent(sheets, userId, displayName);
+  } catch (e) {
+    console.error('[handleFollow] recordFollowEvent error:', e.message);
+  }
+
+  // 送歡迎小卡
+  try {
     await client.replyMessage(event.replyToken, buildWelcomeFlexMessage());
   } catch (e) {
-    console.error('[handleFollow error]', e.message);
+    console.error('[handleFollow] replyMessage error:', e.message);
   }
 }
 
