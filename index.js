@@ -464,11 +464,11 @@ async function scrapeGRL(inputUrl) {
   // 庫存：使用 GAS 相同的 raw HTML regex 解析法
   const stockLines = parseStockFromHtml(html);
 
-  // 素材資訊：從 div.tab-content 抓取含「素材」或「%」的區塊
+  // 素材資訊：從 div.tab-content 抓取「素材は」區塊（GRL 固定格式：☆素材は【...%...】）
   let materialText = '';
   $('div.tab-content').each((_, el) => {
     const text = $(el).text().trim();
-    if (text.includes('素材') || text.includes('%')) {
+    if (text.includes('素材は') || (text.includes('%') && /ウール|アクリル|コットン|綿|レーヨン|ポリエステル|ナイロン|カシミア/.test(text))) {
       materialText = text;
       return false;
     }

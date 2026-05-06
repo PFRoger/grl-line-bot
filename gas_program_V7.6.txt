@@ -369,15 +369,19 @@ function buildLearnedCorrections(data, headerIdx, colMap) {
   return result;
 }
 
-// ── 素材資訊解析（從 GRL HTML 抓 div.tab-content）──────────────────────────
+// ── 素材資訊解析（從 GRL HTML 抓 div.tab-content，GRL 格式：☆素材は【...%...】）
 function parseMaterialText(html) {
-  var match = html.match(/class="tab-content"[^>]*>([\s\S]*?)<\/div>/i);
-  if (match) {
+  var matKeyword = /ウール|アクリル|コットン|綿|レーヨン|ポリエステル|ナイロン|カシミア/;
+  // 找所有 tab-content div，取有「素材は」或「素材+%+材質關鍵字」的那個
+  var re = /class="tab-content"[^>]*>([\s\S]*?)<\/div>/gi;
+  var match;
+  while ((match = re.exec(html)) !== null) {
     var text = match[1].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
-    if (text.indexOf('%') !== -1 || text.indexOf('素材') !== -1) return text;
+    if (text.indexOf('素材は') !== -1 || (text.indexOf('%') !== -1 && matKeyword.test(text))) {
+      return text;
+    }
   }
-  var m2 = html.match(/(?:ウール|アクリル|コットン|綿|レーヨン|ポリエステル|ナイロン|カシミア)[^<]{0,200}%/);
-  return m2 ? m2[0] : '';
+  return '';
 }
 
 // ── [v7.3-1] 商品重量估算：依商品名稱關鍵字判斷品類，回傳估算磅數中間值 ──
