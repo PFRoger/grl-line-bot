@@ -1362,24 +1362,16 @@ async function handlePostback(event, client) {
           // ── GRL 卡 ──
           {
             type: 'bubble', size: 'kilo',
+            hero: {
+              type: 'image',
+              url: 'https://raw.githubusercontent.com/PFRoger/grl-line-bot/main/assets/GRL.png',
+              size: 'full', aspectRatio: '5:2', aspectMode: 'cover',
+            },
             body: {
-              type: 'box', layout: 'vertical', paddingAll: '0px', backgroundColor: '#ffffff',
+              type: 'box', layout: 'vertical', paddingAll: '14px',
               contents: [
-                {
-                  type: 'box', layout: 'vertical', paddingTop: '52px', paddingBottom: '52px',
-                  paddingStart: '20px', paddingEnd: '20px', backgroundColor: '#c4879a',
-                  contents: [
-                    { type: 'text', text: 'GRL', color: '#ffffff', size: '4xl', weight: 'bold', align: 'center' },
-                    { type: 'text', text: 'GRL', color: '#c4879a', size: '4xl', weight: 'bold', align: 'center' },
-                  ],
-                },
-                {
-                  type: 'box', layout: 'vertical', paddingAll: '14px',
-                  contents: [
-                    { type: 'text', text: '日本超人氣平價女裝\n每週上新・平價高質感\n傳入網址或貨號即可報價',
-                      size: 'xs', color: '#666666', wrap: true, align: 'center' },
-                  ],
-                },
+                { type: 'text', text: '日本超人氣平價女裝\n每週上新・平價高質感\n傳入網址或貨號即可報價',
+                  size: 'xs', color: '#666666', wrap: true, align: 'center' },
               ],
             },
             footer: {
