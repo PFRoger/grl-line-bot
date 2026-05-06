@@ -2323,8 +2323,75 @@ function buildFlexMessage(url, productName, jpy, suggested, stockLines, imageUrl
   };
 }
 
+// ── 加入好友歡迎 Flex ─────────────────────────────────────────────────────────
+function buildWelcomeFlexMessage() {
+  return {
+    type: 'flex',
+    altText: '歡迎加入 Bijin 日本正品代購！完成註冊即可獲得 NT$50 入會禮',
+    contents: {
+      type: 'bubble',
+      header: {
+        type: 'box', layout: 'vertical', backgroundColor: '#F7E5D8', paddingAll: '16px',
+        contents: [
+          { type: 'text', text: '歡迎加入', size: 'sm', color: '#a07850' },
+          { type: 'text', text: 'Bijin 日本正品代購', size: 'xl', weight: 'bold', color: '#7a5c3e' },
+        ],
+      },
+      body: {
+        type: 'box', layout: 'vertical', spacing: 'md', paddingAll: '16px',
+        contents: [
+          { type: 'text', text: '提供 GRL・ZOZO 等日本品牌代購服務，讓您輕鬆購入日本正品。', wrap: true, size: 'sm', color: '#666' },
+          { type: 'separator', margin: 'lg' },
+          {
+            type: 'box', layout: 'vertical', margin: 'lg', paddingAll: '14px',
+            backgroundColor: '#FFF8F0', cornerRadius: '10px', spacing: 'sm',
+            contents: [
+              { type: 'text', text: '新會員入會禮', weight: 'bold', size: 'sm', color: '#c9a98a' },
+              {
+                type: 'box', layout: 'horizontal', margin: 'sm', alignItems: 'center',
+                contents: [
+                  { type: 'text', text: 'NT$50 購物金', weight: 'bold', size: 'xl', color: '#c0392b', flex: 1 },
+                  { type: 'text', text: '× 1 張', size: 'sm', color: '#888' },
+                ],
+              },
+              { type: 'text', text: '有效期限：完成註冊後 2 個月', size: 'xs', color: '#aaa' },
+              { type: 'text', text: '完成下方「會員中心」註冊即自動發放', size: 'xs', color: '#aaa', wrap: true },
+            ],
+          },
+        ],
+      },
+      footer: {
+        type: 'box', layout: 'vertical', paddingAll: '12px',
+        contents: [
+          {
+            type: 'button', style: 'primary', color: '#c9a98a', height: 'sm',
+            action: { type: 'uri', label: '前往會員中心完成註冊', uri: `https://liff.line.me/${MEMBER_LIFF_ID}` },
+          },
+        ],
+      },
+    },
+  };
+}
+
+// ── 處理加入好友事件 ──────────────────────────────────────────────────────────
+async function handleFollow(event, client) {
+  const userId = event.source.userId;
+  try {
+    const profile = await client.getProfile(userId);
+    const displayName = profile.displayName || '';
+    const sheets = getSheetsClient();
+    await recordFollowEvent(sheets, userId, displayName);
+    await client.replyMessage(event.replyToken, buildWelcomeFlexMessage());
+  } catch (e) {
+    console.error('[handleFollow error]', e.message);
+  }
+}
+
 // ── 處理單一 LINE 事件 ────────────────────────────────────────────────────────
 async function handleEvent(event, client) {
+  if (event.type === 'follow') {
+    return handleFollow(event, client);
+  }
   if (event.type === 'postback') {
     return handlePostback(event, client);
   }
@@ -4522,6 +4589,7 @@ const MEMBER_SHEET   = '會員';
 const POINTS_SHEET   = '點數紀錄';
 const COUPON_SHEET   = '優惠券';
 const REFERRAL_SHEET = '邀請紀錄';
+const FOLLOW_SHEET   = '加入紀錄';
 
 const TIER_THRESHOLDS = [
   { name: '白金', min: 12000 },
@@ -4583,6 +4651,24 @@ async function ensureCouponSheet(sheets) {
     await sheets.spreadsheets.batchUpdate({ spreadsheetId: SHEET_ID, resource: { requests: [{ addSheet: { properties: { title: COUPON_SHEET } } }] } });
     await sheets.spreadsheets.values.update({ spreadsheetId: SHEET_ID, range: `${COUPON_SHEET}!A1`, valueInputOption: 'RAW', resource: { values: [headers] } });
   }
+}
+async function ensureFollowSheet(sheets) {
+  const headers = ['userId', 'displayName', '加入日'];
+  try { await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${FOLLOW_SHEET}!A1` }); }
+  catch {
+    await sheets.spreadsheets.batchUpdate({ spreadsheetId: SHEET_ID, resource: { requests: [{ addSheet: { properties: { title: FOLLOW_SHEET } } }] } });
+    await sheets.spreadsheets.values.update({ spreadsheetId: SHEET_ID, range: `${FOLLOW_SHEET}!A1`, valueInputOption: 'RAW', resource: { values: [headers] } });
+  }
+}
+async function recordFollowEvent(sheets, userId, displayName) {
+  await ensureFollowSheet(sheets);
+  const resp = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${FOLLOW_SHEET}!A:A` });
+  const rows = resp.data.values || [];
+  if (rows.some((r, i) => i > 0 && r[0] === userId)) return; // 重複追蹤不重複記錄
+  await sheets.spreadsheets.values.append({
+    spreadsheetId: SHEET_ID, range: `${FOLLOW_SHEET}!A1`,
+    valueInputOption: 'RAW', resource: { values: [[userId, displayName, todayStr()]] },
+  });
 }
 async function ensureReferralSheet(sheets) {
   const headers = ['inviterUserId','inviteeUserId','inviteCode','bindDate','orderDeadline','qualifyingOrderId','status'];
@@ -5011,6 +5097,14 @@ app.post('/api/member/register', express.json(), async (req, res) => {
       referredByCode = inviteCode.toUpperCase();
     }
     const member = await createMember(sheets, userId, displayName || '', { name, phone, birthday, referredByCode });
+    // 入會禮優惠券（防重複：同 userId + type='入會禮' 只發一次）
+    const cpnResp = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${COUPON_SHEET}!B:D` }).catch(() => ({ data: { values: [] } }));
+    const cpnRows = (cpnResp.data.values || []).slice(1);
+    const hasWelcomeCoupon = cpnRows.some(r => r[0] === userId && r[2] === '入會禮');
+    if (!hasWelcomeCoupon) {
+      const expiry = new Date(Date.now() + 60 * 86400000).toISOString().slice(0, 10);
+      await issueCoupons(sheets, userId, displayName || '', '入會禮', 50, 1, expiry);
+    }
     // 邀請紀錄
     if (referredByCode) {
       await ensureReferralSheet(sheets);
