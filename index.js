@@ -978,9 +978,10 @@ function buildHistoryFlexMessage(history) {
     const imgUrl      = row[10] || '';
     const suggested   = row[11] ? `NT$${Number(row[11]).toLocaleString()}` : '';
     const storedUrl   = row[12] || '';
-    const itemUrl     = prodId ? `https://www.grail.bz/disp/item/${prodId}/` : 'https://www.grail.bz';
-    // 重新查詢用原始儲存 URL；若舊紀錄沒有，以 prodId 推算
-    const requeryUrl  = storedUrl || (prodId ? `https://www.grail.bz/item/${prodId}/` : '');
+    // 優先用儲存的原始 URL（GRL/ZOZO 均適用）；舊紀錄無 URL 時以 prodId 推算 GRL 路徑
+    const canonicalUrl = storedUrl || (prodId ? `https://www.grail.bz/item/${prodId}/` : '');
+    const itemUrl     = canonicalUrl || 'https://www.grail.bz';
+    const requeryUrl  = canonicalUrl;
 
     const priceContents = [
       { type: 'text', text: jpyText, size: 'sm', color: '#888888' },
