@@ -2394,11 +2394,11 @@ async function handleFollow(event, client) {
     console.error('[handleFollow] recordFollowEvent error:', e.message);
   }
 
-  // 送歡迎小卡
+  // 送歡迎小卡（用 push 避免 replyToken 逾時）
   try {
-    await client.replyMessage(event.replyToken, buildWelcomeFlexMessage());
+    await client.pushMessage(userId, buildWelcomeFlexMessage());
   } catch (e) {
-    console.error('[handleFollow] replyMessage error:', e.message);
+    console.error('[handleFollow] pushMessage error:', e.message);
   }
 }
 
