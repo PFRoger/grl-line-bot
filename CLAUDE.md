@@ -112,7 +112,7 @@ VERCEL_TOKEN=<token> npx vercel --prod --yes --scope pfrogers-projects
 
 | 函式 | 說明 |
 |------|------|
-| `scrapeGRL()` | 爬 GRL 商品頁面，回傳價格/庫存/圖片 |
+| `scrapeGRL()` | 爬 GRL 商品頁面，回傳 `{ productName, jpy, stockLines, imageUrl, colorImages, resolvedUrl, materialText }` |
 | `buildFlexMessage()` | 建立 GRL 商品報價 Flex Message |
 | `buildZOZOFlexMessage(data, url, rate)` | 建立 ZOZO 商品報價 Flex Message（含 NT$ 報價、加入購物車按鈕） |
 | `buildAddToCartFlex()` | 建立加入購物車 Flex Carousel（一色一卡片） |
@@ -125,6 +125,7 @@ VERCEL_TOKEN=<token> npx vercel --prod --yes --scope pfrogers-projects
 | `processOrderReturn()` | 退單：扣回本次計點、退還結帳折抵點數（L欄）、取消邀請獎勵優惠券、通知買家 |
 | `getMember()` | 讀取會員資料（找不到回傳 null） |
 | `buildCartHtml()` | 產生 LIFF 購物車 HTML |
+| `estimateWeight(name, materialText, sleeveCm)` | 估算商品重量，回傳 `{ minG, maxG, midG, midLbs, label, confidence }`；sleeveCm 為 ZOZO 限定的實測袖長 |
 | `handlePostback()` | 處理所有 postback 事件（含 add_to_cart_zozo、start_shopping） |
 
 ---
@@ -181,54 +182,56 @@ VERCEL_TOKEN=<token> npx vercel --prod --yes --scope pfrogers-projects
 - **功能**：Chrome Extension 安裝後，背景每 10 秒輪詢 `/api/zozo-queue`，有任務就開 Tab 抓 ZOZO 頁面（繞過 Akamai bot 偵測），解析後回傳
 - **權限**：`alarms`, `tabs`, `scripting`；host_permissions: `*.zozo.jp/*`, `pfroger-linebot-2.vercel.app/*`
 - **ADMIN_KEY**：`grl-admin-2026`（與 Vercel 環境變數一致）
-- **Akamai 處理**：開 Tab 後等頁面 complete 再等 1.5 秒，HTML < 10000 bytes 視為 challenge 頁再等 2 秒
-- **解析函式**：`parseZOZO(html, url)` — 抓 title/price/color/size/stock/goodsId/goodsCode/圖片
-- **ZOZO Sheet**（`ZOZO任務`）：存 taskId, url, userId, status, result, error, replyToken 等
-- **流程**：用戶傳 ZOZO 網址 → 寫入 ZOZO Sheet → 回傳「查詢中」按鈕 → Extension 抓頁面 → 解析 → 回傳 → Bot push 結果給用戶
+- **Akamai 處理**：Tab 必須用 `active: true`（前景分頁），否則 Akamai 偵測為 bot；等頁面 complete 再等 1.5 秒，HTML < 10000 bytes 視為 challenge 頁再等 2 秒；全域 timeout 60 秒
+- **三種解析器**：`parseZOZO(html, url)` 為 dispatcher，依頁面類型選擇：
+  - `parseZOZOLegacy(html, url)`：舊版頁面（含 `data-goods-id` 屬性）
+  - `parseZOZONextData(html, url)`：新版 goods-sale 頁面（`__NEXT_DATA__` JSON）
+- **解析結果欄位**：`name, brand, price, isOnSale, originalPrice, goodsId, goodsCode, hasStock, colors, sizeEquivMap, url, materialText, sleeveCm`
+- **sizeEquivMap**：解析 `<span class="sizeZ"><span>XS</span></span>サイズ相当` 結構，將 ZOZO 數字尺碼（2/3/4...）對應為「XSサイズ相当」等標示；只對純數字尺碼套用，M/L 等字母尺碼不受影響
+- **materialText**：`extractZOZOMaterial(html)` 從 `<dt>素材</dt><dd>...</dd>` 結構抓取，對應 ZOZO 規格表（`p-goods-information-spec-horizontal-list`）。抓到的值存入 JSON result，`buildZOZOFlexMessage` 傳給 `estimateWeight()`
+- **sleeveCm**：`extractSleeveLength(html)` 從說明文字「そで丈 18」格式抓取袖長 cm，作為針織估重的袖丈判斷依據
+- **ZOZO Sheet**（`ZOZO任務`）：存 taskId, url, userId, status, result（JSON）, error 等（replyToken 已移除，改為 user-initiated）
+- **流程**：用戶傳 ZOZO 網址 → 寫入 ZOZO Sheet（status=pending）→ 立即回傳「報價解析中」小卡（含「查看報價」postback 按鈕）→ Extension 抓頁面解析 → 存結果至 Sheet → 用戶點「查看報價」→ zozo_check postback → Bot reply 報價卡（或提示仍解析中/失敗/逾時）
 
 ---
 
 ## GAS 庫存監控系統（獨立於 LINE Bot）
 
-- **檔案**：`gas_program_V7.4.txt`（v7.4.0）
+- **檔案**：`gas_program_V7.6.txt`（v7.6.0，最新版）
 - **功能**：定時爬 GRL 商品頁面，偵測價格/庫存變動，推送通知給賣家
 - **觸發**：每6小時（GAS 時間型觸發器）
 - **通知對象**：只有賣家（LINE_USER_ID = `U9fa329e70b89f4ce19089928a824bd29`）
-- **通知內容**：
-  - 有庫存變動時：補貨/售完通知
-  - 有下架商品時：下架通知
-  - 每次執行完：摘要通知（總商品數、缺貨數、耗時、匯率）
-- **問題**：與主 LINE Bot 共用同一個 Channel Token，共享 200則/月額度
-- **計劃解決方案**：建立 Bot B（Bijin日本正品代購 bot2，@033vkbny），GAS 改用 Bot B 的 token，各自有 200則額度
-- **Bot B 狀態**：OA 已建立，待在電腦上於 LINE Developers Console 啟用 Messaging API 並取得 Token
+- **通知內容**：有庫存變動時補貨/售完通知、下架通知、執行摘要（商品數/缺貨數/耗時/匯率）
+- **Bot B**（@033vkbny）：GAS 通知專用，與主 Bot 各有獨立 200則/月額度
+- **素材抓取**：`parseMaterialText(html)` 從 GRL 頁面 `div.tab-content` 抓含「素材は」的區塊，傳入 `estimateWeightLbs()` 做針織加成
 
-### GAS v7.4.0 重要改動（2026-04-24）
+### GAS v7.6.0 重量估算品類（index.js 一致，判斷順序優先）
 
-| 項目 | 說明 |
-|------|------|
-| 重量估算 +200g | 鞋類 500~820→700~1020g，包包 250~620→450~820g，外套 450~950→650~1150g |
-| GRL 運費 195 JPY | 成本公式改為 `rate × (jpy + 195) × 1.075`，getGrlQuote 與 Sheet 公式同步 |
-| ID 解析修正 | 搜尋結果改取所有符合 href 排序後選最短，避免 AI16 抓到 ai1611119 等錯誤商品 |
-| 省頻寬架構 | 先試直接 `/item/{id}/` URL，成功就省略搜尋列表頁；BATCH_SIZE 20→10 |
-| 欄位底色 | 每次更新後 A,B,C,F,H,K,M 欄套 `#ffe3e3` 底色（`colorSpecialCols()`） |
-| 分類誤判修正 | `ショルダー`→`ショルダーバッグ`（避免肩線洋裝誤判），移除 `フラット`（避免平剪裁誤判） |
+| 品類 | 關鍵字 | 範圍 | 包裝加成 |
+|------|--------|------|---------|
+| 鞋類 | サンダル/スニーカー/ブーツ/パンプス/シューズ/ミュール/ローファー/スリッポン/ウェッジ/ヒール | 700~1020g | +200g |
+| 包包 | バッグ/トートバッグ/ショルダーバッグ/ハンドバッグ/リュック/クラッチ/ポーチ | 450~820g | +150g |
+| 配件 | ピアス/ネックレス/リング/ブレスレット/ヘアアクセ/ヘアクリップ/バレッタ/アクセサリー | 60~180g | +30g |
+| 外套 | コート/アウター/ダウン/ブルゾン/ムートン | 650~1150g | +150g |
+| 外罩衫 | ジャケット/カーディガン/ボレロ | 280~580g | +80g |
+| 衛衣/帽T | スウェット/パーカー | 300~550g | +80g |
+| 牛仔短褲 | ショートデニム/デニムショーツ/デニムショート（優先於牛仔褲） | 200~380g | +80g |
+| 牛仔褲 | デニム/ジーンズ（優先於洋裝） | 500~850g | +80g |
+| 洋裝 | ワンピース/ドレス | 200~480g | +80g |
+| 裙子 | スカート | 170~400g | +80g |
+| 內搭褲 | レギンス/スパッツ（優先於褲子） | 50~150g | +80g |
+| 短褲 | ショートパンツ/ハーフパンツ（優先於褲子） | 120~300g | +80g |
+| 褲子 | パンツ/スラックス | 220~520g | +80g |
+| 針織上衣 | ニット/セーター | 180~400g | +80g |
+| 上衣 | トップス/シャツ/ブラウス/カットソー/Tシャツ/タンク/ノースリーブ | 120~300g | +80g |
+| 其他 | （以上均不符合） | 150~450g | +80g |
 
-### 重量估算品類對照（GAS & index.js 一致）
+### 針織重量加成（優先順序）
 
-| 品類 | 關鍵字 | 範圍 |
-|------|--------|------|
-| 鞋類 | サンダル/スニーカー/ブーツ/パンプス/シューズ/ミュール/ローファー/スリッポン/ウェッジ/ヒール | 700~1020g |
-| 包包 | バッグ/トートバッグ/ショルダーバッグ/ハンドバッグ/リュック/クラッチ/ポーチ | 450~820g |
-| 配件 | ピアス/ネックレス/リング/ブレスレット/ヘアアクセ/ヘアクリップ/バレッタ/アクセサリー | 60~180g |
-| 外套 | コート/アウター/ダウン/ブルゾン/ムートン | 650~1150g |
-| 外罩衫 | ジャケット/カーディガン/ボレロ | 280~580g |
-| 洋裝 | ワンピース/ドレス | 200~480g |
-| 裙子 | スカート | 170~400g |
-| 牛仔褲 | デニム/ジーンズ | 500~850g |
-| 褲子 | パンツ/スラックス/ショートパンツ/レギンス | 220~520g |
-| 針織 | ニット/セーター | 180~400g |
-| 上衣 | トップス/シャツ/ブラウス/カットソー/Tシャツ/タンク/ノースリーブ | 120~300g |
-| 其他 | （以上均不符合） | 150~450g |
+1. **商品名袖丈關鍵字**：ノースリーブ/袖なし → +0g；半袖/半そで/ショートスリーブ/ポロシャツ → +45g；七分袖/五分袖 → +136g
+2. **實測袖長 sleeveCm**（ZOZO 限定，index.js only）：< 30cm → +45g；30~44cm → +136g；≥ 45cm → 繼續素材判斷
+3. **素材判斷**（袖丈未知時）：ウール/カシミア → +227g；アクリル → +180g；コットン/綿 → +136g；レーヨン/ポリエステル/ナイロン → +45g；未知 → +136g（保守預設）
+4. 詳細規則見 `weight_rules.txt`
 
 ---
 
@@ -251,11 +254,11 @@ VERCEL_TOKEN=<token> npx vercel --prod --yes --scope pfrogers-projects
 
 | 卡片 | 說明 |
 |------|------|
-| 說明卡 | hero 圖 `assets/how-to-quote-v3.jpg`（750×1000，3:4）；body 背景 `#F7E5D8` 蓋底部白條 |
-| GRL 卡 | header `#ede0f5` 淡紫 + 黑字 GRL；白色 body；米色按鈕 `#c9a98a`；URI: grail.bz |
-| ZOZO 卡 | header `#111111` 黑 + 白字 ZOZO/TOWN；白色 body；米色按鈕 `#c9a98a`；URI: zozo.jp |
+| 說明卡 | hero 圖 `assets/how-to-quote-v7.jpg`（960×1280，3:4）；body 背景 `#F7E5D8` 蓋底部白條 |
+| GRL 卡 | hero 圖 `assets/GRL.png`（1983×793，4:3）；白色 body；米色按鈕 `#c9a98a`；URI: grail.bz |
+| ZOZO 卡 | hero 圖 `assets/ZOZO.png`（1983×793，4:3）；白色 body；米色按鈕 `#c9a98a`；URI: zozo.jp |
 
-> LINE Flex bubble body 有最小高度限制，說明卡底部白條無法真正消除，只能用 body 背景色遮掩（顏色需配合圖片底部）。
+> 品牌 logo 圖片透過 GitHub raw URL 供 LINE 載入。圖片尺寸 4:3 由 `aspectRatio: '4:3'` 設定，`aspectMode: 'cover'`。
 
 ---
 
@@ -273,9 +276,9 @@ GRL 使用 `alt` 屬性關聯顏色與圖片：
 ## 已知問題與決策記錄
 
 - **`vercel login` 在此機器失效**：Windows 使用者名稱「太豐」含中文，造成 HTTP header 錯誤。改用 GitHub 自動部署。
-- **LINE 200則/月限制**：免費方案。GAS 與主 Bot 共用同一 token，每筆訂單約耗 10~12 則。計劃建 Bot B 分流 GAS 通知。
+- **LINE 200則/月限制**：免費方案。已建 Bot B（@033vkbny）分流 GAS 通知，主 Bot 與 GAS 各有獨立 200則額度。每筆訂單約耗 3~4 則（訂單確認+賣貨便+取貨提醒）。
 - **訂單價格未伺服器端驗證**：suggestedPrice 由前端傳入，未重新計算驗證。賣家人工審核訂單通知可發現異常。
-- **購物車過期**：48小時（程式內 EXPIRE_MS = 48h）
+- **購物車過期**：6小時（程式內 EXPIRE_MS = 6h）
 - **LIFF 不能建在 Messaging API Channel**：LINE 2024 年政策變更，LIFF 需另建 LINE Login Channel。
 - **GRL 建議售價計算**：`匯率 = JPY→TWD + 0.015`，`成本 = 匯率 × (JPY + 195) × 1.075 + (150×ceil(lbs) + 20 + 10) + 120利潤`，個位數 ≤4 → 5，≥6 → 9。（195 = GRL 國內固定運費 JPY）
 - **ZOZO 建議售價計算**：同 GRL 公式，但國內運費改為 **330 JPY**。`calcZOZOSuggestedPrice(rate, jpy, lbs)`
@@ -285,3 +288,14 @@ GRL 使用 `alt` 屬性關聯顏色與圖片：
 - **ZOZO 商品名稱查詢**：`add_to_cart_zozo` postback 以 goodsId 在「查詢紀錄」工作表找商品名（ZOZO 查詢同樣記錄在此）。
 - **倉庫分類**：訂單 R 欄存倉庫，空白=未分配；茨城倉 NT$150/lb（約15工作天）；千葉倉 首2磅NT$250之後NT$120/lb（約10工作天）。
 - **貨號格式**：支援中間夾字母，如 `PM870A`（regex 改為 `[a-z]{2}[a-z0-9]+`）。
+- **訂單狀態通知政策**：狀態 1-2（待確認/待買家完成下單）、7（待買家取貨）、8（已完成）、9（退單）有 LINE 通知；狀態 3-6（處理中/已發貨系列）為靜默更新，不發通知。
+- **後台訂單商品編輯**：點 ✏️ 開啟表格式編輯器，既有商品只能改價格/數量，可新增/刪除商品列。儲存後更新 D欄（items）、E欄（totalTwd）、O欄（finalAmount）。
+- **Template literal 內 regex 轉義陷阱**：regex literal 中的 `\d`、`\s`、`\$` 在 Node.js template literal 裡會被吃掉（`\d`→`d`，`\$`→`$`），必須寫 `\\d`、`\\s`、`[$]`（字元類）或 `\\$`。字串 literal 中的 `\n` 也需要寫 `\\n`。
+- **ZOZO 圖片抓取**：優先順序 swatchByName（顏色名對照）> swatchById（URL 抽取 colorId）> data-shelf-color-image-url > CDN 公式 URL（無 b 後綴）> og:image。goods-sale 頁面的 swatch alt 是完整商品名+顏色，需用 `|` 分割取後段或用 colorId 索引。
+- **賣貨便小卡**：金額欄位加 `wrap: true` 避免長文字截斷（折扣金額顯示需要）。
+- **報價小卡 6 小時過期**：`buildAddToCartFlex` 和 `buildZOZOFlexMessage` 的加入購物車 postback 帶 `&ts=<unix秒>`；`handlePostback` 中 `add_to_cart` / `add_to_cart_zozo` 均驗證 ts，超過 6 小時回覆提示重新查詢。
+- **強制會員才能下單**：前端 `submitOrder()` 檢查 `isMember`（`init()` 時由 `/api/member` 回傳設定）；後端 `/api/order` 也驗證 `getMember()` 非空，否則 400。
+- **ZOZO sizeEquivMap**：`background.js parseZOZO()` 回傳 `sizeEquivMap`（`{ "2": "XSサイズ相当", "3": "Sサイズ相当", ... }`）；`buildZOZOFlexMessage` 以 `/^\d+$/` 判斷純數字才查 map，字母尺碼（M/L）直接走 `zozoSizeName()`。
+- **ZOZO materialText + sleeveCm**：Chrome Extension 解析結果包含 `materialText`（從 dt/dd 規格表抓素材）和 `sleeveCm`（從說明文字抓そで丈 cm）。兩者存入 Sheet JSON result，`buildZOZOFlexMessage` 讀出後傳給 `estimateWeight()`。
+- **查詢紀錄「查看商品頁」URL**（2026-05-07 修正）：原本硬接 `/disp/item/{prodId}/`（路徑錯誤），ZOZO 商品的數字 goodsId 也被當 GRL prodId 拼接。改為優先用 M 欄儲存的 `canonicalUrl`（GRL/ZOZO 均有），舊紀錄無 URL 時才推算 GRL 路徑。
+- **歡迎訊息 Flex 400 錯誤**（2026-05-07 修正）：`buildWelcomeFlexMessage` 使用 3 位 hex 顏色（`#666`、`#aaa`）不合 LINE 規格，改為 6 位（`#666666`、`#aaaaaa`）。LINE Flex Message 所有顏色必須為完整 6 位 hex。
