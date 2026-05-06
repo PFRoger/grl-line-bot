@@ -256,79 +256,41 @@ function estimateWeight(productName) {
 
   // フラット 不納入：GRL 平底鞋名稱一定會有其他鞋類關鍵字；フラット 單獨出現在「フラットシルエット洋裝」等服飾名稱，會誤判為鞋
   if (/サンダル|スニーカー|ブーツ|パンプス|シューズ|ミュール|ローファー|スリッポン|ウェッジ|ヒール/.test(name)) {
-    category = 'shoes';
-    label = '鞋類';
-    minG = 700; maxG = 1020;
-    packagingNote = '含鞋盒紙箱（約200~280g）';
-    confidence = 'medium';
+    category = 'shoes'; label = '鞋類'; minG = 700; maxG = 1020; confidence = 'medium';
   // ショルダー 不納入：「ショルダーオープン/ショルダーリボン」等服飾設計名稱很常見，需用 ショルダーバッグ 才精確
   } else if (/バッグ|トートバッグ|ショルダーバッグ|ハンドバッグ|リュック|クラッチ|ポーチ/.test(name)) {
-    category = 'bag';
-    label = '包包';
-    minG = 450; maxG = 820;
-    packagingNote = '含塑膠包裝袋（約20g）';
-    confidence = 'medium';
+    category = 'bag'; label = '包包'; minG = 450; maxG = 820; confidence = 'medium';
   } else if (/ピアス|ネックレス|リング|ブレスレット|ヘアアクセ|ヘアクリップ|バレッタ|アクセサリー/.test(name)) {
-    category = 'accessory';
-    label = '配件';
-    minG = 60; maxG = 180;
-    packagingNote = '含小紙盒或塑膠袋（約20~50g）';
-    confidence = 'low';
+    category = 'accessory'; label = '配件'; minG = 60; maxG = 180; confidence = 'low';
   } else if (/コート|アウター|ダウン|ブルゾン|ムートン/.test(name)) {
-    category = 'outerwear';
-    label = '外套';
-    minG = 650; maxG = 1150;
-    packagingNote = '含塑膠包裝袋（約20g）';
-    confidence = 'medium';
+    category = 'outerwear'; label = '外套'; minG = 650; maxG = 1150; confidence = 'medium';
   } else if (/ジャケット|カーディガン|ボレロ/.test(name)) {
-    category = 'jacket';
-    label = '外罩衫';
-    minG = 280; maxG = 580;
-    packagingNote = '含塑膠包裝袋（約20g）';
-    confidence = 'high';
+    category = 'jacket'; label = '外罩衫'; minG = 280; maxG = 580; confidence = 'high';
+  } else if (/スウェット|パーカー/.test(name)) {
+    category = 'sweatshirt'; label = '衛衣/帽T'; minG = 300; maxG = 550; confidence = 'medium';
+  // ショートデニム 先於 デニム：牛仔短褲比長褲輕很多
+  } else if (/ショートデニム|デニムショーツ|デニムショート/.test(name)) {
+    category = 'shorts_denim'; label = '牛仔短褲'; minG = 200; maxG = 380; confidence = 'medium';
   // デニム 先於 ワンピース/スカート：牛仔布料偏重，需用牛仔範圍而非洋裝範圍
   } else if (/デニム|ジーンズ/.test(name)) {
-    category = 'denim';
-    label = '牛仔褲';
-    minG = 500; maxG = 850;
-    packagingNote = '含塑膠包裝袋（約20g）';
-    confidence = 'high';
+    category = 'denim'; label = '牛仔褲'; minG = 500; maxG = 850; confidence = 'high';
   } else if (/ワンピース|ドレス/.test(name)) {
-    category = 'dress';
-    label = '洋裝';
-    minG = 200; maxG = 480;
-    packagingNote = '含塑膠包裝袋（約20g）';
-    confidence = 'high';
+    category = 'dress'; label = '洋裝'; minG = 200; maxG = 480; confidence = 'high';
   } else if (/スカート/.test(name)) {
-    category = 'skirt';
-    label = '裙子';
-    minG = 170; maxG = 400;
-    packagingNote = '含塑膠包裝袋（約20g）';
-    confidence = 'high';
-  } else if (/パンツ|スラックス|ショートパンツ|レギンス/.test(name)) {
-    category = 'pants';
-    label = '褲子';
-    minG = 220; maxG = 520;
-    packagingNote = '含塑膠包裝袋（約20g）';
-    confidence = 'high';
+    category = 'skirt'; label = '裙子'; minG = 170; maxG = 400; confidence = 'high';
+  // レギンス/ショートパンツ 先於 パンツ：獨立範圍，避免被長褲範圍高估
+  } else if (/レギンス|スパッツ/.test(name)) {
+    category = 'leggings'; label = '內搭褲'; minG = 50; maxG = 150; confidence = 'high';
+  } else if (/ショートパンツ|ハーフパンツ/.test(name)) {
+    category = 'shorts'; label = '短褲'; minG = 120; maxG = 300; confidence = 'high';
+  } else if (/パンツ|スラックス/.test(name)) {
+    category = 'pants'; label = '褲子'; minG = 220; maxG = 520; confidence = 'high';
   } else if (/ニット|セーター/.test(name)) {
-    category = 'knit';
-    label = '針織上衣';
-    minG = 180; maxG = 400;
-    packagingNote = '含塑膠包裝袋（約20g）';
-    confidence = 'high';
+    category = 'knit'; label = '針織上衣'; minG = 180; maxG = 400; confidence = 'high';
   } else if (/トップス|シャツ|ブラウス|カットソー|Tシャツ|タンク|ノースリーブ/.test(name)) {
-    category = 'top';
-    label = '上衣';
-    minG = 120; maxG = 300;
-    packagingNote = '含塑膠包裝袋（約20g）';
-    confidence = 'high';
+    category = 'top'; label = '上衣'; minG = 120; maxG = 300; confidence = 'high';
   } else {
-    category = 'clothing';
-    label = '服飾';
-    minG = 150; maxG = 450;
-    packagingNote = '含塑膠包裝袋（約20g）';
-    confidence = 'medium';
+    category = 'clothing'; label = '服飾'; minG = 150; maxG = 450; confidence = 'medium';
   }
 
   // 多件式套裝乘數（セットアップ × 1.8，セット / アンサンブル × 1.6）
@@ -344,8 +306,18 @@ function estimateWeight(productName) {
   minG += pkgG; maxG += pkgG;
   packagingNote = `含包裝約${pkgG}g`;
 
-  // ニット/セーター 材質偏重，額外加 0.5 磅（約227g）
-  if (/ニット|セーター/.test(name)) { minG += 227; maxG += 227; }
+  // 針織材質加成（依袖丈調整：長袖+227g，七分袖/五分袖+136g，半袖+45g，無袖+0g）
+  if (/ニット|セーター/.test(name)) {
+    if (/ノースリーブ|袖なし/.test(name)) {
+      // 無袖針織不加
+    } else if (/半袖|半そで|ショートスリーブ/.test(name)) {
+      minG += 45; maxG += 45;
+    } else if (/七分袖|五分袖/.test(name)) {
+      minG += 136; maxG += 136;
+    } else {
+      minG += 227; maxG += 227;
+    }
+  }
 
   // 布料材質加成/減輕（+0.3磅=136g；-0.2磅=91g）
   if (/ベロア|ツイード|ファー|レザー|PUレザー/.test(name)) {
@@ -361,6 +333,15 @@ function estimateWeight(productName) {
   }
   if (/ミニ/.test(name) && /ワンピース|スカート/.test(name)) {
     minG = Math.round(minG * 0.9); maxG = Math.round(maxG * 0.9);
+  }
+
+  // 袖丈縮減（外罩衫/洋裝的半袖與無袖）
+  if (/半袖|半そで|ショートスリーブ/.test(name)) {
+    if (/カーディガン|ジャケット|ボレロ/.test(name)) { minG = Math.round(minG * 0.85); maxG = Math.round(maxG * 0.85); }
+    else if (/ワンピース|ドレス/.test(name))         { minG = Math.round(minG * 0.93); maxG = Math.round(maxG * 0.93); }
+  }
+  if (/ノースリーブ|袖なし/.test(name) && /ワンピース|ドレス/.test(name)) {
+    minG = Math.round(minG * 0.88); maxG = Math.round(maxG * 0.88);
   }
 
   // 附贈配件加成
