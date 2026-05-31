@@ -2401,7 +2401,7 @@ async function handleEvent(event, client) {
   const isProductCode = /^[a-z]{1,2}[a-z0-9]{2,8}$/i.test(userText);
 
   if (!isGRL && !isZOZO && !isProductCode) {
-    await client.replyMessage(replyToken, { type: 'text', text: '請輸入 GRL 網址／GRL 貨號（例如：RU1197）／ZOZO 網址，或您有其他問題，請稍後小編將為您服務～' });
+    await client.replyMessage(replyToken, { type: 'text', text: '您好～✨這裡是自動報價服務。\n請輸入 GRL 網址 or GRL 貨號（例如：RU1197） or ZOZO 網址。\n💭如欲購買其他服飾或有任何疑問，歡迎直接留言，真人客服稍後會立刻過來為您服務～( ⁎ᵕᴗᵕ⁎ )🌷' });
     return;
   }
 
