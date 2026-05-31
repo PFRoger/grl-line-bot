@@ -504,6 +504,41 @@ async function scrapeGRL(inputUrl) {
 // ── ZOZO 任務佇列（Chrome Extension 負責爬蟲，Bot 負責發 push）────────────────
 const ZOZO_SHEET    = 'ZOZO任務';
 const SETTINGS_SHEET = '設定';
+const BOT_LOG_SHEET  = 'Bot紀錄';
+
+function getTodayTW() {
+  return new Date().toLocaleDateString('zh-TW', { timeZone: 'Asia/Taipei', year: 'numeric', month: '2-digit', day: '2-digit' }).replace(/\//g, '-');
+}
+
+async function checkAndSetBotReply(sheets, userId) {
+  const today = getTodayTW();
+  try {
+    const res = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${BOT_LOG_SHEET}!A:B` });
+    const rows = res.data.values || [];
+    for (let i = 0; i < rows.length; i++) {
+      if (rows[i][0] === userId) {
+        if (rows[i][1] === today) return false;
+        await sheets.spreadsheets.values.update({
+          spreadsheetId: SHEET_ID,
+          range: `${BOT_LOG_SHEET}!B${i + 1}`,
+          valueInputOption: 'RAW',
+          resource: { values: [[today]] },
+        });
+        return true;
+      }
+    }
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: SHEET_ID,
+      range: `${BOT_LOG_SHEET}!A:B`,
+      valueInputOption: 'RAW',
+      resource: { values: [[userId, today]] },
+    });
+    return true;
+  } catch (e) {
+    console.error('[bot-log error]', e.message);
+    return true;
+  }
+}
 
 async function getZOZOEnabled(sheets) {
   try {
@@ -2401,7 +2436,11 @@ async function handleEvent(event, client) {
   const isProductCode = /^[a-z]{1,2}[a-z0-9]{2,8}$/i.test(userText);
 
   if (!isGRL && !isZOZO && !isProductCode) {
-    await client.replyMessage(replyToken, { type: 'text', text: '您好～✨這裡是自動報價服務。\n請輸入 GRL 網址 or GRL 貨號（例如：RU1197） or ZOZO 網址。\n💭如欲購買其他服飾或有任何疑問，歡迎直接留言，真人客服稍後會立刻過來為您服務～( ⁎ᵕᴗᵕ⁎ )🌷' });
+    const sheets = getSheetsClient();
+    const shouldReply = await checkAndSetBotReply(sheets, userId);
+    if (shouldReply) {
+      await client.replyMessage(replyToken, { type: 'text', text: '您好✨ 這裡是自動報價服務。\n請輸入 GRL / ZOZO 網址或 GRL 貨號（例：RU1197）即可自動報價。\n\n💭 欲購其他服飾或有任何疑問，請直接留言，真人客服稍後會立刻過來為您服務.ᐟ( ⁎ᵕᴗᵕ⁎ )🌷' });
+    }
     return;
   }
 
