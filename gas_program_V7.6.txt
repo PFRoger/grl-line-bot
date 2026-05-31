@@ -1016,31 +1016,27 @@ function updateGrlData() {
   drawBorders();
   colorSpecialCols();
 
-  if (allChanges.length > 0)
-    sendToAllAdmins("🌸 GRL 庫存變動通知\n" + now + "\n\n" + allChanges.join("\n\n─────────────\n\n"));
-  if (delistedItems.length > 0)
-    sendToAllAdmins("⚠️ GRL 下架通知\n" + now + "\n\n" + delistedItems.map(function(n){ return "🚫 " + n; }).join("\n"));
-  if (newItems.length > 0)
-    sendToAllAdmins("🆕 新商品加入追蹤\n" + now + "\n\n" + newItems.map(function(n){ return "✨ " + n; }).join("\n"));
-
   var elapsed = Math.round((new Date() - startTime) / 1000);
   writeSummary(totalCount, processedCount, notFoundCount, outOfStockCount,
                delistedItems.length, allChanges.length, elapsed);
 
-  // [v7.2-2] 每次執行都發 LINE 摘要通知
+  // [v7.6-1] 四種通知合併為單則，避免超過 200 則/月額度
   var normalCount = processedCount - outOfStockCount - delistedItems.length - notFoundCount;
   if (normalCount < 0) normalCount = 0;
   var lineSum = "🌸 GRL 更新完成\n" + now + "\n\n" +
                 "📦 總商品數：" + totalCount + " 筆\n" +
-                "✅ 處理完成：" + processedCount + " 筆\n" +
                 "✅ 在庫正常：" + normalCount + " 筆\n" +
                 "❌ 缺貨：" + outOfStockCount + " 筆\n" +
                 "🚫 下架：" + delistedItems.length + " 筆\n" +
                 "💴 今日匯率：1 JPY = " + jpyRate + " TWD\n" +
                 "⏱️ 耗時：" + elapsed + " 秒";
-  if (notFoundCount > 0)        lineSum += "\n⚠️ 找不到商品：" + notFoundCount + " 筆";
-  if (allChanges.length > 0)    lineSum += "\n📲 變動通知：" + allChanges.length + " 筆";
-  if (newItems.length > 0)      lineSum += "\n🆕 新商品：" + newItems.length + " 筆";
+  if (notFoundCount > 0) lineSum += "\n⚠️ 找不到商品：" + notFoundCount + " 筆";
+  if (allChanges.length > 0)
+    lineSum += "\n\n─────────────\n📦 庫存變動\n" + allChanges.join("\n\n─────────────\n");
+  if (delistedItems.length > 0)
+    lineSum += "\n\n─────────────\n🚫 下架商品\n" + delistedItems.map(function(n){ return "🚫 " + n; }).join("\n");
+  if (newItems.length > 0)
+    lineSum += "\n\n─────────────\n🆕 新加入追蹤\n" + newItems.map(function(n){ return "✨ " + n; }).join("\n");
   sendToAllAdmins(lineSum);
 
   if (!timedOut) {
