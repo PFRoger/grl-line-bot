@@ -79,6 +79,7 @@ VERCEL_TOKEN=<token> npx vercel --prod --yes --scope pfrogers-projects
 | `點數紀錄` | 每筆點數明細（A~H欄：pointId、date、userId、displayName、orderId、points、expiryDate、status） |
 | `優惠券` | 優惠券（couponCode、userId、displayName、type、amount、issueDate、expiryDate、status、usedOrderId） |
 | `邀請紀錄` | 邀請關係（inviterUserId、inviteeUserId、inviteCode、bindDate、orderDeadline、qualifyingOrderId、status） |
+| `Bot紀錄` | 非網址訊息自動回覆每日限制（A欄：userId、B欄：lastAutoReplyDate，格式 YYYY-MM-DD） |
 
 ---
 
@@ -127,6 +128,8 @@ VERCEL_TOKEN=<token> npx vercel --prod --yes --scope pfrogers-projects
 | `buildCartHtml()` | 產生 LIFF 購物車 HTML |
 | `estimateWeight(name, materialText, sleeveCm)` | 估算商品重量，回傳 `{ minG, maxG, midG, midLbs, label, confidence }`；sleeveCm 為 ZOZO 限定的實測袖長 |
 | `handlePostback()` | 處理所有 postback 事件（含 add_to_cart_zozo、start_shopping） |
+| `getTodayTW()` | 回傳台灣時區今日日期字串（YYYY-MM-DD） |
+| `checkAndSetBotReply(sheets, userId)` | 查 `Bot紀錄` 工作表，判斷該 userId 今日是否已觸發自動回覆；未觸發則寫入並回傳 true，已觸發回傳 false |
 
 ---
 
@@ -201,7 +204,7 @@ VERCEL_TOKEN=<token> npx vercel --prod --yes --scope pfrogers-projects
 - **功能**：定時爬 GRL 商品頁面，偵測價格/庫存變動，推送通知給賣家
 - **觸發**：每6小時（GAS 時間型觸發器）
 - **通知對象**：只有賣家（LINE_USER_ID = `U9fa329e70b89f4ce19089928a824bd29`）
-- **通知內容**：有庫存變動時補貨/售完通知、下架通知、執行摘要（商品數/缺貨數/耗時/匯率）
+- **通知內容**：每次執行固定發 **1 則**合併訊息（執行摘要＋庫存變動＋下架＋新商品加入，有則附上對應區塊）；每月固定 120 則，安全在 200 則額度內
 - **Bot B**（@033vkbny）：GAS 通知專用，與主 Bot 各有獨立 200則/月額度
 - **素材抓取**：`parseMaterialText(html)` 從 GRL 頁面 `div.tab-content` 抓含「素材は」的區塊，傳入 `estimateWeightLbs()` 做針織加成
 
@@ -299,3 +302,5 @@ GRL 使用 `alt` 屬性關聯顏色與圖片：
 - **ZOZO materialText + sleeveCm**：Chrome Extension 解析結果包含 `materialText`（從 dt/dd 規格表抓素材）和 `sleeveCm`（從說明文字抓そで丈 cm）。兩者存入 Sheet JSON result，`buildZOZOFlexMessage` 讀出後傳給 `estimateWeight()`。
 - **查詢紀錄「查看商品頁」URL**（2026-05-07 修正）：原本硬接 `/disp/item/{prodId}/`（路徑錯誤），ZOZO 商品的數字 goodsId 也被當 GRL prodId 拼接。改為優先用 M 欄儲存的 `canonicalUrl`（GRL/ZOZO 均有），舊紀錄無 URL 時才推算 GRL 路徑。
 - **歡迎訊息 Flex 400 錯誤**（2026-05-07 修正）：`buildWelcomeFlexMessage` 使用 3 位 hex 顏色（`#666`、`#aaa`）不合 LINE 規格，改為 6 位（`#666666`、`#aaaaaa`）。LINE Flex Message 所有顏色必須為完整 6 位 hex。
+- **非網址訊息每日限制自動回覆**（2026-05-31）：買家傳非 GRL/ZOZO 網址或 GRL 貨號時，每個自然日（台灣時區 00:00~23:59）只觸發一次自動回覆，之後靜默讓真人客服接手。紀錄存於 `Bot紀錄` 工作表（userId + lastAutoReplyDate）。不分是否為會員。
+- **GAS 四種通知合併為單則**（2026-05-31）：原本執行摘要、庫存變動、下架、新商品加入追蹤各自獨立發送（最多 4 則/次），改為每次執行合併成 1 則，每月固定 120 則，避免超過 200 則/月額度。GAS 檔案版本：`gas_program_V7.6.txt`（已更新）。
