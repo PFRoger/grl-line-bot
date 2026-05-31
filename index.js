@@ -2401,7 +2401,7 @@ async function handleEvent(event, client) {
   const isProductCode = /^[a-z]{1,2}[a-z0-9]{2,8}$/i.test(userText);
 
   if (!isGRL && !isZOZO && !isProductCode) {
-    await client.replyMessage(replyToken, { type: 'text', text: '請傳入 GRL 或 ZOZO 商品網址，或 GRL 貨號（例：RU1197）' });
+    await client.replyMessage(replyToken, { type: 'text', text: '請輸入 GRL 網址／GRL 貨號（例如：RU1197）／ZOZO 網址，或您有其他問題，請稍後小編將為您服務～' });
     return;
   }
 
