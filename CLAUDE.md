@@ -4,6 +4,20 @@
 
 ---
 
+## 每次新對話開始時必做
+
+1. **讀取 Obsidian Wiki**（第二大腦）：
+   - `E:\Program Files\claudecode\Obsidian\BijinLineBot\bijin-linebot\CLAUDE.md`
+   - `E:\Program Files\claudecode\Obsidian\BijinLineBot\bijin-linebot\index.md`
+   - 依任務需求讀取相關 wiki 頁面（如修改報價邏輯 → 讀 `wiki/concepts/price-calculation.md`）
+
+2. **完成任務後更新 Wiki**：
+   - `log.md` 寫入本次對話做了什麼（append-only）
+   - 如有新設計決策或 Bug 修正，更新 `wiki/synthesis/bot-changelog.md`
+   - 如影響特定概念或實體，更新對應頁面並同步 `index.md`
+
+---
+
 ## 專案概述
 
 **商業用途**：Bijin日本正品代購（代購業者）的 LINE Bot，主要功能：
@@ -184,7 +198,7 @@ VERCEL_TOKEN=<token> npx vercel --prod --yes --scope pfrogers-projects
 - **目錄**：`chrome-extension/`（`background.js`, `manifest.json`, `popup.js`, `popup.html`）
 - **功能**：Chrome Extension 安裝後，背景每 10 秒輪詢 `/api/zozo-queue`，有任務就開 Tab 抓 ZOZO 頁面（繞過 Akamai bot 偵測），解析後回傳
 - **權限**：`alarms`, `tabs`, `scripting`；host_permissions: `*.zozo.jp/*`, `pfroger-linebot-2.vercel.app/*`
-- **ADMIN_KEY**：`grl-admin-2026`（與 Vercel 環境變數一致）
+- **ZOZO_QUEUE_KEY**：`zozo-bijin-2026abc`（Vercel 環境變數 `ZOZO_QUEUE_KEY`，僅用於 `/api/zozo-queue`，與 ADMIN_KEY 分離）
 - **Akamai 處理**：Tab 必須用 `active: true`（前景分頁），否則 Akamai 偵測為 bot；等頁面 complete 再等 1.5 秒，HTML < 10000 bytes 視為 challenge 頁再等 2 秒；全域 timeout 60 秒
 - **三種解析器**：`parseZOZO(html, url)` 為 dispatcher，依頁面類型選擇：
   - `parseZOZOLegacy(html, url)`：舊版頁面（含 `data-goods-id` 屬性）
@@ -200,7 +214,7 @@ VERCEL_TOKEN=<token> npx vercel --prod --yes --scope pfrogers-projects
 
 ## GAS 庫存監控系統（獨立於 LINE Bot）
 
-- **檔案**：`gas_program_V7.6.txt`（v7.6.0，最新版）
+- **檔案**：`gas_program_V7.6.txt`（v7.6.5，最新版）
 - **功能**：定時爬 GRL 商品頁面，偵測價格/庫存變動，推送通知給賣家
 - **觸發**：每6小時（GAS 時間型觸發器）
 - **通知對象**：只有賣家（LINE_USER_ID = `U9fa329e70b89f4ce19089928a824bd29`）
@@ -208,7 +222,7 @@ VERCEL_TOKEN=<token> npx vercel --prod --yes --scope pfrogers-projects
 - **Bot B**（@033vkbny）：GAS 通知專用，與主 Bot 各有獨立 200則/月額度
 - **素材抓取**：`parseMaterialText(html)` 從 GRL 頁面 `div.tab-content` 抓含「素材は」的區塊，傳入 `estimateWeightLbs()` 做針織加成
 
-### GAS v7.6.0 重量估算品類（index.js 一致，判斷順序優先）
+### GAS v7.6.5 重量估算品類（index.js 一致，判斷順序優先）
 
 | 品類 | 關鍵字 | 範圍 | 包裝加成 |
 |------|--------|------|---------|
@@ -303,4 +317,4 @@ GRL 使用 `alt` 屬性關聯顏色與圖片：
 - **查詢紀錄「查看商品頁」URL**（2026-05-07 修正）：原本硬接 `/disp/item/{prodId}/`（路徑錯誤），ZOZO 商品的數字 goodsId 也被當 GRL prodId 拼接。改為優先用 M 欄儲存的 `canonicalUrl`（GRL/ZOZO 均有），舊紀錄無 URL 時才推算 GRL 路徑。
 - **歡迎訊息 Flex 400 錯誤**（2026-05-07 修正）：`buildWelcomeFlexMessage` 使用 3 位 hex 顏色（`#666`、`#aaa`）不合 LINE 規格，改為 6 位（`#666666`、`#aaaaaa`）。LINE Flex Message 所有顏色必須為完整 6 位 hex。
 - **非網址訊息每日限制自動回覆**（2026-05-31）：買家傳非 GRL/ZOZO 網址或 GRL 貨號時，每個自然日（台灣時區 00:00~23:59）只觸發一次自動回覆，之後靜默讓真人客服接手。紀錄存於 `Bot紀錄` 工作表（userId + lastAutoReplyDate）。不分是否為會員。
-- **GAS 四種通知合併為單則**（2026-05-31）：原本執行摘要、庫存變動、下架、新商品加入追蹤各自獨立發送（最多 4 則/次），改為每次執行合併成 1 則，每月固定 120 則，避免超過 200 則/月額度。GAS 檔案版本：`gas_program_V7.6.txt`（已更新）。
+- **GAS 四種通知合併為單則**（2026-05-31，v7.6-5）：原本執行摘要、庫存變動、下架、新商品加入追蹤各自獨立發送（最多 4 則/次），改為每次執行合併成 1 則，每月固定 120 則，避免超過 200 則/月額度。GAS 檔案版本：`gas_program_V7.6.txt`（v7.6.5，已更新）。
