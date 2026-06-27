@@ -1,4 +1,4 @@
-const ADMIN_KEY = 'grl-admin-2026';
+const ZOZO_QUEUE_KEY = 'REPLACE_WITH_ZOZO_QUEUE_KEY';
 const API_BASE = 'https://pfroger-linebot-2.vercel.app';
 const POLL_MINUTES = 10 / 60;
 
@@ -11,7 +11,7 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 async function pollAndProcess() {
   let task;
   try {
-    const res = await fetch(`${API_BASE}/api/zozo-queue?key=${ADMIN_KEY}`);
+    const res = await fetch(`${API_BASE}/api/zozo-queue?key=${ZOZO_QUEUE_KEY}`);
     if (!res.ok) return;
     task = await res.json();
   } catch (e) {
@@ -105,7 +105,7 @@ async function submitResult(taskId, result, error) {
     const res = await fetch(`${API_BASE}/api/zozo-queue`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ key: ADMIN_KEY, taskId, result, error }),
+      body: JSON.stringify({ key: ZOZO_QUEUE_KEY, taskId, result, error }),
     });
     const body = await res.json().catch(() => ({}));
     if (!res.ok || body.pushError) {

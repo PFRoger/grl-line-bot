@@ -1,6 +1,6 @@
-// 填入你的 ADMIN_KEY（與 Vercel 環境變數相同）
+// ZOZO 專用 key，對應 Vercel 環境變數 ZOZO_QUEUE_KEY（與 ADMIN_KEY 分開，權限更低）
 const CONFIG = {
-  adminKey: 'YOUR_ADMIN_KEY_HERE',
+  zozoQueueKey: 'REPLACE_WITH_ZOZO_QUEUE_KEY',
   apiBase: 'https://pfroger-linebot-2.vercel.app',
   pollIntervalSeconds: 10,
 };

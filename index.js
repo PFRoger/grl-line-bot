@@ -18,6 +18,7 @@ const MEMBER_LIFF_ID = '2009823505-bwMBpOjU';
 const CART_SHEET = '購物車';
 const ORDER_SHEET = '訂單';
 const ADMIN_KEY = process.env.ADMIN_KEY;
+const ZOZO_QUEUE_KEY = process.env.ZOZO_QUEUE_KEY;
 
 // ── LINE Bot 單一客戶端實例 ───────────────────────────────────────────────────
 const lineClient = new line.Client({ channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN });
@@ -5826,7 +5827,7 @@ app.post('/api/admin/complete-order-points', express.json(), async (req, res) =>
 
 // GET /api/zozo-queue — Extension 輪詢：取得最舊的 pending 任務
 app.get('/api/zozo-queue', async (req, res) => {
-  if (req.query.key !== ADMIN_KEY) return res.status(401).json({ error: 'Unauthorized' });
+  if (req.query.key !== ZOZO_QUEUE_KEY) return res.status(401).json({ error: 'Unauthorized' });
   try {
     const sheets = getSheetsClient();
     const result = await sheets.spreadsheets.values.get({
@@ -5854,7 +5855,7 @@ app.get('/api/zozo-queue', async (req, res) => {
 
 // POST /api/zozo-queue — Extension 回傳結果，更新 Sheet（買家主動點「查看報價」取結果）
 app.post('/api/zozo-queue', express.json(), async (req, res) => {
-  if (req.body.key !== ADMIN_KEY) return res.status(401).json({ error: 'Unauthorized' });
+  if (req.body.key !== ZOZO_QUEUE_KEY) return res.status(401).json({ error: 'Unauthorized' });
   const { taskId, result, error } = req.body;
   if (!taskId) return res.status(400).json({ error: 'taskId required' });
 
