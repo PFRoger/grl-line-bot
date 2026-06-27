@@ -67,17 +67,17 @@ function translateArrival(text) {
 }
 
 // ── 建議售價計算 ──────────────────────────────────────────────────────────────
-const GRL_DOMESTIC_SHIPPING  = 195;  // GRL 日本國內固定運費（JPY/件）
-const ZOZO_DOMESTIC_SHIPPING = 330;  // ZOZO 日本國內固定運費（JPY/件）
-const FEE_RATE        = 1.075; // Buy&Ship 手續費 6% + 銀行海外刷卡費 1.5%（≈ ×1.075）
-const SHIPPING_PER_LB = 150;   // 國際運費（NT$/磅，無條件進位整磅計費）
-const PACKAGING_COST  = 20;    // 包材成本（NT$/件）
-const TRANSFER_FEE    = 10;    // 跨行提領手續費（NT$/件）
-const PROFIT          = 120;   // 每單固定利潤（NT$）
+const JP_SHIPPING_GRL  = 195;  // GRL 日本國內運費(每件固定,日圓)
+const JP_SHIPPING_ZOZO = 330;  // ZOZO 日本國內運費(每件固定,日圓)
+const FEE_RATE         = 1.075; // Buy&Ship 手續費 6% + 銀行刷卡費 1.5%
+const SHIPPING_PER_LB  = 150;  // 國際運費(台幣/磅)
+const PACKAGING_COST   = 20;   // 包材(台幣/件)
+const TRANSFER_FEE     = 10;   // 跨行提領(台幣/件)
+const PROFIT           = 120;  // 每單固定利潤(台幣)
 
-// domesticShipping：GRL 傳 GRL_DOMESTIC_SHIPPING，ZOZO 傳 ZOZO_DOMESTIC_SHIPPING
-function calcSuggestedPrice(rate, jpy, lbs = 1, domesticShipping = GRL_DOMESTIC_SHIPPING) {
-  const cost = rate * (jpy + domesticShipping) * FEE_RATE
+// jpShipping：GRL 傳 JP_SHIPPING_GRL，ZOZO 傳 JP_SHIPPING_ZOZO
+function calcSuggestedPrice(rate, jpy, lbs = 1, jpShipping = JP_SHIPPING_GRL) {
+  const cost = rate * (jpy + jpShipping) * FEE_RATE
              + (SHIPPING_PER_LB * Math.ceil(lbs) + PACKAGING_COST + TRANSFER_FEE);
   const base = Math.round(cost + PROFIT);
   const last = base % 10;
@@ -612,7 +612,7 @@ function buildZOZOFlexMessage(data, url, rate = null) {
 
   const weightInfo = estimateWeight(name || '', materialText, sleeveCm);
   const lbs = weightInfo ? weightInfo.midLbs : 1;
-  const suggested = (rate && price) ? calcSuggestedPrice(rate, price, lbs, ZOZO_DOMESTIC_SHIPPING) : null;
+  const suggested = (rate && price) ? calcSuggestedPrice(rate, price, lbs, JP_SHIPPING_ZOZO) : null;
   const ntdLine = suggested ? `NT$${suggested}` : null;
 
   const nameShort = (name || '').substring(0, 30);
@@ -5885,7 +5885,7 @@ app.post('/api/zozo-queue', express.json(), async (req, res) => {
       const lbs = weightInfo ? weightInfo.midLbs : 1;
       let rateForLog = null;
       try { rateForLog = await fetchRate(); } catch (_) {}
-      const suggestedForLog = (rateForLog && result.price) ? calcSuggestedPrice(rateForLog, result.price, lbs, ZOZO_DOMESTIC_SHIPPING) : 0;
+      const suggestedForLog = (rateForLog && result.price) ? calcSuggestedPrice(rateForLog, result.price, lbs, JP_SHIPPING_ZOZO) : 0;
       const imageForLog = result.colors && result.colors[0] ? (result.colors[0].imageUrl || '') : '';
       logQueryToSheet(userId, '', result.goodsId || url, result.name || '', result.price || 0, weightInfo, imageForLog, suggestedForLog, url).catch(e => console.warn('[zozo-queue] logQueryToSheet 失敗:', e.message));
     }
