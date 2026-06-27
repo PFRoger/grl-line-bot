@@ -3737,6 +3737,10 @@ details.sec-closed[open] .sec-summary::after{content:'▾';font-size:12px}
 .stat-label{font-size:11px;color:#aaa;font-weight:600;margin-bottom:2px}
 .stat-value{font-size:24px;font-weight:800;color:#7a5c3e;line-height:1}
 .stat-unit{font-size:11px;color:#c9a98a;font-weight:600;margin-left:2px}
+/* ── Revenue period picker ── */
+.rp-btn{font-size:10px;padding:2px 8px;border-radius:8px;border:1px solid #ddd;background:#fff;color:#888;cursor:pointer;transition:all .15s;line-height:1.6}
+.rp-btn.rp-active{background:#c9a98a;color:#fff;border-color:#c9a98a;font-weight:600}
+.rp-btn:hover:not(.rp-active){background:#f5ede0;border-color:#c9a98a;color:#7a5c3e}
 /* ── Admin note ── */
 .admin-note-display{margin-top:6px;background:#fffde7;border-left:3px solid #f9a825;padding:6px 10px;border-radius:4px;font-size:12px;color:#5d4037;line-height:1.5}
 .note-area{display:none;border-top:1px solid #f0ebe4;padding:10px 12px;background:#fffde7}
@@ -3837,7 +3841,26 @@ details.sec-closed[open] .sec-summary::after{content:'▾';font-size:12px}
 <div class="stats-bar" id="stats-bar">
   <div class="stat-card"><div class="stat-icon">📦</div><div class="stat-info"><div class="stat-label">今日新訂單</div><div class="stat-value" id="stat-today">—</div></div></div>
   <div class="stat-card"><div class="stat-icon">⏳</div><div class="stat-info"><div class="stat-label">待確認</div><div class="stat-value" id="stat-pending" style="color:#e65100">—</div></div></div>
-  <div class="stat-card"><div class="stat-icon">💰</div><div class="stat-info"><div class="stat-label">本月營收</div><div class="stat-value" id="stat-revenue" style="font-size:18px">—<span class="stat-unit">NT$</span></div></div></div>
+  <div class="stat-card" style="flex-direction:column;align-items:flex-start;gap:6px;min-width:180px">
+    <div style="display:flex;align-items:center;gap:12px;width:100%">
+      <div class="stat-icon">💰</div>
+      <div class="stat-info">
+        <div class="stat-label" id="stat-revenue-label">本月營收</div>
+        <div class="stat-value" id="stat-revenue" style="font-size:18px">—<span class="stat-unit">NT$</span></div>
+        <div style="font-size:10px;color:#bbb;margin-top:1px" id="stat-revenue-count"></div>
+      </div>
+    </div>
+    <div style="display:flex;gap:4px;flex-wrap:wrap;padding-left:36px">
+      <button onclick="setRevenuePeriod('month')" id="rpbtn-month" class="rp-btn rp-active">本月</button>
+      <button onclick="setRevenuePeriod('year')" id="rpbtn-year" class="rp-btn">本年</button>
+      <button onclick="setRevenuePeriod('pick-month')" id="rpbtn-pick-month" class="rp-btn">指定月</button>
+      <button onclick="setRevenuePeriod('pick-year')" id="rpbtn-pick-year" class="rp-btn">指定年</button>
+    </div>
+    <div id="rp-pickers" style="display:none;gap:4px;align-items:center;padding-left:36px;flex-wrap:wrap">
+      <select id="rp-year" onchange="renderStats()" style="font-size:11px;padding:2px 6px;border:1px solid #ddd;border-radius:6px;color:#555"></select>
+      <select id="rp-month" onchange="renderStats()" style="font-size:11px;padding:2px 6px;border:1px solid #ddd;border-radius:6px;color:#555;display:none"></select>
+    </div>
+  </div>
   <div class="stat-card"><div class="stat-icon">👥</div><div class="stat-info"><div class="stat-label">總會員數</div><div class="stat-value" id="stat-members">—</div></div></div>
 </div>
 <div style="background:#fff;border-bottom:1px solid #ede8e2;padding:10px 24px;display:flex;align-items:center;gap:16px;font-size:13px">
@@ -3887,6 +3910,7 @@ var allOrders = ${ssrOrdersJson};
 var SSR_ERROR = '${ssrError.replace(/'/g, "\\'")}';
 var KEY = '${adminKey}';
 var MEMBER_COUNT = ${ssrMemberCount};
+var revenuePeriod = 'month';
 
 function toggleZOZO(cb) {
   var val = cb.checked ? 'true' : 'false';
@@ -3993,20 +4017,93 @@ function renderOrders() {
   renderStats();
 }
 
+function setRevenuePeriod(p) {
+  revenuePeriod = p;
+  ['month','year','pick-month','pick-year'].forEach(function(id) {
+    var btn = document.getElementById('rpbtn-' + id);
+    if (btn) btn.className = 'rp-btn' + (id === p ? ' rp-active' : '');
+  });
+  var pickers = document.getElementById('rp-pickers');
+  var monthSel = document.getElementById('rp-month');
+  if (p === 'pick-month' || p === 'pick-year') {
+    pickers.style.display = 'flex';
+    monthSel.style.display = p === 'pick-month' ? '' : 'none';
+  } else {
+    pickers.style.display = 'none';
+  }
+  renderStats();
+}
+
+function initRevenuePickers() {
+  var now = new Date();
+  var twStr = now.toLocaleDateString('zh-TW', { timeZone: 'Asia/Taipei' });
+  var parts = twStr.split('/');
+  var currentYear = parseInt(parts[0]);
+  var currentMonth = parseInt(parts[1]);
+  var years = {};
+  allOrders.forEach(function(o) {
+    var y = (o.orderTime||'').split('/')[0];
+    if (y && /^\d{4}$/.test(y)) years[parseInt(y)] = 1;
+  });
+  years[currentYear] = 1;
+  var sortedYears = Object.keys(years).map(Number).sort(function(a,b){return b-a;});
+  var yearSel = document.getElementById('rp-year');
+  sortedYears.forEach(function(y) {
+    var opt = document.createElement('option');
+    opt.value = y;
+    opt.textContent = y + '年';
+    if (y === currentYear) opt.selected = true;
+    yearSel.appendChild(opt);
+  });
+  var monthSel = document.getElementById('rp-month');
+  for (var m = 1; m <= 12; m++) {
+    var opt = document.createElement('option');
+    opt.value = m;
+    opt.textContent = m + '月';
+    if (m === currentMonth) opt.selected = true;
+    monthSel.appendChild(opt);
+  }
+}
+
 function renderStats() {
   var now = new Date();
-  var todayStr = now.toLocaleDateString('zh-TW', { timeZone: 'Asia/Taipei' }); // e.g. "2026/4/24"
-  var thisMonthStr = todayStr.slice(0, todayStr.lastIndexOf('/')); // e.g. "2026/4"
+  var todayStr = now.toLocaleDateString('zh-TW', { timeZone: 'Asia/Taipei' });
+  var parts = todayStr.split('/');
+  var thisYearStr = parts[0];
+  var thisMonthStr = parts[0] + '/' + parts[1];
   var todayNew = allOrders.filter(function(o){ return (o.orderTime||'').startsWith(todayStr); }).length;
   var pending = allOrders.filter(function(o){ return o.status === '待確認'; }).length;
-  var revenue = allOrders
-    .filter(function(o){ return o.status === '已完成' && (o.orderTime||'').startsWith(thisMonthStr); })
-    .reduce(function(s, o){ return s + (o.finalAmount || 0); }, 0);
+
+  var filterStr, label;
+  if (revenuePeriod === 'year') {
+    filterStr = thisYearStr;
+    label = thisYearStr + ' 年度營收';
+  } else if (revenuePeriod === 'pick-month') {
+    var pyEl = document.getElementById('rp-year');
+    var pmEl = document.getElementById('rp-month');
+    filterStr = (pyEl ? pyEl.value : thisYearStr) + '/' + (pmEl ? pmEl.value : parts[1]);
+    label = filterStr + ' 營收';
+  } else if (revenuePeriod === 'pick-year') {
+    var pyEl2 = document.getElementById('rp-year');
+    filterStr = pyEl2 ? pyEl2.value : thisYearStr;
+    label = filterStr + ' 年度營收';
+  } else {
+    filterStr = thisMonthStr;
+    label = '本月營收';
+  }
+
+  var completedFiltered = allOrders.filter(function(o){ return o.status === '已完成' && (o.orderTime||'').startsWith(filterStr); });
+  var revenue = completedFiltered.reduce(function(s, o){ return s + (o.finalAmount || 0); }, 0);
+
   document.getElementById('stat-today').textContent = todayNew;
   var pEl = document.getElementById('stat-pending');
   pEl.textContent = pending;
   pEl.style.color = pending > 0 ? '#e65100' : '#7a5c3e';
   document.getElementById('stat-revenue').innerHTML = revenue.toLocaleString() + '<span class="stat-unit"> NT$</span>';
+  var labelEl = document.getElementById('stat-revenue-label');
+  if (labelEl) labelEl.textContent = label;
+  var countEl = document.getElementById('stat-revenue-count');
+  if (countEl) countEl.textContent = completedFiltered.length + ' 筆已完成';
   document.getElementById('stat-members').textContent = MEMBER_COUNT;
 }
 
@@ -4298,6 +4395,7 @@ if (SSR_ERROR) {
   showErr('伺服器載入失敗：' + SSR_ERROR + '　請按右上角重新整理');
   document.getElementById('hdr-counts').innerHTML = '<span style="font-size:13px;color:#c0392b">載入失敗</span>';
 } else {
+  initRevenuePickers();
   renderOrders();
 }
 
