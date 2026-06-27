@@ -10,6 +10,7 @@ const app = express();
 app.use('/public', express.static(require('path').join(__dirname, 'public')));
 
 const {
+  line,
   ADMIN_KEY, ZOZO_QUEUE_KEY,
   ADMIN_USER_ID, SHEET_ID, LIFF_ID, MEMBER_LIFF_ID,
   CART_SHEET, ORDER_SHEET, ZOZO_SHEET, SETTINGS_SHEET, BOT_LOG_SHEET,
