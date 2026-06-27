@@ -551,6 +551,17 @@ async function getZOZOEnabled(sheets) {
   } catch (e) { return true; }
 }
 
+async function getGasNotifyEnabled(sheets) {
+  try {
+    const res = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${SETTINGS_SHEET}!A:B` });
+    const rows = res.data.values || [];
+    for (const row of rows.slice(1)) {
+      if (row[0] === 'gas_notify_enabled') return row[1] !== 'false';
+    }
+    return true;
+  } catch (e) { return true; }
+}
+
 async function addZOZOTask(sheets, userId, url) {
   const taskId = Date.now().toString();
   await sheets.spreadsheets.values.append({
@@ -3630,6 +3641,11 @@ app.get('/admin', async (req, res) => {
     const sheets3 = getSheetsClient();
     zozoEnabled = await getZOZOEnabled(sheets3);
   } catch(e) { /* ignore */ }
+  let gasNotifyEnabled = true;
+  try {
+    const sheets4 = getSheetsClient();
+    gasNotifyEnabled = await getGasNotifyEnabled(sheets4);
+  } catch(e) { /* ignore */ }
   const ssrOrdersJson = JSON.stringify(ssrOrders).replace(/</g, '\\u003c').replace(/>/g, '\\u003e').replace(/&/g, '\\u0026');
   res.send(`<!DOCTYPE html>
 <html lang="zh-TW">
@@ -3870,6 +3886,12 @@ details.sec-closed[open] .sec-summary::after{content:'▾';font-size:12px}
     <input type="checkbox" id="zozo-toggle" ${zozoEnabled ? 'checked' : ''} onchange="toggleZOZO(this)" style="width:36px;height:20px;cursor:pointer;accent-color:#FF6B9D">
     <span id="zozo-status" style="font-weight:600;color:${zozoEnabled ? '#2e7d32' : '#c62828'}">${zozoEnabled ? '開啟 ✅' : '關閉 ❌'}</span>
   </label>
+  <span style="color:#ddd">|</span>
+  <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+    <span style="color:#555">📣 GAS 庫存推播</span>
+    <input type="checkbox" id="gas-notify-toggle" ${gasNotifyEnabled ? 'checked' : ''} onchange="toggleGasNotify(this)" style="width:36px;height:20px;cursor:pointer;accent-color:#7a5c3e">
+    <span id="gas-notify-status" style="font-weight:600;color:${gasNotifyEnabled ? '#2e7d32' : '#c62828'}">${gasNotifyEnabled ? '開啟 ✅' : '關閉 ❌'}</span>
+  </label>
 </div>
 <div id="orders"></div>
 <details class="sec-closed">
@@ -3920,6 +3942,24 @@ function toggleZOZO(cb) {
     body: JSON.stringify({ key: KEY, setting: 'zozo_enabled', value: val }),
   }).then(function(r) { return r.json(); }).then(function(d) {
     var el = document.getElementById('zozo-status');
+    if (d.ok) {
+      el.textContent = cb.checked ? '開啟 ✅' : '關閉 ❌';
+      el.style.color  = cb.checked ? '#2e7d32' : '#c62828';
+    } else {
+      cb.checked = !cb.checked;
+      showErr('設定更新失敗: ' + (d.error || ''));
+    }
+  }).catch(function() { cb.checked = !cb.checked; showErr('網路錯誤'); });
+}
+
+function toggleGasNotify(cb) {
+  var val = cb.checked ? 'true' : 'false';
+  fetch('/api/admin/settings', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ key: KEY, setting: 'gas_notify_enabled', value: val }),
+  }).then(function(r) { return r.json(); }).then(function(d) {
+    var el = document.getElementById('gas-notify-status');
     if (d.ok) {
       el.textContent = cb.checked ? '開啟 ✅' : '關閉 ❌';
       el.style.color  = cb.checked ? '#2e7d32' : '#c62828';

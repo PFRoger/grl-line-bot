@@ -1,6 +1,6 @@
 /**
  * @OnlyCurrentDoc
- * 🌸 日本代購工具 - GRL 價格庫存一鍵更新 (v7.6.0)
+ * 🌸 日本代購工具 - GRL 價格庫存一鍵更新 (v7.6.5)
  * 修正項目：
  *   - [v7.2-1] 預約販售加入到貨日期翻譯：「4月下旬入荷予定」→「預計4月下旬到貨」
  *   - [v7.2-2] 每次執行完都發 LINE 摘要通知，無論有無異動
@@ -28,6 +28,7 @@
  *   - [v7.6-2] 針織加成改依袖丈調整：長袖+227g，七分袖/五分袖+136g，半袖+45g，無袖+0g
  *   - [v7.6-3] 袖丈縮減：半袖外罩衫×0.85，半袖洋裝×0.93，無袖洋裝×0.88
  *   - [v7.6-4] parseMaterialText()：從 HTML div.tab-content 抓素材，針織加成依素材分級（羊毛+227g/壓克力+180g/棉+136g/合成纖維+45g/未知+136g）
+ *   - [v7.6-5] 四種 LINE 通知（庫存變動/下架/新商品/執行摘要）合併為單則，每月固定 120 則，避免超過 200 則/月額度
  */
 
 // ═══════════════════════════════════════════════════
@@ -81,7 +82,21 @@ function sendLineMessage(userId, message) {
   }
 }
 
+function isGasNotifyEnabled() {
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = ss.getSheetByName('設定');
+    if (!sheet) return true;
+    var data = sheet.getDataRange().getValues();
+    for (var i = 1; i < data.length; i++) {
+      if (data[i][0] === 'gas_notify_enabled') return String(data[i][1]) !== 'false';
+    }
+    return true;
+  } catch(e) { return true; }
+}
+
 function sendToAllAdmins(message) {
+  if (!isGasNotifyEnabled()) { Logger.log('GAS 通知已關閉，跳過推播'); return; }
   LINE_ADMIN_IDS.forEach(function(uid) { sendLineMessage(uid, message); });
 }
 
@@ -1020,7 +1035,7 @@ function updateGrlData() {
   writeSummary(totalCount, processedCount, notFoundCount, outOfStockCount,
                delistedItems.length, allChanges.length, elapsed);
 
-  // [v7.6-1] 四種通知合併為單則，避免超過 200 則/月額度
+  // [v7.6-5] 四種通知合併為單則，避免超過 200 則/月額度
   var normalCount = processedCount - outOfStockCount - delistedItems.length - notFoundCount;
   if (normalCount < 0) normalCount = 0;
   var lineSum = "🌸 GRL 更新完成\n" + now + "\n\n" +
