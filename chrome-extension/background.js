@@ -1,4 +1,4 @@
-const ZOZO_QUEUE_KEY = 'REPLACE_WITH_ZOZO_QUEUE_KEY';
+const ZOZO_QUEUE_KEY = 'zozo-bijin-2026abc';
 const API_BASE = 'https://pfroger-linebot-2.vercel.app';
 const POLL_MINUTES = 10 / 60;
 
