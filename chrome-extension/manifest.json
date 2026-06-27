@@ -3,6 +3,7 @@
   "name": "ZOZO 報價自動查詢",
   "version": "1.0",
   "description": "背景輪詢 ZOZO 商品任務，用瀏覽器 session 抓取資料後回傳 LINE Bot",
+  "permissions": ["alarms", "tabs", "scripting"],
   "host_permissions": [
     "*://*.zozo.jp/*",
     "https://pfroger-linebot-2.vercel.app/*"

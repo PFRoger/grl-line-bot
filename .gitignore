@@ -1,3 +1,13 @@
 node_modules/
 .env
 .claude/
+
+.vercel
+
+# 根目錄圖片副本（assets/ 底下不受影響）
+/*.png
+/*.jpg
+
+# 開發用暫存檔
+check_syntax.js
+admin_page_test.html
