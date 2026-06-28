@@ -46,7 +46,7 @@ const {
   issueCoupons, getActiveCoupons, markCouponUsed,
   getActivePoints, deductMemberPoints,
   processOrderCompletion, processOrderReturn, processReferralReward, bindReferralCode,
-  logDiscountAnomaly,
+  markOrderAnomaly, revertOrderAmount, logDiscountAnomaly,
 } = require('./lib/member');
 
 // ── 建立 ZOZO Flex Message ────────────────────────────────────────────────────
@@ -1287,6 +1287,13 @@ app.post('/api/order', express.json(), async (req, res) => {
         pointsDone = true;
       }
     } catch (discountErr) {
+      // A：異常標記（先做，是 B 的保險；自己失敗不阻止 B）
+      try { await markOrderAnomaly(sheets, result.rowNum); }
+      catch (e) { console.error('[anomaly marker]', e.message); }
+      // B：金額回原價（A 無論成功失敗都執行）
+      try { await revertOrderAmount(sheets, result.rowNum, result.totalTwd); }
+      catch (e) { console.error('[amount revert]', e.message); }
+
       const step = discountErr.step || (!couponDone && couponCode ? 'markCouponUsed' : 'deductMemberPoints');
       const couponStatus = couponCode
         ? (couponDone ? `✅已核銷(${couponCode})` : `❌失敗(${couponCode})`)
