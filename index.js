@@ -1904,7 +1904,7 @@ app.get('/api/admin/orders', async (req, res) => {
   try {
     const sheets = getSheetsClient();
     const resp = await Promise.race([
-      sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${ORDER_SHEET}!A:R` }),
+      sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${ORDER_SHEET}!A:S` }),
       new Promise((_, reject) => setTimeout(() => reject(new Error('Sheets API timeout')), 8000)),
     ]);
     const rows = (resp.data.values || []).slice(1);
@@ -1928,6 +1928,7 @@ app.get('/api/admin/orders', async (req, res) => {
       lineDisplayName: row[15] || '',
       adminNote:       row[16] || '',
       warehouse:       row[17] || '',
+      hidden:          row[18] || '',
     })).reverse();
     res.json({ orders });
   } catch (err) {
@@ -2004,6 +2005,32 @@ app.post('/api/admin/order-warehouse', express.json(), async (req, res) => {
       range: `${ORDER_SHEET}!R${rowIndex}`,
       valueInputOption: 'RAW',
       resource: { values: [[warehouse || '']] },
+    });
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── 管理員 API：隱藏 / 取消隱藏訂單（S欄）────────────────────────────────────
+app.post('/api/admin/order-hide', express.json(), async (req, res) => {
+  const { key, orderId, action } = req.body;
+  if (key !== ADMIN_KEY) return res.status(401).json({ error: 'Unauthorized' });
+  if (!orderId || !['hide', 'unhide'].includes(action)) return res.status(400).json({ error: 'orderId and action(hide/unhide) required' });
+  try {
+    const sheets = getSheetsClient();
+    const resp = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${ORDER_SHEET}!A:K` });
+    const rows = (resp.data.values || []).slice(1);
+    const idx = rows.findIndex(r => r[0] === orderId);
+    if (idx < 0) return res.status(404).json({ error: '找不到訂單' });
+    const rowNum = idx + 2;
+    const status = rows[idx][10] || '';
+    if (action === 'hide' && status !== '退單' && status !== '已取消') {
+      return res.status(400).json({ error: '只有退單或已取消訂單可隱藏' });
+    }
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: SHEET_ID,
+      range: `${ORDER_SHEET}!S${rowNum}`,
+      valueInputOption: 'RAW',
+      resource: { values: [[action === 'hide' ? 'hidden' : '']] },
     });
     res.json({ ok: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
@@ -2194,6 +2221,14 @@ details.sec-closed[open] .sec-summary::after{content:'▾';font-size:12px}
 .cr-time{font-size:11px;color:#ccc;white-space:nowrap}
 .btn-return{padding:5px 14px;font-size:12px;background:#fbe9e7;color:#bf360c;border:1px solid #ffccbc;border-radius:20px;cursor:pointer;font-weight:600;transition:background .18s}
 .btn-return:hover{background:#f5c6c0}
+.cr-items{white-space:pre-line;background:#fffcf9;border:1px solid #ede8e0;border-radius:8px;padding:8px 12px;margin-bottom:6px;font-size:12px;line-height:1.6;color:#444}
+.cr-meta{display:flex;flex-wrap:wrap;gap:3px 14px;font-size:12px;color:#555;margin-top:2px}
+.cr-lbl{color:#bbb;margin-right:2px}
+.btn-hide{padding:4px 12px;font-size:11px;background:#f5f5f5;color:#888;border:1px solid #ddd;border-radius:20px;cursor:pointer;font-weight:600;transition:background .18s}
+.btn-hide:hover{background:#eee}
+.btn-unhide{padding:4px 12px;font-size:11px;background:#e8f5e9;color:#2e7d32;border:1px solid #c8e6c9;border-radius:20px;cursor:pointer;font-weight:600;transition:background .18s}
+.btn-unhide:hover{background:#dcedc8}
+.cr-hidden-row{opacity:0.55;background:#f9f9f9}
 /* ── Stats bar ── */
 .stats-bar{display:flex;gap:12px;padding:12px 24px;background:#fff;border-bottom:1px solid #ede8e2;flex-wrap:wrap}
 @media(max-width:560px){.stats-bar{padding:10px 12px;gap:8px}}
@@ -2345,12 +2380,18 @@ details.sec-closed[open] .sec-summary::after{content:'▾';font-size:12px}
   </label>
 </div>
 <div id="orders"></div>
+<div id="hidden-toggle-bar" style="display:none;margin:6px 24px 2px;text-align:right">
+  <label style="cursor:pointer;font-size:12px;color:#aaa;user-select:none">
+    <input type="checkbox" id="show-hidden-cb" onchange="renderOrders()" style="margin-right:4px">
+    顯示已隱藏
+  </label>
+</div>
 <details class="sec-closed">
   <summary class="sec-summary">✅ 已完成訂單 <span id="cnt-done" style="margin-left:4px;font-size:12px;font-weight:400;color:#c9a98a"></span></summary>
   <div id="done-orders"></div>
 </details>
 <details class="sec-closed">
-  <summary class="sec-summary">🔄 退單訂單 <span id="cnt-return" style="margin-left:4px;font-size:12px;font-weight:400;color:#bf360c"></span></summary>
+  <summary class="sec-summary">🔄 退單的訂單 <span id="cnt-return" style="margin-left:4px;font-size:12px;font-weight:400;color:#bf360c"></span></summary>
   <div id="return-orders"></div>
 </details>
 <details class="sec-closed">
@@ -2462,10 +2503,20 @@ function loadOrders() {
 function renderOrders() {
   var keyword = (document.getElementById('search-box').value || '').trim().toLowerCase();
   var filter = document.getElementById('filter-status').value;
+  var showHiddenCb = document.getElementById('show-hidden-cb');
+  var showHidden = !!(showHiddenCb && showHiddenCb.checked);
+
   var active = allOrders.filter(function(o){ return !CLOSED[o.status]; });
   var done = allOrders.filter(function(o){ return o.status === '已完成'; });
-  var returns = allOrders.filter(function(o){ return o.status === '退單'; });
-  var cancelled = allOrders.filter(function(o){ return o.status === '已取消'; });
+  var allReturns = allOrders.filter(function(o){ return o.status === '退單'; });
+  var allCancelled = allOrders.filter(function(o){ return o.status === '已取消'; });
+  var returns = showHidden ? allReturns : allReturns.filter(function(o){ return o.hidden !== 'hidden'; });
+  var cancelled = showHidden ? allCancelled : allCancelled.filter(function(o){ return o.hidden !== 'hidden'; });
+
+  // toggle bar visibility
+  var anyHidden = allReturns.some(function(o){ return o.hidden === 'hidden'; }) || allCancelled.some(function(o){ return o.hidden === 'hidden'; });
+  var tb = document.getElementById('hidden-toggle-bar');
+  if (tb) tb.style.display = anyHidden ? 'block' : 'none';
 
   var filterWh = document.getElementById('filter-wh').value;
   var list = active;
@@ -2477,11 +2528,11 @@ function renderOrders() {
   // header counts
   var pills = '<span class="hdr-pill pill-active">' + active.length + ' 進行中</span>';
   if (done.length) pills += '<span class="hdr-pill pill-done">' + done.length + ' 已完成</span>';
-  if (returns.length) pills += '<span class="hdr-pill pill-return">' + returns.length + ' 退單</span>';
-  if (cancelled.length) pills += '<span class="hdr-pill pill-cancel">' + cancelled.length + ' 已取消</span>';
+  if (allReturns.length) pills += '<span class="hdr-pill pill-return">' + allReturns.length + ' 退單</span>';
+  if (allCancelled.length) pills += '<span class="hdr-pill pill-cancel">' + allCancelled.length + ' 已取消</span>';
   document.getElementById('hdr-counts').innerHTML = pills;
 
-  // section counts
+  // section counts (visible only)
   document.getElementById('cnt-done').textContent = done.length ? done.length + ' 筆' : '';
   document.getElementById('cnt-return').textContent = returns.length ? returns.length + ' 筆' : '';
   document.getElementById('cnt-cancel').textContent = cancelled.length ? cancelled.length + ' 筆' : '';
@@ -2501,9 +2552,9 @@ function renderOrders() {
 
   // closed sections
   var emptyMsg = '<div style="color:#ccc;padding:14px 20px;font-size:13px">';
-  document.getElementById('done-orders').innerHTML = done.length ? done.map(function(o){ return closedRow(o, true); }).join('') : emptyMsg + '無已完成訂單</div>';
-  document.getElementById('return-orders').innerHTML = returns.length ? returns.map(function(o){ return closedRow(o, false); }).join('') : emptyMsg + '無退單訂單</div>';
-  document.getElementById('cancel-orders').innerHTML = cancelled.length ? cancelled.map(function(o){ return closedRow(o, false); }).join('') : emptyMsg + '無已取消訂單</div>';
+  document.getElementById('done-orders').innerHTML = done.length ? done.map(function(o){ return closedRow(o, true, false, false); }).join('') : emptyMsg + '無已完成訂單</div>';
+  document.getElementById('return-orders').innerHTML = returns.length ? returns.map(function(o){ return closedRow(o, false, o.hidden !== 'hidden', o.hidden === 'hidden'); }).join('') : emptyMsg + '無退單訂單</div>';
+  document.getElementById('cancel-orders').innerHTML = cancelled.length ? cancelled.map(function(o){ return closedRow(o, false, o.hidden !== 'hidden', o.hidden === 'hidden'); }).join('') : emptyMsg + '無已取消訂單</div>';
 
   renderStats();
 }
@@ -2710,18 +2761,52 @@ function createCard(o) {
     + '</div>';
 }
 
-function closedRow(o, showReturn) {
+function closedRow(o, showReturn, showHide, showUnhide) {
   var returnBtn = showReturn
     ? '<button class="btn-return" onclick="doReturn(' + o.rowIndex + ',\\'' + esc(o.orderId) + '\\')">退單</button>'
     : '';
-  return '<div class="closed-row">'
+  var hideBtn = showHide
+    ? '<button class="btn-hide" onclick="doHide(\\'' + esc(o.orderId) + '\\')">隱藏</button>'
+    : '';
+  var unhideBtn = showUnhide
+    ? '<button class="btn-unhide" onclick="doUnhide(\\'' + esc(o.orderId) + '\\')">取消隱藏</button>'
+    : '';
+
+  var itemsHtml = esc(o.items || '').replace(/\\n/g, '<br>');
+
+  var discountParts = [];
+  if (o.pointsUsed > 0) discountParts.push('點' + o.pointsUsed);
+  if (o.couponCode) discountParts.push('券 ' + esc(o.couponCode));
+  var discountStr = o.discountTotal > 0
+    ? ' <span class="cr-lbl">（' + discountParts.join('、') + '，折 NT$' + o.discountTotal + '）</span>'
+    : '';
+
+  var metaLine = [];
+  metaLine.push('<span><span class="cr-lbl">實付</span>NT$' + (o.finalAmount || 0) + discountStr + '</span>');
+  if (o.buyerName) metaLine.push('<span><span class="cr-lbl">買家</span>' + esc(o.buyerName) + '</span>');
+  if (o.phone) metaLine.push('<span><span class="cr-lbl">電話</span>' + esc(o.phone) + '</span>');
+  if (o.contact) metaLine.push('<span><span class="cr-lbl">聯繫</span>' + esc(o.contact) + (o.contactId ? ' @' + esc(o.contactId) : '') + '</span>');
+
+  var bottomLine = [];
+  if (o.note) bottomLine.push('<span><span class="cr-lbl">買家備註</span>' + esc(o.note) + '</span>');
+  if (o.adminNote) bottomLine.push('<span><span class="cr-lbl">內部備註</span>' + esc(o.adminNote) + '</span>');
+  if (o.warehouse) bottomLine.push('<span><span class="cr-lbl">倉庫</span>' + esc(o.warehouse) + '</span>');
+
+  return '<div class="closed-row' + (showUnhide ? ' cr-hidden-row' : '') + '" style="display:block;padding:0">'
+    + '<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 20px;gap:8px">'
     + '<div class="cr-left">'
     + '<span class="cr-id">' + esc(o.orderId) + '</span>'
     + sbadge(o.status)
-    + '<span class="cr-name">' + esc(o.buyerName||'—') + '</span>'
-    + returnBtn
+    + '<span class="cr-name">' + esc(o.buyerName || '—') + '</span>'
+    + returnBtn + hideBtn + unhideBtn
     + '</div>'
     + '<div class="cr-time">' + esc(o.orderTime) + '</div>'
+    + '</div>'
+    + '<div style="padding:0 20px 12px">'
+    + '<div class="cr-items">' + itemsHtml + '</div>'
+    + '<div class="cr-meta">' + metaLine.join('') + '</div>'
+    + (bottomLine.length ? '<div class="cr-meta" style="margin-top:3px">' + bottomLine.join('') + '</div>' : '')
+    + '</div>'
     + '</div>';
 }
 
@@ -2799,6 +2884,45 @@ async function doReturn(rowIndex, orderId) {
       var o = allOrders.find(function(x){ return x.rowIndex === rowIndex; });
       if (o) o.status = '退單';
       toast('✅ 已標記退單，點數已扣除');
+      renderOrders();
+    } else {
+      var d = await r.json();
+      toast('❌ ' + (d.error || '失敗'));
+    }
+  } catch(e) { toast('❌ 網路錯誤'); }
+}
+
+async function doHide(orderId) {
+  if (!confirm('確定隱藏訂單 ' + orderId + '？\\n資料不會刪除，可開啟「顯示已隱藏」找回。')) return;
+  try {
+    var r = await fetch('/api/admin/order-hide', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ key: KEY, orderId: orderId, action: 'hide' }),
+    });
+    if (r.ok) {
+      var o = allOrders.find(function(x){ return x.orderId === orderId; });
+      if (o) o.hidden = 'hidden';
+      toast('✅ 已隱藏');
+      renderOrders();
+    } else {
+      var d = await r.json();
+      toast('❌ ' + (d.error || '失敗'));
+    }
+  } catch(e) { toast('❌ 網路錯誤'); }
+}
+
+async function doUnhide(orderId) {
+  try {
+    var r = await fetch('/api/admin/order-hide', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ key: KEY, orderId: orderId, action: 'unhide' }),
+    });
+    if (r.ok) {
+      var o = allOrders.find(function(x){ return x.orderId === orderId; });
+      if (o) o.hidden = '';
+      toast('✅ 已取消隱藏');
       renderOrders();
     } else {
       var d = await r.json();
