@@ -46,6 +46,7 @@ const {
   issueCoupons, getActiveCoupons, markCouponUsed,
   getActivePoints, deductMemberPoints,
   processOrderCompletion, processOrderReturn, processReferralReward, bindReferralCode,
+  logDiscountAnomaly,
 } = require('./lib/member');
 
 // ── 建立 ZOZO Flex Message ────────────────────────────────────────────────────
@@ -1266,9 +1267,57 @@ app.post('/api/order', express.json(), async (req, res) => {
 
     const result = await submitOrder(userId, displayName || '', cartItems, buyerInfo, { pointsUsed, couponCode, couponAmount });
 
-    // 套用折扣
-    if (pointsUsed > 0) await deductMemberPoints(sheets, userId, pointsUsed).catch(e => console.error('[deductPoints error]', e.message));
-    if (couponCode) await markCouponUsed(sheets, couponCode, result.orderId).catch(e => console.error('[markCoupon error]', e.message));
+    // 套用折扣（順序：先核銷券 → 後扣點；半完成時券已鎖、人工補扣點即可）
+    let couponDone = false;
+    let pointsDone = false;
+    try {
+      if (couponCode) {
+        // 即時重驗：擋並發重複核銷（兩個請求同時通過初驗時的最後防線）
+        const freshCoupons = await getActiveCoupons(sheets, userId);
+        if (!freshCoupons.find(c => c.couponCode === couponCode)) {
+          const e = new Error('優惠券已被使用，請聯繫客服確認');
+          e.step = 'couponRevalidate';
+          throw e;
+        }
+        await markCouponUsed(sheets, couponCode, result.orderId);
+        couponDone = true;
+      }
+      if (pointsUsed > 0) {
+        await deductMemberPoints(sheets, userId, pointsUsed);
+        pointsDone = true;
+      }
+    } catch (discountErr) {
+      const step = discountErr.step || (!couponDone && couponCode ? 'markCouponUsed' : 'deductMemberPoints');
+      const couponStatus = couponCode
+        ? (couponDone ? `✅已核銷(${couponCode})` : `❌失敗(${couponCode})`)
+        : '無';
+      const pointsStatus = pointsUsed > 0
+        ? (pointsDone ? `✅已扣${pointsUsed}點` : `❌失敗(應扣${pointsUsed}點)`)
+        : '無';
+
+      logDiscountAnomaly(sheets, {
+        userId, orderId: result.orderId,
+        couponStatus, pointsStatus,
+        failedStep: step, errorMessage: discountErr.message,
+      }).catch(e => console.error('[logAnomaly]', e.message));
+
+      const needsAction = [];
+      if (!couponDone && couponCode) needsAction.push(`手動核銷券 ${couponCode}`);
+      if (!pointsDone && pointsUsed > 0) needsAction.push(`手動扣除 ${pointsUsed} 點`);
+      lineClient.pushMessage(ADMIN_USER_ID, {
+        type: 'text',
+        text: `⚠️ 結算異常 — 需人工處理\n\n訂單：${result.orderId}\n買家：${userId}\n失敗步驟：${step}\n錯誤：${discountErr.message}\n\n📋 各步驟狀態：\n  ✅ 訂單已寫入\n  ${couponStatus}\n  ${pointsStatus}\n\n👉 ${needsAction.join('\n👉 ')}`,
+      }).catch(e => console.error('[anomaly admin notify]', e.message));
+      lineClient.pushMessage(userId, {
+        type: 'text',
+        text: `⚠️ 訂單已成立（${result.orderId}），但折扣套用發生異常，請聯繫客服，我們將協助您處理 🌸`,
+      }).catch(() => {});
+
+      return res.status(500).json({
+        error: `結算異常，請聯繫客服（訂單號：${result.orderId}）`,
+        orderId: result.orderId,
+      });
+    }
 
     // 合併相同規格，顯示數量
     const _iMap = {};
